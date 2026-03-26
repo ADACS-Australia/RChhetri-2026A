@@ -1,0 +1,14 @@
+.venv
+.prefect/
+*.ms/
+*.log
+*.last
+*.flagversions/
+*.bpcal/
+*.gcal/
+*.fcal/
+*.uvfits
+needle.yaml
+.*_built
+*__pycache__*
+.ruff_cache/

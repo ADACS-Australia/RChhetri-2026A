@@ -1,0 +1,40 @@
+[project]
+name = "needle" 
+version = "0.1.0"
+description = "Pipeline for ASKAP data imaging and point-source detection" 
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aegeantools>=2.3.5",
+    "astropy>=7.2.0",
+    "casatasks>=6.7.3.21",
+    "casatools>=6.7.3.21",
+    "pandas>=3.0.1", # TODO: Check if this is necessary
+    "prefect>=3.0.0",
+    "prefect-docker>=0.7.1",
+    "pydantic>=2.12.5",
+]
+
+[project.scripts]
+needle-inspect-ms = "needle.modules.inspect_ms:main"
+needle-convert-to-ms = "needle.modules.convert_to_ms:main"
+needle-flag = "needle.modules.flag:main"
+needle-calibrate= "needle.modules.calibrate:main"
+needle-clean= "needle.modules.clean:main"
+needle-clean-shallow= "needle.modules.clean:shallow"
+needle-clean-deep= "needle.modules.clean:deep"
+needle-mask= "needle.modules.mask:main"
+needle-source-find= "needle.modules.source_find:main"
+needle-deploy = "needle.deploy:main"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["needle"]
+
+[tool.pyright]
+typeCheckingMode = "off"
+useLibraryCodeForTypes = true

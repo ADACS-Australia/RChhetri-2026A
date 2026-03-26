@@ -1,0 +1,44 @@
+from pathlib import Path
+
+from prefect import task
+
+from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
+from needle.lib.logging import setup_logging
+from needle.models.flag import FlagConfig, FlagContext
+from needle.models.pipeline import MSBeamPair
+from needle.modules.flag import flag_observation
+
+
+@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+def flag_ms_task(ms: Path, cfg: FlagConfig, log_level: str = "INFO") -> Path:
+    """Flags a measurement set. Returns the same measurement set"""
+    fn_inputs = locals().items()
+    logger = setup_logging(log_level)
+    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+
+    try:
+        ctx = FlagContext(cfg=cfg, ms=ms)
+        logger.info(f"Flagging measurement set: {ms.name}")
+        flag_observation(ctx)
+    except ValueError as e:
+        logger.warning(str(e))
+        logger.warning("Attempting to continue anyway...")
+    return ms
+
+
+@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+def flag_ms_pair_task(ms_pair: MSBeamPair, cfg: FlagConfig, log_level: str = "INFO") -> MSBeamPair:
+    """Flags a pair of measurement sets. Returns the same measurement set pair"""
+    fn_inputs = locals().items()
+    logger = setup_logging(log_level)
+    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+
+    try:
+        tgt_ctx = FlagContext(cfg=cfg, ms=ms_pair.tgt)
+        cal_ctx = FlagContext(cfg=cfg, ms=ms_pair.cal)
+        flag_observation(tgt_ctx)
+        flag_observation(cal_ctx)
+    except ValueError as e:
+        logger.warning(str(e))
+        logger.warning("Attempting to continue anyway...")
+    return ms_pair
