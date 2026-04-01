@@ -8,7 +8,7 @@ from pydantic import ValidationError, model_validator, field_validator
 
 from needle.models.base import NeedleModel
 from needle.models.calibrate import CalibrateConfig
-from needle.models.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig
+from needle.models.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.models.flag import FlagConfig
 from needle.models.mask import CreateMaskConfig
 from needle.models.source_find import SourceFindConfig
@@ -24,10 +24,10 @@ class BeamPair(NeedleModel):
     "Beam identifier e.g. '00'"
 
     tgt: Path
-    "Path to the target input file — any supported format"
+    "Path to the target input file"
 
     cal: Path
-    "Path to the calibrator input file — any supported format"
+    "Path to the calibrator input file"
 
     @property
     def beam_dir(self) -> Path:
@@ -43,12 +43,6 @@ class BeamPair(NeedleModel):
 
 class MSBeamPair(BeamPair):
     """A beam pair where both files are guaranteed to be measurement sets."""
-
-    tgt: Path
-    "Path to the target measurement set"
-
-    cal: Path
-    "Path to the calibrator measurement set"
 
     @model_validator(mode="after")
     def validate_ms_suffixes(self):
@@ -149,6 +143,9 @@ class PipelineConfig(NeedleModel):
     "Mask creation config"
 
     deep_clean: DeepCleanConfig
+    "Deep clean config"
+
+    model_subtract: ModelSubtractCleanConfig
     "Deep clean config"
 
     interval_clean: IntervalCleanConfig

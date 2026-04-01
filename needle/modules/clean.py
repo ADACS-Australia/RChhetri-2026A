@@ -4,12 +4,9 @@ Supports both shallow and deep cleaning via WSCleanConfig subclasses.
 """
 
 from argparse import ArgumentParser, Namespace
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-import os
 from pathlib import Path
 import subprocess
-from typing import Optional
 
 from needle.lib.logging import setup_logging
 from needle.models.clean import (
@@ -18,42 +15,10 @@ from needle.models.clean import (
     WSCleanContext,
     ShallowCleanConfig,
     DeepCleanConfig,
+    ModelSubtractCleanConfig,
 )
-from needle.modules.inspect_ms import inspect_ms
 
 logger = logging.getLogger(__name__)
-
-
-def interval_clean(ms: Path, cfg: WSCleanConfig, mask: Optional[Path] = None) -> list[WSCleanOutput]:
-    """Cleans on each interval in a measurement set
-
-    :param ms: The measurement set to clean
-    :param cfg: The WSCleanConfig object
-    :param mask: The path to the fits mask to use
-    :return: List of the WSCleanOutput objects
-    """
-    # Number of intervals - the number of imaging instances we will run
-    info = inspect_ms(ms)
-    logger.debug(f"time info: {info.time}")
-    logger.debug(f"n_integrations value: {info.time.n_integrations}")
-    intervals = info.time.n_integrations
-
-    # Ouptut the fits files to here
-    output_dir = Path(f"{ms.with_suffix("")}_interval")
-    os.makedirs(output_dir, exist_ok=True)
-    logger.info(f"Creating a series of images over {info.time.n_integrations} integrations")
-
-    futures = []
-    wsclean_outputs = []
-    with ThreadPoolExecutor() as executor:
-        for i in range(0, intervals - 1):
-            ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=(i, i), output_dir=output_dir)
-            futures.append(executor.submit(run_clean, ctx))
-
-        for future in as_completed(futures):
-            wsclean_outputs.append(future.result())
-
-    return wsclean_outputs
 
 
 def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
@@ -66,9 +31,10 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
 
     :param ctx: WSClean run context object
     :raises RuntimeError: If WSClean exits with a non-zero return code
-    :returns: Path to the output dirty/cleaned image
+    :returns: The wsclean output object
     """
     logger.info(f"Running WSClean on {ctx.ms}")
+    logger.debug(f"{" ".join(str(c) for c in ctx.cmd)}")  # Log the wsclean command
 
     result = subprocess.run(ctx.cmd, capture_output=True, text=True)
 
@@ -81,10 +47,6 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
 
     logger.info(f"WSClean complete, output image: {ctx.output.image}")
 
-    assert ctx.output.image.exists(), "image fits does not exist"
-    assert ctx.output.dirty.exists(), "dirty fits does not exist"
-    assert ctx.output.model.exists(), "model fits does not exist"
-    assert ctx.output.residual.exists(), "residual fits does not exist"
     return ctx.output
 
 
@@ -104,6 +66,18 @@ def _parse(parser: ArgumentParser) -> Namespace:
     return parser.parse_args()
 
 
+def model_subtract():
+    """Create the MODEL_DATA column"""
+    parser = ModelSubtractCleanConfig.add_to_parser(
+        ArgumentParser("Run WSClean on a measurement set with model-subtract presets")
+    )
+    args = _parse(parser)
+    setup_logging(args.log_level)
+
+    ctx = WSCleanContext(cfg=ModelSubtractCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask)
+    run_clean(ctx)
+
+
 def shallow():
     """Shallow clean preset configuration"""
     parser = ShallowCleanConfig.add_to_parser(
@@ -112,7 +86,8 @@ def shallow():
     args = _parse(parser)
     setup_logging(args.log_level)
 
-    run_clean(WSCleanContext(cfg=ShallowCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask))
+    ctx = WSCleanContext(cfg=ShallowCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask)
+    run_clean(ctx)
 
 
 def deep():
@@ -121,7 +96,8 @@ def deep():
     args = _parse(parser)
     setup_logging(args.log_level)
 
-    run_clean(WSCleanContext(cfg=DeepCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask))
+    ctx = WSCleanContext(cfg=DeepCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask)
+    run_clean(ctx)
 
 
 def main():
@@ -130,7 +106,8 @@ def main():
     args = _parse(parser)
     setup_logging(args.log_level)
 
-    run_clean(WSCleanContext(cfg=WSCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask))
+    ctx = WSCleanContext(cfg=WSCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask)
+    model_predict(ctx)
 
 
 if __name__ == "__main__":

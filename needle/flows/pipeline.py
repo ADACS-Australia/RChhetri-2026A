@@ -7,7 +7,7 @@ from needle.lib.flow import BEAMS_DIR
 from needle.lib.logging import setup_logging
 from needle.models.pipeline import PipelineConfig
 from needle.tasks.calibrate import calibrate_pair_task
-from needle.tasks.clean import clean_task, interval_clean_task
+from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.flag import flag_ms_pair_task
 from needle.tasks.inspect import inspect_pair_task
@@ -46,8 +46,9 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     )
 
     # Source find on the shallow-cleaned image
+    shallow_images = [f.result() for f in shallow_image_futures]
     json_sources = source_find_task.map(
-        shallow_image_futures, cfg=unmapped(cfg.source_find), log_level=unmapped(cfg.flow.log_level)
+        shallow_images, cfg=unmapped(cfg.source_find), log_level=unmapped(cfg.flow.log_level)
     )
 
     # Create masks over the sources in preparation for deep cleaning
@@ -62,12 +63,30 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     deep_image_futures = clean_task.with_options(name="deep_clean").map(
         tgt_futures, cfg=unmapped(cfg.deep_clean), mask=mask_output_futures, log_level=unmapped(cfg.flow.log_level)
     )
+    # Wait for deep clean
+    [f.result() for f in deep_image_futures]
 
-    # Clean on each interval - produces a list of images for each beam
+    # Create Model - updates the ms in place with the MODEL_DATA columnn
+    model_creation_futures = predict_task.map(
+        tgt_futures, cfg=unmapped(cfg.deep_clean), log_level=unmapped(cfg.flow.log_level)
+    )
+
+    # Model subtract - removes the MODEL_DATA from the DATA visibilities
+    model_subtract_futures = clean_task.with_options(name="model_subtract").map(
+        model_creation_futures,
+        cfg=unmapped(cfg.model_subtract),
+        mask=mask_output_futures,
+        log_level=unmapped(cfg.flow.log_level),
+    )
+
+    # Clean on each interval - produces a list of images for each beam using the model-subtracted visibilities
+    [f.result() for f in model_subtract_futures]  # Wait for model subtraction
     interval_clean_futures = interval_clean_task.map(
-        tgt_futures, cfg=unmapped(cfg.interval_clean), mask=mask_output_futures, log_level=unmapped(cfg.flow.log_level)
+        tgt_futures,
+        cfg=unmapped(cfg.interval_clean),
+        mask=mask_output_futures,
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     [f.result() for f in inspect_futures]
-    [f.result() for f in deep_image_futures]
     [f.result() for f in interval_clean_futures]  # Wait on the last output so that the flow doesn't end

@@ -7,7 +7,6 @@ from prefect.task_runners import ProcessPoolTaskRunner
 
 from needle.flows.pipeline import needle_pipeline
 from needle.lib.flow import CONTAINER_DATA_DIR
-from needle.models.base import NeedleValidationError
 from needle.models.pipeline import PipelineConfig
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,7 @@ def main():
         raise SystemExit(1)
     try:
         cfg = PipelineConfig.from_yaml(Path(partial.cfg_file))
-    except NeedleValidationError as e:
+    except ValueError as e:
         print(e)
         raise SystemExit(1)
 

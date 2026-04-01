@@ -78,6 +78,7 @@ class MSInspectResult:
     baselines: BaselineInfo
     polarisation: PolarisationInfo
     fields: FieldInfo
+    data_columns: dict[str, tuple]
 
     def to_json(self, output_dir: Optional[Path] = None) -> Path:
         """Write the inspection result to a JSON file.
@@ -306,6 +307,20 @@ def inspect_ms(ms: Path) -> MSInspectResult:
     pol_info = get_polarisation_info(ms)
     field_info = get_field_info(ms)
 
+    # Data columns
+    tb = table()
+    tb.open(str(ms))
+    all_columns = tb.colnames()
+    data_columns = {}
+    for col in all_columns:
+        if col == "DATA" or col.endswith("_DATA"):
+            try:
+                val = tb.getcell(col, 0)
+                data_columns[col] = getattr(val, "shape", ())
+            except Exception:
+                pass
+    tb.close()
+
     result = MSInspectResult(
         ms=ms,
         time=time_info,
@@ -313,6 +328,7 @@ def inspect_ms(ms: Path) -> MSInspectResult:
         baselines=base_info,
         polarisation=pol_info,
         fields=field_info,
+        data_columns=data_columns,
     )
     return result
 
@@ -327,6 +343,10 @@ def pretty_print(result: MSInspectResult):
     print(f"\n{'='*55}")
     print(f"  MS: {result.ms}")
     print(f"{'='*55}")
+
+    print("\n── Data Columns ──────────────────────────────────────")
+    for name, shape in result.data_columns.items():
+        print(f"  {name}: {shape}")
 
     print("\n── Time ──────────────────────────────────────────────")
     print(f"  Start:            {t.start_utc}")

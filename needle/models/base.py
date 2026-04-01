@@ -15,13 +15,8 @@ class NeedleModuleName(str, Enum):
     SOURCE_FIND = "source_find"
     CREATE_MASK = "create_mask"
     DEEP_CLEAN = "deep_clean"
+    SUBTRACT_MODEL_CLEAN = "subtract_model"
     INTERVAL_CLEAN = "interval_clean"
-
-
-class NeedleValidationError(Exception):
-    """Raised when a NeedleSettings subclass fails validation."""
-
-    pass
 
 
 class NeedleModel(BaseModel):
