@@ -4,9 +4,9 @@ from prefect import task
 
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
-from needle.models.flag import FlagConfig, FlagContext
-from needle.models.pipeline import MSBeamPair
-from needle.modules.flag import flag_observation
+from needle.config.flag import FlagConfig
+from needle.config.pipeline import MSBeamPair
+from needle.modules.flag import flag_observation, FlagContext
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)

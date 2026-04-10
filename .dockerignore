@@ -2,3 +2,5 @@ work/
 needle_data/
 .nextflow.log*
 *.sif
+.venv
+.git

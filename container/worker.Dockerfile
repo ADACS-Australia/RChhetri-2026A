@@ -1,2 +1,2 @@
 FROM prefecthq/prefect:3-latest
-RUN pip install prefect-docker
+RUN pip install prefect-dask dask distributed prefect-docker

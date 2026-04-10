@@ -12,3 +12,4 @@ needle.yaml
 .*_built
 *__pycache__*
 .ruff_cache/
+*.sif

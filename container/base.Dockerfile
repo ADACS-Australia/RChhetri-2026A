@@ -1,7 +1,11 @@
 FROM python:3.12-slim
 
 ENV WSCLEAN_VERSION="3.6"
+ENV CASA_VERSION="6.7.3.21"
+ENV AEGEAN_VERSION="2.3.5"
 
+# Ignore annoying casa syntax warnings
+ENV PYTHONWARNINGS=ignore::SyntaxWarning
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -31,8 +35,7 @@ RUN apt-get update && apt-get install -y \
     casacore-dev \
     casacore-tools \
     lua5.3 \
-    liblua5.3-dev \
-    gosu && \
+    liblua5.3-dev && \
     pip install pybind11 && \
     rm -rf /var/lib/apt/lists/*
 
@@ -45,4 +48,7 @@ RUN wget -O wsclean-v${WSCLEAN_VERSION}.tar.bz2 https://gitlab.com/aroffringa/ws
 
 # Install UV because it's faster than pip installing
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+RUN uv pip install --system "casatasks==${CASA_VERSION}" "casatools==${CASA_VERSION}" "aegeantools==${AEGEAN_VERSION}"
+
+
 

@@ -1,9 +1,9 @@
-from pathlib import Path
-from pydantic import field_validator
+import logging
 from typing import ClassVar
 
-from needle.models.base import NeedleModel, NeedleModuleName
-from needle.lib.validate import validate_path_ms
+from needle.config.base import NeedleModel, NeedleModuleName
+
+logger = logging.getLogger(__name__)
 
 
 class SetjyConfig(NeedleModel):
@@ -111,26 +111,3 @@ class CalibrateConfig(NeedleModel):
 
     split: SplitConfig
     "Split out calibrated data"
-
-
-class CalibrateContext(NeedleModel):
-    cfg: CalibrateConfig
-    "Static config values"
-
-    cal: Path
-    "The calibator measurement set"
-
-    tgt: Path
-    "The target measurement set"
-
-    @field_validator("cal")
-    @classmethod
-    def _valid_cal(cls, cal: Path) -> Path:
-        validate_path_ms(cal)
-        return cal
-
-    @field_validator("tgt")
-    @classmethod
-    def _valid_tgt(cls, tgt: Path) -> Path:
-        validate_path_ms(tgt)
-        return tgt

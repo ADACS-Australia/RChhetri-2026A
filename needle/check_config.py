@@ -8,7 +8,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from needle.models.pipeline import PipelineConfig
+from needle.config.pipeline import PipelineConfig
 
 
 def check_config(path):

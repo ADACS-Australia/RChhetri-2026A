@@ -6,12 +6,12 @@ import yaml
 
 from pydantic import ValidationError, model_validator, field_validator
 
-from needle.models.base import NeedleModel
-from needle.models.calibrate import CalibrateConfig
-from needle.models.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
-from needle.models.flag import FlagConfig
-from needle.models.mask import CreateMaskConfig
-from needle.models.source_find import SourceFindConfig
+from needle.config.base import NeedleModel
+from needle.config.calibrate import CalibrateConfig
+from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
+from needle.config.flag import FlagConfig
+from needle.config.mask import CreateMaskConfig
+from needle.config.source_find import SourceFindConfig
 from needle.lib.flow import CONTAINER_DATA_DIR, BEAMS_DIR
 
 logger = logging.getLogger(__name__)

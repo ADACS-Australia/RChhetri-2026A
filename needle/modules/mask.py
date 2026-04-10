@@ -10,21 +10,66 @@ these boxes.
 
 from argparse import ArgumentParser
 import logging
-import numpy as np
 from pathlib import Path
 
 from astropy.io import fits
 from astropy.wcs import WCS
+import numpy as np
+from pydantic import field_validator
 
-from needle.models.mask import CreateMaskOutput, CreateMaskContext, CreateMaskConfig
+from needle.config.mask import CreateMaskOutput, CreateMaskConfig
 from needle.lib.aegean import AegeanSourceList
 from needle.lib.logging import setup_logging
+from needle.lib.validate import validate_path_fits
+from needle.modules.needle_context import NeedleContext
 
 logger = logging.getLogger(__name__)
 
 
+class CreateMaskContext(NeedleContext):
+
+    cfg: CreateMaskConfig
+    "Static configuration for mask creation"
+
+    image: Path
+    "Path to the fits image. The intended mask target - used for size reference"
+
+    sources: Path | AegeanSourceList
+    "The source list. Also accepts a .json of the sources"
+
+    @field_validator("sources")
+    @classmethod
+    def _valid_sources(cls, s) -> AegeanSourceList:
+        """Convert .json to AegeanSourceList if necessary"""
+        if isinstance(s, AegeanSourceList):
+            return s
+        return AegeanSourceList.from_json(s)
+
+    @field_validator("image")
+    @classmethod
+    def _valid_image(cls, im) -> Path:
+        validate_path_fits(im)
+        return im
+
+    def execute(self) -> CreateMaskOutput:
+        """Creates the mask and writes it to file"""
+        output = CreateMaskOutput(prefix=self.image.with_suffix(""))
+        mask, header = generate_mask_array(
+            source_list=self.sources, reference_fits=self.image, padding=self.cfg.padding
+        )
+        n_masked = int(mask.sum())
+        total = mask.size
+        if mask.size == 0:
+            logger.warning("Mask is of size zero!")
+        else:
+            logger.info(f"Masked pixels : {n_masked:,} / {total:,} " f"({100 * n_masked / total:.2f}%)")
+
+        fits.writeto(str(output.mask), mask, header, overwrite=True)
+        return output
+
+
 def generate_mask_array(
-    source_list: Path | AegeanSourceList, reference_fits: Path, padding: float = 5.0
+    source_list: AegeanSourceList | Path, reference_fits: Path, padding: float
 ) -> tuple[np.ndarray, fits.Header]:
     """
     Build a 2D boolean mask array with boxes around each source.
@@ -124,19 +169,8 @@ def create_mask(ctx: CreateMaskContext) -> CreateMaskOutput:
     :param ctx: The CreateMaskContext object
     :return: The CreateMaskOutput object
     """
-    output = CreateMaskOutput(prefix=ctx.image.with_suffix(""))
-
     logger.info(f"Building mask from reference image {ctx.image} ...")
-    mask, header = generate_mask_array(ctx.sources, ctx.image, ctx.cfg.padding)
-
-    n_masked = int(mask.sum())
-    total = mask.size
-    if mask.size == 0:
-        logger.warning("Mask is of size zero!")
-    else:
-        logger.info(f"Masked pixels : {n_masked:,} / {total:,} " f"({100 * n_masked / total:.2f}%)")
-
-    fits.writeto(str(output.mask), mask, header, overwrite=True)
+    output = ctx.execute()
     logger.info(f"Mask written: {output.mask}")
     return output
 

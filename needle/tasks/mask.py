@@ -2,8 +2,8 @@ from pathlib import Path
 
 from prefect import task
 
-from needle.models.mask import CreateMaskConfig, CreateMaskContext
-from needle.modules.mask import create_mask
+from needle.config.mask import CreateMaskConfig
+from needle.modules.mask import create_mask, CreateMaskContext
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 

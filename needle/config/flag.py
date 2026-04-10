@@ -1,21 +1,21 @@
 from abc import abstractmethod
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import field_validator, model_validator
 
-from needle.lib.validate import validate_path_ms
-from needle.models.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel, NeedleModuleName
 
 
 class FlagStepConfig(NeedleModel):
     """Base class for all flagging step cfgs."""
 
+    enabled: bool = False
+    "Whether to run this flagging step"
+
     @property
     @abstractmethod
-    def _flagdata_kwargs(self) -> dict:
+    def _flagdata_kwargs(self) -> str:
         """Keyword arguments passed directly to CASA's flagdata."""
-        pass
 
 
 class QuackConfig(FlagStepConfig):
@@ -34,8 +34,8 @@ class QuackConfig(FlagStepConfig):
         return v
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(mode="quack", quackinterval=self.interval, quackmode=self.mode)
+    def _flagdata_kwargs(self) -> str:
+        return f"mode='quack', quackmode='{self.mode}', quackinterval={self.interval}"
 
 
 class ClipConfig(FlagStepConfig):
@@ -55,10 +55,8 @@ class ClipConfig(FlagStepConfig):
         return self
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(
-            mode="clip", clipzeros=self.clip_zeros, clipminmax=[self.min_amp, self.max_amp], correlation="ABS_ALL"
-        )
+    def _flagdata_kwargs(self) -> str:
+        return f"mode='clip', clipzeros={self.clip_zeros}, clipminmax=[{self.min_amp}, {self.max_amp}], correlation='ABS_ALL'"
 
 
 class TfCropConfig(FlagStepConfig):
@@ -78,15 +76,11 @@ class TfCropConfig(FlagStepConfig):
     "Extend flags after tfcrop"
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(
-            mode="tfcrop",
-            datacolumn="data",
-            timecutoff=self.time_cutoff,
-            freqcutoff=self.freq_cutoff,
-            maxnpieces=self.max_npieces,
-            flagdimension=self.flag_dimension,
-            extendflags=self.extend_flags,
+    def _flagdata_kwargs(self) -> str:
+        return (
+            f"mode='tfcrop', datacolumn='data', timecutoff={self.time_cutoff}, "
+            f"freqcutoff={self.freq_cutoff}, maxnpieces={self.max_npieces}, "
+            f"flagdimension='{self.flag_dimension}', extendflags={self.extend_flags}"
         )
 
 
@@ -101,13 +95,10 @@ class RFlagConfig(FlagStepConfig):
     "Window size for rms estimation"
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(
-            mode="rflag",
-            datacolumn="data",
-            timedevscale=self.time_devscale,
-            freqdevscale=self.freq_devscale,
-            winsize=self.winsize,
+    def _flagdata_kwargs(self) -> str:
+        return (
+            f"mode='rflag', datacolumn='data', timedevscale={self.time_devscale}, "
+            f"freqdevscale={self.freq_devscale}, winsize={self.winsize}"
         )
 
 
@@ -122,8 +113,8 @@ class ExtendConfig(FlagStepConfig):
     "Extend flags to all polarisations"
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(mode="extend", growtime=self.grow_time, growfreq=self.grow_freq, extendpols=self.extend_pols)
+    def _flagdata_kwargs(self) -> str:
+        return f"mode='extend', growtime={self.grow_time}, " f"growfreq={self.grow_freq}, extendpols={self.extend_pols}"
 
 
 class ManualConfig(FlagStepConfig):
@@ -140,18 +131,16 @@ class ManualConfig(FlagStepConfig):
     "Correlation selection"
 
     @property
-    def _flagdata_kwargs(self) -> dict:
-        return dict(
-            mode="manual", spw=self.spw, antenna=self.antenna, timerange=self.timerange, correlation=self.correlation
+    def _flagdata_kwargs(self) -> str:
+        return (
+            f"mode='manual', spw='{self.spw}', antenna='{self.antenna}', "
+            f"timerange='{self.timerange}', correlation='{self.correlation}'"
         )
 
 
 class FlagConfig(NeedleModel):
     # TODO: Add more validators for all of the sub-cfgs
     module: ClassVar[NeedleModuleName] = NeedleModuleName.FLAG
-
-    backup: bool = False
-    "Whether to make a backup before flagging the measurement set"
 
     quack: QuackConfig | None = None
     "Quack flagging step — omit to skip"
@@ -170,17 +159,3 @@ class FlagConfig(NeedleModel):
 
     manual: ManualConfig | None = None
     "Manual flagging step — omit to skip"
-
-
-class FlagContext(NeedleModel):
-    cfg: FlagConfig
-    "Static configuration values"
-
-    ms: Path
-    "The path to the measurement set to flag"
-
-    @field_validator("ms")
-    @classmethod
-    def _valid_image(cls, ms) -> Path:
-        validate_path_ms(ms)
-        return ms

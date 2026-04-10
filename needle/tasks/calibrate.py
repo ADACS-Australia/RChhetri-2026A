@@ -2,9 +2,9 @@ from pathlib import Path
 
 from prefect import task
 
-from needle.models.calibrate import CalibrateConfig, CalibrateContext
-from needle.models.pipeline import MSBeamPair
-from needle.modules.calibrate import calibrate_observation
+from needle.config.calibrate import CalibrateConfig
+from needle.config.pipeline import MSBeamPair
+from needle.modules.calibrate import calibrate_observation, CalibrateContext
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 

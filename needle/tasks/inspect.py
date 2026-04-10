@@ -1,10 +1,9 @@
 from pathlib import Path
 from typing import Tuple
 
-
 from prefect import task
 
-from needle.models.pipeline import MSBeamPair
+from needle.config.pipeline import MSBeamPair
 from needle.modules.inspect_ms import inspect_ms
 from needle.lib.logging import setup_logging
 

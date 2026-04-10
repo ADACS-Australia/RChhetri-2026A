@@ -6,8 +6,8 @@ from prefect import task
 
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
-from needle.models.clean import WSCleanConfig, WSCleanContext
-from needle.modules.clean import run_clean
+from needle.config.clean import WSCleanConfig
+from needle.modules.clean import run_clean, WSCleanContext
 from needle.modules.inspect_ms import inspect_ms
 
 

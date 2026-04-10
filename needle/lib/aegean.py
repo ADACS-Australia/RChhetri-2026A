@@ -5,7 +5,7 @@ import json
 from AegeanTools.models import ComponentSource
 from pydantic import field_validator
 
-from needle.models.base import NeedleModel
+from needle.config.base import NeedleModel
 
 
 class AegeanSource(NeedleModel):
@@ -74,7 +74,7 @@ class AegeanSource(NeedleModel):
     residual_std: float | None
     "Std dev of fit residual (Jy/beam)"
 
-    uuid: str
+    uuid: str | None
     "Unique identifier for this source"
 
     psf_a: float | None
@@ -118,6 +118,49 @@ class AegeanSourceList(NeedleModel):
     @classmethod
     def from_component_list(cls, srcs: list[ComponentSource]) -> "AegeanSourceList":
         return cls(sources=[AegeanSource.from_component(src) for src in srcs])
+
+    @classmethod
+    def from_txt_catalog(cls, path: Path | str) -> "AegeanSourceList":
+        path = Path(path)
+        sources = []
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Strip parentheses from island,source e.g. "(0001,00)"
+            line = line.replace("(", "").replace(")", "")
+            parts = line.split()
+            island, source = parts[0].split(",")
+            sources.append(
+                AegeanSource(
+                    island=int(island),
+                    source=int(source),
+                    background=float(parts[1]),
+                    local_rms=float(parts[2]),
+                    ra=float(parts[5]),
+                    err_ra=float(parts[6]),
+                    dec=float(parts[7]),
+                    err_dec=float(parts[8]),
+                    peak_flux=float(parts[9]),
+                    err_peak_flux=float(parts[10]),
+                    int_flux=float(parts[11]),
+                    err_int_flux=float(parts[12]),
+                    a=float(parts[13]),
+                    err_a=float(parts[14]),
+                    b=float(parts[15]),
+                    err_b=float(parts[16]),
+                    pa=float(parts[17]),
+                    err_pa=float(parts[18]),
+                    flags=f"{int(parts[19]):07b}",
+                    residual_mean=None,
+                    residual_std=None,
+                    uuid=None,
+                    psf_a=None,
+                    psf_b=None,
+                    psf_pa=None,
+                )
+            )
+        return cls(sources=sources)
 
     def to_json(self, path: Path | str) -> None:
         path = Path(path)

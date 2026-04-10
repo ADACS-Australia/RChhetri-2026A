@@ -1,11 +1,11 @@
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, _ArgumentGroup
 from enum import Enum
 from pathlib import Path
 import types
-from typing import Union, get_args, get_origin
+from typing import Optional, Union, get_args, get_origin
 import yaml
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class NeedleModuleName(str, Enum):
@@ -41,11 +41,10 @@ class NeedleModel(BaseModel):
         return self.model_dump(exclude_none=True)
 
     @classmethod
-    def add_to_parser(cls, parser: ArgumentParser, prefix: str = "") -> ArgumentParser:
+    def add_to_parser(cls, parser: ArgumentParser | _ArgumentGroup, prefix: str = ""):
         "Add this model's fields to an argument parser, with dot-notation for nested models"
         for field_name, field_info in cls.model_fields.items():
             arg_name = f"--{field_name}" if not prefix else f"--{prefix}.{field_name}"
-
             annotation = field_info.annotation
             help_text = field_info.description or ""
             default = field_info.default
@@ -59,6 +58,30 @@ class NeedleModel(BaseModel):
             # Recurse into nested NeedleModel subclasses
             if isinstance(annotation, type) and issubclass(annotation, NeedleModel):
                 annotation.add_to_parser(parser, prefix=f"{field_name}" if not prefix else f"{prefix}.{field_name}")
+                continue
+
+            # Handle list types e.g. list[Path], list[str]
+            origin = get_origin(annotation)
+            if origin is list:
+                inner_type = get_args(annotation)[0]
+                parser.add_argument(
+                    arg_name,
+                    type=inner_type,
+                    action="append",
+                    default=[],
+                    help=f"{help_text} (default: {default})",
+                )
+                continue
+
+            if origin is dict:
+                parser.add_argument(
+                    arg_name,
+                    type=lambda s: s.split("=", 1),
+                    action="append",
+                    default=[],
+                    metavar="KEY=VALUE",
+                    help=f"{help_text} (default: {default})",
+                )
                 continue
 
             if annotation is bool:
@@ -76,7 +99,6 @@ class NeedleModel(BaseModel):
                     default=default,
                     help=f"{help_text} (default: {default})",
                 )
-
         return parser
 
     @classmethod
@@ -105,3 +127,39 @@ class NeedleModel(BaseModel):
                     kwargs[field_name] = flat[field_name]
 
         return cls(**kwargs)
+
+
+class ApptainerConfig(NeedleModel):
+    """A model describing an apptainer container and how it should be used for execution"""
+
+    image: Path
+    "Path to the apptainer image (.sif file)"
+    binds: Optional[list[Path]] = None
+    "Host paths to bind mount into the container"
+    env: Optional[dict[str, str]] = None
+    "Environment variables to set inside the container"
+    writable: bool = False
+    "Mount the container as writable (--writable)"
+
+    @field_validator("image")
+    @classmethod
+    def _valid_image(cls, v: Path) -> Path:
+        if not v.exists():
+            raise ValueError(f"Container image not found: {v}")
+        if v.suffix != ".sif":
+            raise ValueError(f"Expected a .sif file, got: {v.suffix}")
+        return v
+
+    def to_apptainer_args(self) -> list[str]:
+        """Converts the config to apptainer exec arguments"""
+        args = ["apptainer", "exec"]
+        if self.writable:
+            args.append("--writable")
+        if self.binds:
+            for b in self.binds:
+                args += ["--bind", str(b)]
+        if self.env:
+            for k, v in self.env.items():
+                args += ["--env", f"{k}={v}"]
+        args.append(str(self.image))
+        return args

@@ -9,15 +9,17 @@ dependencies = [
     "astropy>=7.2.0",
     "casatasks>=6.7.3.21",
     "casatools>=6.7.3.21",
+    "dask-jobqueue>=0.9.0",
     "pandas>=3.0.1", # TODO: Check if this is necessary
     "prefect>=3.0.0",
+    "prefect-dask>=0.3.6",
     "prefect-docker>=0.7.1",
     "pydantic>=2.12.5",
 ]
 
 [project.scripts]
 needle-inspect-ms = "needle.modules.inspect_ms:main"
-needle-convert-to-ms = "needle.modules.convert_to_ms:main"
+needle-convert= "needle.modules.convert:main"
 needle-flag = "needle.modules.flag:main"
 needle-calibrate= "needle.modules.calibrate:main"
 needle-clean= "needle.modules.clean:main"
