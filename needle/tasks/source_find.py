@@ -3,7 +3,7 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.pipeline import ApptainerConfig
+from needle.config.pipeline import ContainerConfig
 from needle.lib.aegean import AegeanSourceList
 from needle.lib.logging import setup_logging
 from needle.lib.flow import CACHE_EXPIRATION, CACHE_STRATEGY
@@ -13,7 +13,7 @@ from needle.config.source_find import SourceFindConfig
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
 def source_find_task(
-    fits_path: Path, cfg: SourceFindConfig, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO"
+    fits_path: Path, cfg: SourceFindConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> Path:
     """Find sources in fits images. Returns a path to a json of sources"""
     fn_inputs = locals().items()

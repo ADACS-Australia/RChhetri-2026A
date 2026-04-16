@@ -12,7 +12,7 @@ from pydantic import field_validator
 
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms, validate_path_fits
-from needle.config.base import ApptainerConfig, NeedleModel
+from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.clean import WSCleanConfig, ShallowCleanConfig, DeepCleanConfig, ModelSubtractCleanConfig
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -174,12 +174,12 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
     return ctx.output
 
 
-def _build_runtime(args: Namespace) -> ApptainerConfig | None:
-    """Constructs an Apptainerconfig from parsed args, or None if no image was provided"""
+def _build_runtime(args: Namespace) -> ContainerConfig | None:
+    """Constructs an container config from parsed args, or None if no image was provided"""
     if not args.image:
         return None
     env = dict(item.split("=", 1) for item in args.env) if args.env else None
-    return ApptainerConfig(image=args.image, binds=args.binds, env=env)
+    return ContainerConfig(image=args.image, binds=args.binds, env=env)
 
 
 def _parse(parser: ArgumentParser) -> Namespace:
@@ -190,7 +190,7 @@ def _parse(parser: ArgumentParser) -> Namespace:
     )
 
     container_group = parser.add_argument_group("Container Arguments")
-    ApptainerConfig.add_to_parser(container_group)
+    ContainerConfig.add_to_parser(container_group)
 
     parser.add_argument(
         "--log_level",

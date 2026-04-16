@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import field_validator
 
-from needle.config.base import ApptainerConfig
+from needle.config.base import ContainerConfig
 from needle.config.flag import FlagConfig, FlagStepConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
@@ -85,7 +85,7 @@ def main():
     )
 
     container_group = parser.add_argument_group(title="Container Arguments")
-    ApptainerConfig.add_to_parser(container_group)
+    ContainerConfig.add_to_parser(container_group)
 
     required = parser.add_argument_group(title="Required Arguments")
     required.add_argument("--ms", type=Path, required=True, help="The path to the measurement set")
@@ -95,7 +95,7 @@ def main():
     runtime = None
     if args.image:
         env = dict(item.split("=", 1) for item in args.env) if args.env else None
-        runtime = ApptainerConfig(image=args.image, binds=args.binds, env=env, writable=args.writable)
+        runtime = ContainerConfig(image=args.image, binds=args.binds, env=env, writable=args.writable)
 
     ctx = FlagContext(cfg=FlagConfig.from_namespace(args), ms=args.ms, runtime=runtime)
     flag_observation(ctx)

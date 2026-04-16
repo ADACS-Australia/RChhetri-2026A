@@ -4,7 +4,7 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.pipeline import ApptainerConfig
+from needle.config.pipeline import ContainerConfig
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
@@ -17,7 +17,7 @@ def interval_clean_task(
     ms: Path,
     cfg: WSCleanConfig,
     mask: Optional[Path],
-    runtime: Optional[ApptainerConfig] = None,
+    runtime: Optional[ContainerConfig] = None,
     log_level: str = "INFO",
 ) -> list[Path]:
     """Cleans on each interval in a measurement set. Keeps the -image.fits but removes everything else."""
@@ -54,7 +54,7 @@ def clean_task(
     ms: Path,
     cfg: WSCleanConfig,
     mask: Optional[Path] = None,
-    runtime: Optional[ApptainerConfig] = None,
+    runtime: Optional[ContainerConfig] = None,
     log_level: str = "INFO",
 ) -> Path:
     """Perform a clean on a measurement set with an optional mask input. Return the fits image path"""
@@ -75,7 +75,7 @@ def clean_task(
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
 def predict_task(
-    ms: Path, cfg: WSCleanConfig, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO"
+    ms: Path, cfg: WSCleanConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.

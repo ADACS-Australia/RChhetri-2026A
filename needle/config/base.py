@@ -2,7 +2,7 @@ from argparse import ArgumentParser, Namespace, _ArgumentGroup
 from enum import Enum
 from pathlib import Path
 import types
-from typing import Optional, Union, get_args, get_origin
+from typing import Literal, Optional, Union, get_args, get_origin
 import yaml
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -129,17 +129,17 @@ class NeedleModel(BaseModel):
         return cls(**kwargs)
 
 
-class ApptainerConfig(NeedleModel):
-    """A model describing an apptainer container and how it should be used for execution"""
-
+class ContainerConfig(NeedleModel):
     image: Path
-    "Path to the apptainer image (.sif file)"
+    "Path to the image (.sif) file"
     binds: Optional[list[Path]] = None
     "Host paths to bind mount into the container"
     env: Optional[dict[str, str]] = None
     "Environment variables to set inside the container"
     writable: bool = False
     "Mount the container as writable (--writable)"
+    type: Literal["apptainer", "singularity"] = "apptainer"
+    "The container executor"
 
     @field_validator("image")
     @classmethod
@@ -150,9 +150,9 @@ class ApptainerConfig(NeedleModel):
             raise ValueError(f"Expected a .sif file, got: {v.suffix}")
         return v
 
-    def to_apptainer_args(self) -> list[str]:
-        """Converts the config to apptainer exec arguments"""
-        args = ["apptainer", "exec"]
+    def to_args(self) -> list[str]:
+        """Converts the config to apptainer/singularity exec arguments"""
+        args = [self.type, "exec"]
         if self.writable:
             args.append("--writable")
         if self.binds:

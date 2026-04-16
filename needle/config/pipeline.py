@@ -6,7 +6,7 @@ import yaml
 
 from pydantic import ValidationError, model_validator, field_validator
 
-from needle.config.base import ApptainerConfig, NeedleModel
+from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.flag import FlagConfig
@@ -86,7 +86,10 @@ class PipelineFlowConfig(NeedleModel):
     max_workers: Optional[int] = None
     "Maximum number of worker processes for concurrent task execution"
 
-    runtime: Optional[ApptainerConfig] = None
+    prefect_api_url: str = "http://localhost:4200/api"
+    "The api url of the prefect server"
+
+    runtime: Optional[ContainerConfig] = None
     "Runtime information. An optional ContainerConfig. None is interpreted as the local runtime."
     # TODO: Implement this in the flow
 

@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from needle.config.base import ApptainerConfig
+from needle.config.base import ContainerConfig
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -87,13 +87,13 @@ def main():
     )
 
     container_group = parser.add_argument_group(title="Container Arguments")
-    ApptainerConfig.add_to_parser(container_group)
+    ContainerConfig.add_to_parser(container_group)
 
     args = parser.parse_args()
     runtime = None
     if args.image:
         env = dict(item.split("=", 1) for item in args.env) if args.env else None
-        runtime = ApptainerConfig(image=args.image, binds=args.binds, env=env)
+        runtime = ContainerConfig(image=args.image, binds=args.binds, env=env)
 
     ctx = ConvertContext(runtime=runtime, input=args.input, output_dir=args.output_dir)
     convert_to_ms(ctx)

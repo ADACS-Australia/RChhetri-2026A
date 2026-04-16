@@ -3,7 +3,7 @@ import subprocess
 
 from pydantic import model_validator
 
-from needle.config.base import NeedleModel, ApptainerConfig
+from needle.config.base import NeedleModel, ContainerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,9 @@ class SubprocessExecContext(NeedleContext):
     """The context to pass to a module. Contains everything needed to execute a piece of work
 
     This class caters to the use-case of running one or more subprocesses in serial.
-    The runtime may optionally be set to an ApptainerConfig class"""
+    The runtime may optionally be set to an ContainerConfig class"""
 
-    runtime: ApptainerConfig | None = None
+    runtime: ContainerConfig | None = None
     "Runtime information. An optional ContainerConfig. None is interpreted as the local runtime."
 
     @property
@@ -36,7 +36,7 @@ class SubprocessExecContext(NeedleContext):
         """Prepends runtime args to each command if runtime is set"""
         if self.runtime:
             # It is important not to prepend to an empty command
-            return [self.runtime.to_apptainer_args() + c for c in self.cmd if c]
+            return [self.runtime.to_args() + c for c in self.cmd if c]
         return self.cmd
 
     @model_validator(mode="after")

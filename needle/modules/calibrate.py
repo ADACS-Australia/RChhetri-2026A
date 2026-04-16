@@ -10,7 +10,7 @@ import shutil
 
 from pydantic import field_validator
 
-from needle.config.base import ApptainerConfig
+from needle.config.base import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
@@ -143,7 +143,7 @@ def main():
     )
 
     container_group = parser.add_argument_group(title="Container Arguments")
-    ApptainerConfig.add_to_parser(container_group)
+    ContainerConfig.add_to_parser(container_group)
     parser.add_argument(
         "--log_level",
         type=str,
@@ -161,7 +161,7 @@ def main():
     runtime = None
     if args.image:
         env = dict(item.split("=", 1) for item in args.env) if args.env else None
-        runtime = ApptainerConfig(image=args.image, binds=args.binds, env=env, writable=args.writable)
+        runtime = ContainerConfig(image=args.image, binds=args.binds, env=env, writable=args.writable)
 
     ctx = CalibrateContext(
         cfg=CalibrateConfig.from_namespace(args),

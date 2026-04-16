@@ -3,7 +3,7 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.pipeline import ApptainerConfig
+from needle.config.pipeline import ContainerConfig
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.flag import FlagConfig
@@ -12,7 +12,7 @@ from needle.modules.flag import flag_observation, FlagContext
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
-def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO") -> Path:
+def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO") -> Path:
     """Flags a measurement set. Returns the same measurement set"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
@@ -30,7 +30,7 @@ def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ApptainerConfig] =
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
 def flag_ms_pair_task(
-    ms_pair: MSBeamPair, cfg: FlagConfig, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO"
+    ms_pair: MSBeamPair, cfg: FlagConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> MSBeamPair:
     """Flags a pair of measurement sets. Returns the same measurement set pair"""
     fn_inputs = locals().items()

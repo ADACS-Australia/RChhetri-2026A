@@ -1,22 +1,38 @@
+import os
 import argparse
 from pathlib import Path
-
+from typing import Literal, Optional
 import yaml
+
 from dask_jobqueue import SLURMCluster
 from prefect_dask import DaskTaskRunner
+from pydantic import BaseModel
 
 from needle.flows.pipeline import needle_pipeline
 from needle.lib.flow import CONTAINER_DATA_DIR
 from needle.config.pipeline import PipelineConfig
 
 
-def load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
+class Env(BaseModel):
+    """Helper for environment variables to pass to set for flow runtime"""
+
+    PREFECT_LOCAL_STORAGE_PATH: Optional[str] = None
+    PREFECT_LOGGING_EXTRA_LOGGERS: str = "needle"
+    PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "true"
+    PREFECT_API_URL: str = "http://localhost:4200/api"
+
+
+def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     """
     Parse a cluster.yaml file into a DaskTaskRunner backed by a SLURMCluster.
 
     Keys min_workers and max_workers control adaptive scaling and are not
     passed to SLURMCluster directly — all other keys are forwarded as-is.
     """
+    if not cluster_cfg_path.exists():
+        raise FileNotFoundError(f"Cluster config not found: {cluster_cfg_path}")
+
     with open(cluster_cfg_path) as f:
         cfg = yaml.safe_load(f)
 
@@ -36,7 +52,7 @@ def load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     )
 
 
-def load_slurm_deploy_kwargs(cfg: PipelineConfig) -> dict:
+def _load_slurm_deploy_kwargs(cfg: PipelineConfig) -> dict:
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool-slurm",
@@ -46,12 +62,17 @@ def load_slurm_deploy_kwargs(cfg: PipelineConfig) -> dict:
     )
 
 
-def load_local_task_runner(max_workers: int) -> DaskTaskRunner:
+def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
     """Original local Dask cluster task runner (Docker mode)."""
     return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
 
 
-def load_local_deploy_kwargs(cfg: PipelineConfig) -> dict:
+def _load_local_deploy_kwargs(cfg: PipelineConfig) -> dict:
+    env = Env(
+        PREFECT_LOCAL_STORAGE_PATH=f"{CONTAINER_DATA_DIR}/prefect_cache",
+        PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=cfg.flow.log_level,
+        PREFECT_API_URL=cfg.flow.prefect_api_url,
+    )
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool",
@@ -64,12 +85,7 @@ def load_local_deploy_kwargs(cfg: PipelineConfig) -> dict:
             "image_pull_policy": "Never",
             "auto_remove": False,
             "networks": ["needle-network"],
-            "env": {
-                "PREFECT_LOGGING_EXTRA_LOGGERS": "needle",
-                "PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL": cfg.flow.log_level,
-                "PREFECT_RESULTS_PERSIST_BY_DEFAULT": "true",
-                "PREFECT_LOCAL_STORAGE_PATH": f"{CONTAINER_DATA_DIR}/prefect-cache",
-            },
+            "env": env.model_dump(),
             "container_create_kwargs": {"shm_size": cfg.flow.shm_size},
         },
         parameters={"cfg": cfg.model_dump()},
@@ -78,13 +94,15 @@ def load_local_deploy_kwargs(cfg: PipelineConfig) -> dict:
     )
 
 
-def main():
+def _parse_pipeline() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--cfg-file",
         "--cfg_file",
         dest="cfg_file",
         default="needle.yaml",
+        help="The location of the pipeline config file. used to configure all aspects of the pipeline",
+        required=True,
     )
     parser.add_argument(
         "--cluster-cfg",
@@ -92,38 +110,49 @@ def main():
         dest="cluster_cfg",
         default=None,
         help=(
-            "Path to a cluster.yaml file. When provided, tasks run on a "
-            "SLURM cluster via dask-jobqueue. When omitted, the original "
-            "local Docker Dask cluster is used."
+            "Path to a cluster.yaml file. When provided, tasks run on a SLURM cluster via dask-jobqueue."
+            "When omitted, a local Dask cluster is created and used."
         ),
+        required=False,
     )
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    if not args.cfg_file:
-        print("Missing required argument: --cfg-file")
-        raise SystemExit(1)
-    try:
-        cfg = PipelineConfig.from_yaml(Path(args.cfg_file))
-    except ValueError as e:
-        print(e)
-        raise SystemExit(1)
+
+def run():
+    """Run the pipeline locally, now"""
+    args = _parse_pipeline()
+    cfg = PipelineConfig.from_yaml(Path(args.cfg_file))
+
+    # Set environment in for local runtime
+    env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)
+    for k, v in env.model_dump():
+        os.environ[k] = v
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
-        if not cluster_cfg_path.exists():
-            print(f"Cluster config not found: {cluster_cfg_path}")
-            raise SystemExit(1)
-        task_runner = load_slurm_task_runner(cluster_cfg_path)
+        task_runner = _load_slurm_task_runner(cluster_cfg_path)
         print(f"Using SLURM task runner from {cluster_cfg_path}")
-        kwargs = load_slurm_deploy_kwargs(cfg)
     else:
-        task_runner = load_local_task_runner(cfg.flow.max_workers)
+        print("Using local environment for task runs")
+        task_runner = _load_local_task_runner(cfg.flow.max_workers)
+
+    needle_pipeline.with_options(task_runner=task_runner)(cfg=cfg)
+
+
+def deploy():
+    """Create a pipeline deployment using a container and a worker"""
+    args = _parse_pipeline()
+    cfg = PipelineConfig.from_yaml(Path(args.cfg_file))
+
+    if args.cluster_cfg:
+        cluster_cfg_path = Path(args.cluster_cfg)
+        task_runner = _load_slurm_task_runner(cluster_cfg_path)
+        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        kwargs = _load_slurm_deploy_kwargs(cfg)
+    else:
+        task_runner = _load_local_task_runner(cfg.flow.max_workers)
         print("Using local Dask task runner (Docker mode)")
-        kwargs = load_local_deploy_kwargs(cfg)
+        kwargs = _load_local_deploy_kwargs(cfg)
 
     print(f"Deploy kwargs: {kwargs}")
     needle_pipeline.with_options(task_runner=task_runner).deploy(**kwargs)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,7 +1,7 @@
 from prefect import task
 from typing import Optional
 
-from needle.config.pipeline import ApptainerConfig
+from needle.config.pipeline import ContainerConfig
 from needle.config.pipeline import BeamPair, MSBeamPair
 from needle.modules.convert import convert_to_ms, ConvertContext
 from needle.lib.logging import setup_logging
@@ -9,7 +9,7 @@ from needle.lib.logging import setup_logging
 
 @task()
 def convert_beam_pair_task(
-    pair: BeamPair, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO"
+    pair: BeamPair, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> MSBeamPair:
     """Convert a raw beam pair to measurement sets.
     Uses existing .ms files if already present, otherwise converts.
