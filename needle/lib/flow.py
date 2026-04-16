@@ -7,7 +7,6 @@ from prefect.cache_policies import TASK_SOURCE, CacheKeyFnPolicy
 
 
 CONTAINER_DATA_DIR = Path("/data")
-BEAMS_DIR = CONTAINER_DATA_DIR / "beams"
 
 
 def _pydantic_cache_key(_, arguments) -> str:
@@ -29,8 +28,3 @@ def _pydantic_cache_key(_, arguments) -> str:
 PYDANTIC_MODEL_CACHE = CacheKeyFnPolicy(cache_key_fn=_pydantic_cache_key)
 CACHE_STRATEGY = PYDANTIC_MODEL_CACHE + TASK_SOURCE
 CACHE_EXPIRATION = timedelta(days=1)
-
-
-def to_container_path(host_path: Path, data_dir: Path) -> Path:
-    """Remap a host path to its equivalent inside the container."""
-    return CONTAINER_DATA_DIR / host_path.relative_to(data_dir)

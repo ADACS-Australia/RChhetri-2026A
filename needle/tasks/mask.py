@@ -9,7 +9,12 @@ from needle.lib.logging import setup_logging
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
-def create_mask_task(sources_json: Path, fits_image: Path, cfg: CreateMaskConfig, log_level: str = "INFO") -> Path:
+def create_mask_task(
+    sources_json: Path,
+    fits_image: Path,
+    cfg: CreateMaskConfig,
+    log_level: str = "INFO",
+) -> Path:
     """Creates a fits mask using a fits image as reference. Returns the path to the mask."""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)

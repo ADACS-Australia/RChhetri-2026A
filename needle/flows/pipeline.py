@@ -3,7 +3,6 @@ import os
 from prefect import Flow, flow, unmapped
 from prefect_dask import DaskTaskRunner
 
-from needle.lib.flow import BEAMS_DIR
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import PipelineConfig
 from needle.tasks.calibrate import calibrate_pair_task
@@ -22,32 +21,46 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
 
-    os.makedirs(BEAMS_DIR, exist_ok=True)  # Must be done in serial
+    os.makedirs(cfg.flow.beams_dir, exist_ok=True)  # Must be done in serial
 
     # Convert pairs to measurement sets and set up working directories
-    ms_pairs_futures = convert_beam_pair_task.map(cfg.flow.beam_pairs, log_level=unmapped(cfg.flow.log_level))
+    ms_pairs_futures = convert_beam_pair_task.map(
+        cfg.flow.beam_pairs, runtime=unmapped(cfg.flow.runtime), log_level=unmapped(cfg.flow.log_level)
+    )
 
     # Inspect the data - not used but nice to have
     inspect_futures = inspect_pair_task.map(ms_pairs_futures, log_level=unmapped(cfg.flow.log_level))
 
     # Flag the data
     flag_pair_futures = flag_ms_pair_task.map(
-        ms_pairs_futures, cfg=unmapped(cfg.flag), log_level=unmapped(cfg.flow.log_level)
+        ms_pairs_futures,
+        cfg=unmapped(cfg.flag),
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     # Calibrate - returns calibrated target ms
     tgt_futures = calibrate_pair_task.map(
-        flag_pair_futures, cfg=unmapped(cfg.calibrate), log_level=unmapped(cfg.flow.log_level)
+        flag_pair_futures,
+        cfg=unmapped(cfg.calibrate),
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     # Shallow Clean
     shallow_image_futures = clean_task.with_options(name="shallow_clean").map(
-        tgt_futures, cfg=unmapped(cfg.shallow_clean), log_level=unmapped(cfg.flow.log_level)
+        tgt_futures,
+        cfg=unmapped(cfg.shallow_clean),
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     # Source find on the shallow-cleaned image
     json_sources = source_find_task.map(
-        shallow_image_futures, cfg=unmapped(cfg.source_find), log_level=unmapped(cfg.flow.log_level)
+        shallow_image_futures,
+        cfg=unmapped(cfg.source_find),
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     # Create masks over the sources in preparation for deep cleaning
@@ -60,14 +73,21 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
 
     # Deep Clean
     deep_image_futures = clean_task.with_options(name="deep_clean").map(
-        tgt_futures, cfg=unmapped(cfg.deep_clean), mask=mask_output_futures, log_level=unmapped(cfg.flow.log_level)
+        tgt_futures,
+        cfg=unmapped(cfg.deep_clean),
+        mask=mask_output_futures,
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
     # Wait for deep clean
     [f.result() for f in deep_image_futures]
 
     # Create Model - updates the ms in place with the MODEL_DATA columnn
     model_creation_futures = predict_task.map(
-        tgt_futures, cfg=unmapped(cfg.deep_clean), log_level=unmapped(cfg.flow.log_level)
+        tgt_futures,
+        cfg=unmapped(cfg.deep_clean),
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
     )
 
     # Model subtract - removes the MODEL_DATA from the DATA visibilities
@@ -75,6 +95,7 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         model_creation_futures,
         cfg=unmapped(cfg.model_subtract),
         mask=mask_output_futures,
+        runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
     )
 
@@ -84,6 +105,7 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         tgt_futures,
         cfg=unmapped(cfg.interval_clean),
         mask=mask_output_futures,
+        runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
     )
 

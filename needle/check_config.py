@@ -19,7 +19,7 @@ def check_config(path):
     print("--- Summary ---")
     print(f"  flow.log_level:    {cfg.flow.log_level}")
     print(f"  flow.max_workers:  {cfg.flow.max_workers}")
-    print(f"  flow.local_data_dir: {cfg.flow.local_data_dir}")
+    print(f"  flow.data_dir: {cfg.flow.data_dir}")
     print(f"  flow.tgt_pattern:  {cfg.flow.tgt_pattern}")
     print(f"  flow.cal_pattern:  {cfg.flow.cal_pattern}")
     print(f"  flow.overwrite:    {cfg.flow.overwrite}")

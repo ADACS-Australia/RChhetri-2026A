@@ -4,6 +4,7 @@ from typing import Optional
 
 from prefect import task
 
+from needle.config.pipeline import ApptainerConfig
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
@@ -12,7 +13,13 @@ from needle.modules.inspect_ms import inspect_ms
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
-def interval_clean_task(ms: Path, cfg: WSCleanConfig, mask: Optional[Path], log_level: str = "INFO") -> list[Path]:
+def interval_clean_task(
+    ms: Path,
+    cfg: WSCleanConfig,
+    mask: Optional[Path],
+    runtime: Optional[ApptainerConfig] = None,
+    log_level: str = "INFO",
+) -> list[Path]:
     """Cleans on each interval in a measurement set. Keeps the -image.fits but removes everything else."""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
@@ -29,7 +36,9 @@ def interval_clean_task(ms: Path, cfg: WSCleanConfig, mask: Optional[Path], log_
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Creating a series of images over {info.time.n_integrations} integrations")
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, intervals_out=intervals, output_dir=output_dir)
+    ctx = WSCleanContext(
+        runtime=runtime, cfg=cfg, ms=ms, fits_mask=mask, intervals_out=intervals, output_dir=output_dir
+    )
     wsclean_output = run_clean(ctx)
 
     if not wsclean_output.image:
@@ -41,13 +50,19 @@ def interval_clean_task(ms: Path, cfg: WSCleanConfig, mask: Optional[Path], log_
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
-def clean_task(ms: Path, cfg: WSCleanConfig, mask: Optional[Path] = None, log_level: str = "INFO") -> Path:
+def clean_task(
+    ms: Path,
+    cfg: WSCleanConfig,
+    mask: Optional[Path] = None,
+    runtime: Optional[ApptainerConfig] = None,
+    log_level: str = "INFO",
+) -> Path:
     """Perform a clean on a measurement set with an optional mask input. Return the fits image path"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
+    ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, fits_mask=mask)
     wsclean_output = run_clean(ctx)
 
     if len(wsclean_output.image) > 1:
@@ -59,7 +74,9 @@ def clean_task(ms: Path, cfg: WSCleanConfig, mask: Optional[Path] = None, log_le
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
-def predict_task(ms: Path, cfg: WSCleanConfig, log_level: str = "INFO") -> Path:
+def predict_task(
+    ms: Path, cfg: WSCleanConfig, runtime: Optional[ApptainerConfig] = None, log_level: str = "INFO"
+) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
     Mostly the same as clean_task but checks for MODEL_DATA and doesn't return the wsclean output."""
@@ -67,7 +84,7 @@ def predict_task(ms: Path, cfg: WSCleanConfig, log_level: str = "INFO") -> Path:
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
+    ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, predict=True)
     if not len(ctx.output.model) == 1:
         raise RuntimeError(f"Found more than one model for config with prefix: {ctx.name}")
     if not ctx.output.model[0].exists():

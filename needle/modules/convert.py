@@ -34,7 +34,7 @@ class ConvertContext(SubprocessExecContext):
         """
         match self.input.suffix:
             case ".uvfits":
-                expr = f"from casatasks import importuvfits; importuvfits(fitsfile='{self.input}', vis='{self.output})"
+                expr = f"from casatasks import importuvfits; importuvfits(fitsfile='{self.input}', vis='{self.output}')"
             case ".mir":
                 expr = f"from casatasks import importuvfits; importmiriad(mirfile='{self.input}', vis='{self.output}')"
             case ".ms":
