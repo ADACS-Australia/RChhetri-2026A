@@ -20,7 +20,7 @@ OPTIONS
     -h, --help     Show this help screen and exit
 
 DESCRIPTION
-    A helper script to set up the config files for Needle.
+    A helper script to set up Needle config files
     Validates that the supplied config paths exist on disk, then creates
     symlinks in the following locations:
         needle_cfg  -> ~/.needle.yaml
@@ -49,11 +49,9 @@ link_config() {
     local name="$2"
     local dest="$3"
 
-    # Source must exist
-    [[ -e "$src" ]] || error "$name path does not exist: $src"
-
-    # Source should be an absolute path
-    [[ "$src" == /* ]] || error "$name path must be absolute: $src"
+    # Resolve to absolute path (handles relative paths, .., etc.)
+    src="$(realpath -e "$src" 2>/dev/null)" ||
+        error "$name path does not exist: $1"
 
     # Create destination directory if it doesn't exist
     local destdir
