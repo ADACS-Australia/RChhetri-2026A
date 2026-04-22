@@ -3,10 +3,11 @@
 try:
     import os
     from pathlib import Path
+    import pwd
     import time
     import yaml  # Not native - make sure this is installed
 
-    _USER = os.getlogin()
+    _USER = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
     ## Get needle configuration - required for casa measures output
     _NEEDLE_CONFIG = Path(f"/home/{_USER}/.needle.yaml")
 
@@ -37,5 +38,8 @@ try:
         if not os.path.exists(p):
             os.mkdir(p)
 except Exception as e:
-    print(f"Error loading casa config file: {e}")
+    print("----------------------------------------------")
+    print(f"ERROR loading casa config file: {e}")
+    print("CASA will attempt to use default settings...")
+    print("----------------------------------------------")
     raise (e)

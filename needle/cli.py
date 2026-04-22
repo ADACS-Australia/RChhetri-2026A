@@ -122,7 +122,8 @@ def run():
     # Set environment in for local runtime
     env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)
     for k, v in env.model_dump().items():
-        os.environ[k] = v
+        if v is not None:
+            os.environ[k] = v
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
