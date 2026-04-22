@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from needle.flows.pipeline import needle_pipeline
 from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.config import get_config
 from needle.config.pipeline import PipelineConfig
 
 
@@ -116,10 +117,7 @@ def run():
     """Run the pipeline locally, now"""
     args = _parse_pipeline()
     # cfg_path cannot be overridden. It must be static since CASA's config.py relies on it for configuration.
-    cfg_path = Path("~/.needle.yaml")
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
-    cfg = PipelineConfig.from_yaml(cfg_path)
+    cfg = get_config()
 
     # Set environment in for local runtime
     env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)
@@ -140,7 +138,7 @@ def run():
 def deploy():
     """Create a pipeline deployment using a container and a worker"""
     args = _parse_pipeline()
-    cfg = PipelineConfig.from_yaml(Path(args.cfg_file))
+    cfg = get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
