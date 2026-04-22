@@ -32,7 +32,7 @@ def interval_clean_task(
     intervals = info.time.n_integrations
 
     # Ouptut the fits files to here
-    output_dir = Path(f"{ms.with_suffix("")}_interval")
+    output_dir = Path(f"{ms.with_suffix('')}_interval")
     os.makedirs(output_dir, exist_ok=True)
     logger.info(f"Creating a series of images over {info.time.n_integrations} integrations")
 

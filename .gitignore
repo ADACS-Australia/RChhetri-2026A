@@ -13,3 +13,4 @@ needle.yaml
 *__pycache__*
 .ruff_cache/
 *.sif
+.env

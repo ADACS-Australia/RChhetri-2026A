@@ -1,25 +1,42 @@
-# --- CASA Configuration for High-Performance Computing (HPC) ---
+# https://casadocs.readthedocs.io/en/v6.4.0/api/configuration.html
+import os
+from pathlib import Path
+import time
+import yaml  # Not native - make sure this is installed
 
-# In a cluster, point this to a shared, read-only location to save space.
-# measurespath = "/shared/reference/casadata"
-CASA_HOME = "~/.casa"
+_USER = os.getlogin()
+_CLUSTER_CONFIG = Path(f"/home/{_USER}/.needle_cluster.yaml")
+if not _CLUSTER_CONFIG.exists():
+    raise FileNotFoundError(f"Expected file does not exist: {_CLUSTER_CONFIG}")
+_NEEDLE_CONFIG = Path(f"/home/{_USER}/.needle.yaml")
+if not _NEEDLE_CONFIG.exists():
+    raise FileNotFoundError(f"Expected file does not exist: {_NEEDLE_CONFIG}")
 
-# Disable the GUI logger (which fails in headless environments)
+## Get cluster information - required for log output
+with open(_CLUSTER_CONFIG, "r") as f:
+    _CFG = yaml.load(f)
+try:
+    logs_dir = _CFG["log_directory"]
+except KeyError:
+    raise KeyError(f"Provided file {_CLUSTER_CONFIG} does not have expected field: 'log_directory'")
+
+## Get needle configuration - required for casa measures output
+with open(_NEEDLE_CONFIG, "r") as f:
+    _CFG = yaml.load(f)
+try:
+    data_dir = _CFG["data_dir"]
+except KeyError:
+    raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data_dir'")
+
+## CASA Configuration for Needle ##
+logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
+rundata = f"{data_dir}/.casa"
+nologfile = False
+log2term = True  # Print the log output directly to the terminal (so it shows up in SLURM .log)
 nologger = True
-# Print the log output directly to the terminal (so it shows up in SLURM .log)
-log2term = True
-# Define a standard naming convention for the log file
-logfile = f"{CASA_HOME}/.casa/logs/casa_runtime.log"
-
+nogui = True
 pipeline = True
-# Turn off automatic updating
-# measures_auto_update = False
-# data_auto_update = False
 
-
-# Disable telemetry to prevent nodes from trying to "call home" via internet
-# telemetry_enabled = False
-# crashreporter_enabled = False
-
-# Set a temporary directory for large scratch files (use fast local SSD if available)
-# ipython_dir = '/tmp/casa_work'
+# CASA wants this to already exist before doing anything
+if not os.path.exists(rundata):
+    os.mkdir(rundata)

@@ -57,23 +57,27 @@ To do so, it expects a config file at `${HOME}/needle.yaml`. See below for an ex
 
 The webserver will be made available at [http://localhost:4200](http://localhost:4200)
 
-## Config
+## Needle Config
 
 The pipeline modules are all configurable via a single config file. Here is an example:
 
 ```yaml
 flow:
-  tgt_pattern: 'SB047529_beam(?P<beam>\d+)\.ms'
-  cal_pattern: 'cal_beam(?P<beam>\d+)\.ms'
-  local_data_dir: /home/user/needle_data
+  tgt_pattern: 'SB047529_beam(?P<beam>\d+)\.uvfits'
+  cal_pattern: 'cal_beam(?P<beam>\d+)\.uvfits'
+  data_dir: /scratch/pawsey0008/ksmith1/needle_data
   overwrite: True
   max_workers: 2
   log_level: DEBUG
+  runtime:
+    image: /software/projects/pawsey0008/ksmith1/needle.sif
+    type: singularity
 
 flag:
   quack:
-    interval: 10.0
-  tfcrop: {}
+    enabled: True
+  tfcrop:
+    enabled: True
 
 calibrate:
   setjy: {}
@@ -86,5 +90,30 @@ shallow_clean: {}
 source_find: {}
 create_mask: {}
 deep_clean: {}
+model_subtract: {}
 interval_clean: {}
+```
+
+## Cluster Config
+
+If using a SLURM cluster, an additional config file is required. Eg:
+
+```yaml
+account: "pawsey0008"
+queue: "work"
+cores: 2
+memory: "8GB"
+processes: 1
+walltime: "02:00:00"
+
+min_workers: 1
+max_workers: 8
+
+local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
+log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+
+job_script_prologue:
+  - "module load singularity/4.1.0-slurm"
+
+job_extra_directives: []
 ```

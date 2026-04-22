@@ -1,0 +1,104 @@
+# =============================================================================
+# docker-compose.prefect.yml — Prefect stack (local machine)
+# =============================================================================
+# The Slurm cluster runs on a REMOTE machine (docker-compose.slurm.yml).
+# Communication happens via an SSH tunnel — see tunnel.sh.
+#
+# Startup order:
+#   1. On remote: docker compose -f docker-compose.slurm.yml up -d
+#   2. On local:  ./tunnel.sh          (keep running in a terminal)
+#   3. On local:  docker compose -f docker-compose.prefect.yml up -d
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:14
+    networks:
+      - needle-network
+    environment:
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: prefect
+      POSTGRES_DB: prefect
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    networks:
+      - needle-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    networks:
+      - needle-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@postgres:5432/prefect
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_SERVER_UI_API_URL: http://localhost:4200/api
+      PREFECT_MESSAGING_BROKER: prefect_redis.messaging
+      PREFECT_MESSAGING_CACHE: prefect_redis.messaging
+      PREFECT_REDIS_MESSAGING_HOST: redis
+      PREFECT_REDIS_MESSAGING_PORT: 6379
+      PREFECT_REDIS_MESSAGING_DB: 0
+    command: prefect server start
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request as u; u.urlopen('http://localhost:4200/api/health', timeout=1)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # needle-runner:
+  #   image: needle:latest # has needle installed, that's all that's needed
+  #   networks:
+  #     - needle-network
+  #   depends_on:
+  #     prefect-server:
+  #       condition: service_healthy
+  #   environment:
+  #     PREFECT_API_URL: http://prefect-server:4200/api
+  #     PREFECT_RESULTS_PERSIST_BY_DEFAULT: "true"
+  #   volumes:
+  #     - ${HOME}/needle_data:/data
+  #     - ${HOME}/needle.yaml:/opt/needle/needle.yaml
+  #     - ${HOME}/needle_cluster.yaml:/opt/needle/needle_cluster.yaml
+  #     - casa_data:/opt/needle/.casa/data
+  #   command: needle-serve --cfg-file /opt/needle/needle.yaml --cluster-cfg /opt/needle/needle_cluster.yaml
+  #   restart: on-failure
+
+volumes:
+  postgres_data:
+  redis_data:
+  casa_data:
+    external: true
+    name: casa_data
+
+networks:
+  needle-network:
+    driver: bridge
+    name: needle-network
