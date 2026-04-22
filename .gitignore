@@ -14,3 +14,4 @@ needle.yaml
 .ruff_cache/
 *.sif
 .env
+prefect.toml

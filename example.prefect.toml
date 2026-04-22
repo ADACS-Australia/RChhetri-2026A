@@ -1,0 +1,11 @@
+# https://docs.prefect.io/v3/api-ref/settings-ref
+[api]
+url = "http://localhost:4200/api"
+
+[logging]
+extra_loggers = "needle"
+loggers.needle.level = "INFO"
+
+[results]
+persist_by_default = true
+

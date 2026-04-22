@@ -1,12 +1,12 @@
 import os
 import argparse
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 import yaml
 
 from dask_jobqueue import SLURMCluster
 from prefect_dask import DaskTaskRunner
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from needle.flows.pipeline import needle_pipeline
 from needle.lib.flow import CONTAINER_DATA_DIR
@@ -17,11 +17,28 @@ from needle.config.pipeline import PipelineConfig
 class Env(BaseModel):
     """Helper for environment variables to pass to set for flow runtime"""
 
-    PREFECT_LOCAL_STORAGE_PATH: Optional[str] = None
     PREFECT_LOGGING_EXTRA_LOGGERS: str = "needle"
     PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "true"
+    # PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "true"
     PREFECT_API_URL: str = "http://localhost:4200/api"
+
+
+def _check_prefect_env_variables():
+    unset = []
+    for v in Env().model_dump().keys():
+        unset.append(v)
+    if unset:
+        raise EnvironmentError(f"Env varaibles {unset} are not set. Please add it to your environment")
+    try:
+        Env(
+            PREFECT_API_URL=os.environ["PREFECT_API_URL"],
+            PREFECT_LOGGING_EXTRA_LOGGERS=os.environ["PREFECT_LOGGING_EXTRA_LOGGERS"],
+            PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=os.environ["PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL"],
+            # PREFECT_RESULTS_PERSIST_BY_DEFAULT=os.environ["PREFECT_RESULTS_PERSIST_BY_DEFAULT"],
+        )
+    except ValidationError as e:
+        print("Invalid type given to Env model. Have you incorrectly set an environment variable?")
+        raise (e)
 
 
 def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
@@ -120,11 +137,12 @@ def run():
     cfg = get_config()
 
     # Set environment in for local runtime
-    env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)
-    for k, v in env.model_dump().items():
-        if v is not None:
-            os.environ[k] = v
+    # env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)
+    # for k, v in env.model_dump().items():
+    #     if v is not None:
+    #         os.environ[k] = v
 
+    _check_prefect_env_variables()
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
@@ -133,7 +151,10 @@ def run():
         print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
-    needle_pipeline.with_options(task_runner=task_runner)(cfg=cfg)
+    needle_pipeline.with_options(
+        task_runner=task_runner,
+        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=True),
+    )(cfg=cfg)
 
 
 def deploy():
