@@ -129,7 +129,7 @@ done
 link_config "$needle_cfg" "needle_cfg" "$HOME/.needle.yaml"
 
 if [[ -n "$cluster_cfg" ]]; then
-    link_config "$cluster_cfg" "cluster_cfg" "$HOME/.cluster.yaml"
+    link_config "$cluster_cfg" "cluster_cfg" "$HOME/.needle_cluster.yaml"
 fi
 
 link_config "$casa_cfg" "casa_cfg" "$HOME/.casa/config.py"

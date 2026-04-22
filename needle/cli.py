@@ -95,14 +95,8 @@ def _load_local_deploy_kwargs(cfg: PipelineConfig) -> dict:
 
 
 def _parse_pipeline() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--cfg-file",
-        "--cfg_file",
-        dest="cfg_file",
-        default="needle.yaml",
-        help="The location of the pipeline config file. used to configure all aspects of the pipeline",
-        required=True,
+    parser = argparse.ArgumentParser(
+        "Runs the Needle Pipeline. Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."
     )
     parser.add_argument(
         "--cluster-cfg",
@@ -121,7 +115,11 @@ def _parse_pipeline() -> argparse.Namespace:
 def run():
     """Run the pipeline locally, now"""
     args = _parse_pipeline()
-    cfg = PipelineConfig.from_yaml(Path(args.cfg_file))
+    # cfg_path cannot be overridden. It must be static since CASA's config.py relies on it for configuration.
+    cfg_path = Path("~/.needle.yaml")
+    if not cfg_path.exists():
+        raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
+    cfg = PipelineConfig.from_yaml(cfg_path)
 
     # Set environment in for local runtime
     env = Env(PREFECT_API_URL=cfg.flow.prefect_api_url, PREFECT_LOGGING_EXTRA_LOGGERS=cfg.flow.log_level)

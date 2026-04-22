@@ -1,42 +1,41 @@
 # https://casadocs.readthedocs.io/en/v6.4.0/api/configuration.html
-import os
-from pathlib import Path
-import time
-import yaml  # Not native - make sure this is installed
-
-_USER = os.getlogin()
-_CLUSTER_CONFIG = Path(f"/home/{_USER}/.needle_cluster.yaml")
-if not _CLUSTER_CONFIG.exists():
-    raise FileNotFoundError(f"Expected file does not exist: {_CLUSTER_CONFIG}")
-_NEEDLE_CONFIG = Path(f"/home/{_USER}/.needle.yaml")
-if not _NEEDLE_CONFIG.exists():
-    raise FileNotFoundError(f"Expected file does not exist: {_NEEDLE_CONFIG}")
-
-## Get cluster information - required for log output
-with open(_CLUSTER_CONFIG, "r") as f:
-    _CFG = yaml.load(f)
+# CASA will silence exception messages, so we print them explicitly when they occur
 try:
-    logs_dir = _CFG["log_directory"]
-except KeyError:
-    raise KeyError(f"Provided file {_CLUSTER_CONFIG} does not have expected field: 'log_directory'")
+    import os
+    from pathlib import Path
+    import time
+    import yaml  # Not native - make sure this is installed
 
-## Get needle configuration - required for casa measures output
-with open(_NEEDLE_CONFIG, "r") as f:
-    _CFG = yaml.load(f)
-try:
-    data_dir = _CFG["data_dir"]
-except KeyError:
-    raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data_dir'")
+    _USER = os.getlogin()
+    ## Get needle configuration - required for casa measures output
+    _NEEDLE_CONFIG = Path(f"/home/{_USER}/.needle.yaml")
 
-## CASA Configuration for Needle ##
-logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
-rundata = f"{data_dir}/.casa"
-nologfile = False
-log2term = True  # Print the log output directly to the terminal (so it shows up in SLURM .log)
-nologger = True
-nogui = True
-pipeline = True
+    if not _NEEDLE_CONFIG.exists():
+        raise FileNotFoundError(f"Expected file does not exist: {_NEEDLE_CONFIG}")
 
-# CASA wants this to already exist before doing anything
-if not os.path.exists(rundata):
-    os.mkdir(rundata)
+    with open(_NEEDLE_CONFIG, "r") as f:
+        _CFG = yaml.load(f, Loader=yaml.SafeLoader)
+
+    try:
+        data_dir = _CFG["flow"]["data_dir"]
+    except KeyError:
+        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'flow.data_dir'")
+    logs_dir = f"{data_dir}/logs"
+
+    ## CASA Configuration for Needle ##
+    logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
+    rundata = f"{data_dir}/.casa"
+    measurespath = f"{data_dir}/data"
+    nologfile = False
+    log2term = True  # Print the log output directly to the terminal (so it shows up in SLURM .log)
+    nologger = True
+    nogui = True
+    pipeline = True
+
+    # Create the working dirs if needed
+    for p in (rundata, measurespath, logs_dir):
+        if not os.path.exists(p):
+            os.mkdir(p)
+except Exception as e:
+    print(f"Error loading casa config file: {e}")
+    raise (e)
