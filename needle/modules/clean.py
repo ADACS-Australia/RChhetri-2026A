@@ -55,6 +55,7 @@ class WSCleanOutput(NeedleModel):
         :param interval_start: The absolute timestep at which this interval chunk begins.
         :returns: List of renamed image paths with absolute timestep indices.
         """
+        clean_prefix = str(self.prefix).rsplit("_", 2)[0]
         renamed = []
         for path in self.image:
             suffix = path.name[len(Path(self.prefix).name) :]
@@ -62,7 +63,7 @@ class WSCleanOutput(NeedleModel):
             if not (t_str.startswith("t") and t_str[1:].isdigit()):
                 raise ValueError(f"Expected WSClean interval token (e.g. 't0031') but got '{t_str}' in '{path.name}'")
             absolute_idx = interval_start + int(t_str[1:])
-            new_path = path.parent / f"{Path(self.prefix).name}-t{absolute_idx:04d}-{product}"
+            new_path = path.parent / f"{Path(clean_prefix).name}-t{absolute_idx:04d}-{product}"
             path.rename(new_path)
             renamed.append(new_path)
         return renamed

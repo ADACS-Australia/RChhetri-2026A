@@ -17,23 +17,21 @@ from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
 
 
-def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[Tuple[int, int]]:
+def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[tuple[int, int]]:
     ms_info = MSInspectResult.from_json(inspect_path)
     corrected_column = ms_info.data_columns.get("DATA")
     if not corrected_column:
         raise RuntimeError(f"Expected column 'DATA' is absent in measurement set: {inspect_path}")
     assert len(corrected_column) == 2, "DATA column should have length 2"
 
-    start, end = corrected_column[0], corrected_column[1]
-    total = end - start + 1
-    interval_size = total // n_intervals
+    total = corrected_column[1]
+    chunk_size = total // n_intervals
 
     intervals = []
     for i in range(n_intervals):
-        interval_start = start + i * interval_size
-        # Last interval absorbs any remainder from uneven division
-        interval_end = end if i == n_intervals - 1 else interval_start + interval_size - 1
-        intervals.append((interval_start, interval_end))
+        start = i * chunk_size
+        end = total if i == n_intervals - 1 else start + chunk_size
+        intervals.append((start, end))
 
     return intervals
 
