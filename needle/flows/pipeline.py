@@ -128,18 +128,17 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     # Compute intervals per MS and flatten everything for mapping
     # Each MS fans out into n_intervals tasks, so we replicate tgt/subtract futures accordingly
     all_tgt = []
-    all_subtracts = []
+    all_model_subtracts = []
     all_masks = []
     all_intervals = []
-
     for tgt, inspect, subtract, mask in zip(
         tgt_futures, calibrated_inspect_futures, model_subtract_futures, mask_output_futures
     ):
         inspect_path = inspect.result()  # resolve the path from the future
-        intervals = _split_ms_into_intervals(inspect_path, n_intervals=cfg.interval_clean.n_intervals)
+        intervals = _split_ms_into_intervals(inspect_path, n_intervals=cfg.flow.interval_tasks)
         for interval in intervals:
             all_tgt.append(tgt)
-            all_subtracts.append(subtract)
+            all_model_subtracts.append(subtract)
             all_masks.append(mask)
             all_intervals.append(interval)
 
@@ -151,7 +150,7 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         interval=all_intervals,  # each task gets its own slice
         runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
-        wait_for_=all_subtracts,
+        wait_for_=all_model_subtracts,
     )
 
     # # Clean on each interval - produces a list of images for each beam using the model-subtracted visibilities

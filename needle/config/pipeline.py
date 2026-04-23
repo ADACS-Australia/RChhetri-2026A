@@ -91,7 +91,9 @@ class PipelineFlowConfig(NeedleModel):
 
     runtime: Optional[ContainerConfig] = None
     "Runtime information. An optional ContainerConfig. None is interpreted as the local runtime."
-    # TODO: Implement this in the flow
+
+    interval_tasks: int = 1
+    "The number of tasks to split the interval cleaning into per beam"
 
     @field_validator("log_level")
     @classmethod
