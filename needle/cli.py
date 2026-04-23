@@ -23,22 +23,22 @@ class Env(BaseModel):
     PREFECT_API_URL: str = "http://localhost:4200/api"
 
 
-def _check_prefect_env_variables():
-    unset = []
-    for v in Env().model_dump().keys():
-        unset.append(v)
-    if unset:
-        raise EnvironmentError(f"Env varaibles {unset} are not set. Please add it to your environment")
-    try:
-        Env(
-            PREFECT_API_URL=os.environ["PREFECT_API_URL"],
-            PREFECT_LOGGING_EXTRA_LOGGERS=os.environ["PREFECT_LOGGING_EXTRA_LOGGERS"],
-            PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=os.environ["PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL"],
-            # PREFECT_RESULTS_PERSIST_BY_DEFAULT=os.environ["PREFECT_RESULTS_PERSIST_BY_DEFAULT"],
-        )
-    except ValidationError as e:
-        print("Invalid type given to Env model. Have you incorrectly set an environment variable?")
-        raise (e)
+# def _check_prefect_env_variables():
+#     unset = []
+#     for v in Env().model_dump().keys():
+#         unset.append(v)
+#     if unset:
+#         raise EnvironmentError(f"Env varaibles {unset} are not set. Please add it to your environment")
+#     try:
+#         Env(
+#             PREFECT_API_URL=os.environ["PREFECT_API_URL"],
+#             PREFECT_LOGGING_EXTRA_LOGGERS=os.environ["PREFECT_LOGGING_EXTRA_LOGGERS"],
+#             PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=os.environ["PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL"],
+#             # PREFECT_RESULTS_PERSIST_BY_DEFAULT=os.environ["PREFECT_RESULTS_PERSIST_BY_DEFAULT"],
+#         )
+#     except ValidationError as e:
+#         print("Invalid type given to Env model. Have you incorrectly set an environment variable?")
+#         raise (e)
 
 
 def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
@@ -142,7 +142,7 @@ def run():
     #     if v is not None:
     #         os.environ[k] = v
 
-    _check_prefect_env_variables()
+    # _check_prefect_env_variables()
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)

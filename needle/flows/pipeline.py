@@ -14,8 +14,8 @@ from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
 
 
-# CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
-# ProcessTaskRunner gives each task its own process and isolated runtime.
+# Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
+# so ThreadPooolRunner will not work
 @flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
 def needle_pipeline(cfg: PipelineConfig) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
@@ -79,8 +79,6 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
     )
-    # Wait for deep clean
-    [f.result() for f in deep_image_futures]
 
     # Create Model - updates the ms in place with the MODEL_DATA columnn
     model_creation_futures = predict_task.map(
@@ -88,6 +86,7 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         cfg=unmapped(cfg.deep_clean),
         runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
+        wait_for_=deep_image_futures,
     )
 
     # Model subtract - removes the MODEL_DATA from the DATA visibilities
@@ -100,13 +99,13 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     )
 
     # Clean on each interval - produces a list of images for each beam using the model-subtracted visibilities
-    [f.result() for f in model_subtract_futures]  # Wait for model subtraction
     interval_clean_futures = interval_clean_task.map(
         tgt_futures,
         cfg=unmapped(cfg.interval_clean),
         mask=mask_output_futures,
         runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
+        wait_for_=model_subtract_futures,
     )
 
     [f.result() for f in inspect_futures]

@@ -59,6 +59,10 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
     :param output_dir: The directory to write the output to
     :return: The written measurement set path
     """
+    if ctx.output.exists():
+        logger.warning(f"Expected output file '{ctx.output}' already exists. Will not overwrite")
+        return ctx.output
+
     logger.info("Executing conversion to MS")
     ctx.log_cmd()
     procs = ctx.execute()

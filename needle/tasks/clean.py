@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from prefect import task
 
@@ -19,11 +19,13 @@ def interval_clean_task(
     mask: Optional[Path],
     runtime: Optional[ContainerConfig] = None,
     log_level: str = "INFO",
+    wait_for_: Optional[Any] = None,
 ) -> list[Path]:
     """Cleans on each interval in a measurement set. Keeps the -image.fits but removes everything else."""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+    _ = wait_for_
 
     # Number of intervals - the number of imaging instances we will run
     info = inspect_ms(ms)
@@ -75,7 +77,11 @@ def clean_task(
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
 def predict_task(
-    ms: Path, cfg: WSCleanConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
+    ms: Path,
+    cfg: WSCleanConfig,
+    runtime: Optional[ContainerConfig] = None,
+    log_level: str = "INFO",
+    wait_for_: Optional[Any] = None,
 ) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
@@ -83,6 +89,7 @@ def predict_task(
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+    _ = wait_for_
 
     ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, predict=True)
     if not len(ctx.output.model) == 1:
