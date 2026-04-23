@@ -45,6 +45,28 @@ class WSCleanOutput(NeedleModel):
     def residual(self) -> list[Path]:
         return [Path(i) for i in glob(f"{self.prefix}*-residual.fits")]
 
+    def remap_interval_images(self, interval_start: int) -> list[Path]:
+        """Rename interval images from chunk-relative to absolute timestep indices.
+
+        WSClean names interval images with a chunk-relative index (e.g. 't0031'), which
+        resets to zero for each task. This method renames them to absolute timestep indices
+        by offsetting with the interval start (e.g. t0031 with interval_start=87 -> t0118).
+
+        :param interval_start: The absolute timestep at which this interval chunk begins.
+        :returns: List of renamed image paths with absolute timestep indices.
+        """
+        renamed = []
+        for path in self.image:
+            suffix = path.name[len(Path(self.prefix).name) :]
+            t_str, product = suffix[1:].split("-", 1)
+            if not (t_str.startswith("t") and t_str[1:].isdigit()):
+                raise ValueError(f"Expected WSClean interval token (e.g. 't0031') but got '{t_str}' in '{path.name}'")
+            absolute_idx = interval_start + int(t_str[1:])
+            new_path = path.parent / f"{Path(self.prefix).name}-t{absolute_idx:04d}-{product}"
+            path.rename(new_path)
+            renamed.append(new_path)
+        return renamed
+
 
 class WSCleanContext(SubprocessExecContext):
     """The full runtime context required for running WSClean"""
@@ -88,25 +110,9 @@ class WSCleanContext(SubprocessExecContext):
         if self.cfg.tag:
             name = f"{name}_{self.cfg.tag}"
         if self.interval is not None:
-            name = f"{name}_interval_{self.interval[0]}_{self.interval[1]}"
+            name = f"{name}_{self.interval[0]}_{self.interval[1]}"
         return name
 
-    # @property
-    # def name(self) -> str:
-    #     """The 'name' input to wsclean.
-    #     Can use the output variable to write to a different directory
-    #     """
-    #     # ms path is /path/to/m_set.ms
-    #     # /path/to/m_set
-    #     name = self.ms.with_suffix("")
-    #     if self.output_dir:
-    #         # /path/to/out_dir/m_set
-    #         name = str(self.output_dir / Path(self.ms.name).with_suffix(""))
-    #     if self.cfg.tag:
-    #         # /path/to/m_set_tag
-    #         name = f"{name}_{self.cfg.tag}"
-    #     return name
-    #
     @property
     def cmd(self) -> list[list[str]]:
         """Constructs the full WSClean command as a list of strings suitable for passing to subprocess.

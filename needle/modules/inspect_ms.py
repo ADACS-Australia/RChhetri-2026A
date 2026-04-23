@@ -117,6 +117,7 @@ class MSInspectResult:
             baselines=BaselineInfo(**data["baselines"]),
             polarisation=PolarisationInfo(**data["polarisation"]),
             fields=FieldInfo(**data["fields"]),
+            data_columns=data["data_columns"],
         )
 
 

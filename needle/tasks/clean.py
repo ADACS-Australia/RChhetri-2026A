@@ -47,7 +47,8 @@ def interval_clean_task(
     for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
         os.remove(f)
 
-    return wsclean_output.image
+    # Remap the interval images so that they're named nicely
+    return wsclean_output.remap_interval_images(interval_start=interval[0])
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)

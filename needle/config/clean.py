@@ -102,7 +102,7 @@ class IntervalCleanConfig(WSCleanConfig):
 
     module: ClassVar[NeedleModuleName] = NeedleModuleName.INTERVAL_CLEAN
 
-    tag: str = Field("intervals-out", description=WSCleanConfig.model_fields["tag"].description)
+    tag: str = Field("intervals", description=WSCleanConfig.model_fields["tag"].description)
     niter: int = Field(300, description=WSCleanConfig.model_fields["niter"].description)
     minuv_l: float | None = Field(300.0, description=WSCleanConfig.model_fields["minuv_l"].description)
     auto_threshold: float | None = Field(0.5, description=WSCleanConfig.model_fields["auto_threshold"].description)

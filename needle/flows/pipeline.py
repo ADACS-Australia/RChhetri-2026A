@@ -19,10 +19,10 @@ from needle.tasks.source_find import source_find_task
 
 def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[Tuple[int, int]]:
     ms_info = MSInspectResult.from_json(inspect_path)
-    corrected_column = ms_info.data_colums.get("CORRECTED_DATA")
+    corrected_column = ms_info.data_columns.get("DATA")
     if not corrected_column:
-        raise RuntimeError(f"Expected column 'CORRECTED_DATA' is absent in measurement set: {inspect_path}")
-    assert len(corrected_column) == 2, "Corrected column should have length 2"
+        raise RuntimeError(f"Expected column 'DATA' is absent in measurement set: {inspect_path}")
+    assert len(corrected_column) == 2, "DATA column should have length 2"
 
     start, end = corrected_column[0], corrected_column[1]
     total = end - start + 1
@@ -152,16 +152,6 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         log_level=unmapped(cfg.flow.log_level),
         wait_for_=all_model_subtracts,
     )
-
-    # # Clean on each interval - produces a list of images for each beam using the model-subtracted visibilities
-    # interval_clean_futures = interval_clean_task.map(
-    #     tgt_futures,
-    #     cfg=unmapped(cfg.interval_clean),
-    #     mask=mask_output_futures,
-    #     runtime=unmapped(cfg.flow.runtime),
-    #     log_level=unmapped(cfg.flow.log_level),
-    #     wait_for_=model_subtract_futures,
-    # )
 
     [f.result() for f in inspect_futures]
     [f.result() for f in interval_clean_futures]  # Wait on the last output so that the flow doesn't end
