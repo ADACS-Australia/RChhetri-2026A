@@ -58,8 +58,8 @@ class WSCleanContext(SubprocessExecContext):
     fits_mask: Path | None = None
     "Path to a FITS mask"
 
-    intervals_out: int | None = None
-    "The number of snapshots to image. Default (None) will not use this flag"
+    interval: tuple[int, int] | None = None
+    "A specific time interval range (start, end) to image. Maps to -interval flag. If none, images normally"
 
     predict: bool = False
     "Predict visibilities - this will create a MODEL_DATA column in the ms"
@@ -82,20 +82,31 @@ class WSCleanContext(SubprocessExecContext):
 
     @property
     def name(self) -> str:
-        """The 'name' input to wsclean.
-        Can use the output variable to write to a different directory
-        """
-        # ms path is /path/to/m_set.ms
-        # /path/to/m_set
         name = self.ms.with_suffix("")
         if self.output_dir:
-            # /path/to/out_dir/m_set
             name = str(self.output_dir / Path(self.ms.name).with_suffix(""))
         if self.cfg.tag:
-            # /path/to/m_set_tag
             name = f"{name}_{self.cfg.tag}"
+        if self.interval is not None:
+            name = f"{name}_interval_{self.interval[0]}_{self.interval[1]}"
         return name
 
+    # @property
+    # def name(self) -> str:
+    #     """The 'name' input to wsclean.
+    #     Can use the output variable to write to a different directory
+    #     """
+    #     # ms path is /path/to/m_set.ms
+    #     # /path/to/m_set
+    #     name = self.ms.with_suffix("")
+    #     if self.output_dir:
+    #         # /path/to/out_dir/m_set
+    #         name = str(self.output_dir / Path(self.ms.name).with_suffix(""))
+    #     if self.cfg.tag:
+    #         # /path/to/m_set_tag
+    #         name = f"{name}_{self.cfg.tag}"
+    #     return name
+    #
     @property
     def cmd(self) -> list[list[str]]:
         """Constructs the full WSClean command as a list of strings suitable for passing to subprocess.
@@ -123,8 +134,9 @@ class WSCleanContext(SubprocessExecContext):
             cmd += ["-weight", "briggs", str(self.cfg.robust)]
         else:
             cmd += ["-weight", self.cfg.weight]
-        if self.intervals_out is not None:
-            cmd += ["-intervals-out", str(self.intervals_out)]
+        if self.interval is not None:
+            start, end = self.interval
+            cmd += ["-intervals-out", str(end - start), "-interval", str(start), str(end)]
         if self.cfg.auto_threshold is not None:
             cmd += ["-auto-threshold", str(self.cfg.auto_threshold)]
         if self.cfg.auto_mask is not None:

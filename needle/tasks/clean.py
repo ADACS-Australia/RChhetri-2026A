@@ -17,37 +17,36 @@ def interval_clean_task(
     ms: Path,
     cfg: WSCleanConfig,
     mask: Optional[Path],
+    interval: tuple[int, int],
     runtime: Optional[ContainerConfig] = None,
     log_level: str = "INFO",
     wait_for_: Optional[Any] = None,
 ) -> list[Path]:
-    """Cleans on each interval in a measurement set. Keeps the -image.fits but removes everything else."""
+    """Cleans a single time interval slice of a measurement set."""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = wait_for_
 
-    # Number of intervals - the number of imaging instances we will run
-    info = inspect_ms(ms)
-    logger.debug(f"time info: {info.time}")
-    logger.debug(f"n_integrations value: {info.time.n_integrations}")
-    intervals = info.time.n_integrations
-
-    # Ouptut the fits files to here
     output_dir = Path(f"{ms.with_suffix('')}_interval")
     os.makedirs(output_dir, exist_ok=True)
-    logger.info(f"Creating a series of images over {info.time.n_integrations} integrations")
 
+    logger.info(f"Cleaning interval {interval} of {ms}")
     ctx = WSCleanContext(
-        runtime=runtime, cfg=cfg, ms=ms, fits_mask=mask, intervals_out=intervals, output_dir=output_dir
+        runtime=runtime,
+        cfg=cfg,
+        ms=ms,
+        fits_mask=mask,
+        interval=interval,
+        output_dir=output_dir,
     )
     wsclean_output = run_clean(ctx)
-
     if not wsclean_output.image:
         raise FileNotFoundError(f"Expected image file from wsclean '{wsclean_output.image}' does not exist")
-    # Remove all these extra files
+
     for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
         os.remove(f)
+
     return wsclean_output.image
 
 
@@ -93,7 +92,7 @@ def predict_task(
 
     ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, predict=True)
     if not len(ctx.output.model) == 1:
-        raise RuntimeError(f"Found more than one model for config with prefix: {ctx.name}")
+        raise RuntimeError(f"Unexcpected number of output model files found with prefix: {ctx.name}")
     if not ctx.output.model[0].exists():
         raise RuntimeError(f"Expected output model to exist but cannot find with prefix: {ctx.name}")
 
