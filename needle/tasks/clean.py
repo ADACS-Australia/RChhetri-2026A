@@ -9,7 +9,7 @@ from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
 from needle.modules.clean import run_clean, WSCleanContext
-from needle.modules.inspect_ms import inspect_ms
+from needle.modules.inspect_ms import MSInfo
 
 
 @task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
@@ -98,8 +98,8 @@ def predict_task(
         raise RuntimeError(f"Expected output model to exist but cannot find with prefix: {ctx.name}")
 
     run_clean(ctx)
-    inspect = inspect_ms(ms)
-    if "MODEL_DATA" not in inspect.data_columns:
+    ms_info = MSInfo(ms)
+    if "MODEL_DATA" not in ms_info.data_columns:
         raise RuntimeError(f"Coluld not find MODEL_DATA column in {ms} after wsclean predict")
 
     return ms

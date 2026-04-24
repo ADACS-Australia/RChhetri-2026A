@@ -1,13 +1,12 @@
 import os
 from pathlib import Path
-from typing import Tuple
 
 from prefect import Flow, flow, unmapped
 from prefect_dask import DaskTaskRunner
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import PipelineConfig
-from needle.modules.inspect_ms import MSInspectResult
+from needle.modules.inspect_ms import MSInfo
 from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
@@ -18,7 +17,7 @@ from needle.tasks.source_find import source_find_task
 
 
 def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[tuple[int, int]]:
-    ms_info = MSInspectResult.from_json(inspect_path)
+    ms_info = MSInfo.from_json(inspect_path)
     corrected_column = ms_info.data_columns.get("DATA")
     if not corrected_column:
         raise RuntimeError(f"Expected column 'DATA' is absent in measurement set: {inspect_path}")

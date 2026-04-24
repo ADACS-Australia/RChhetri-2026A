@@ -4,7 +4,7 @@ from typing import Tuple
 from prefect import task
 
 from needle.config.pipeline import MSBeamPair
-from needle.modules.inspect_ms import inspect_ms
+from needle.modules.inspect_ms import MSInfo
 from needle.lib.logging import setup_logging
 
 
@@ -15,7 +15,9 @@ def inspect_pair_task(ms_pair: MSBeamPair, log_level: str = "INFO") -> Tuple[Pat
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    return (inspect_ms(ms_pair.cal).to_json(), inspect_ms(ms_pair.tgt).to_json())
+    cal_ms = MSInfo(ms_pair.cal)
+    tgt_ms = MSInfo(ms_pair.tgt)
+    return (cal_ms.to_json(), tgt_ms.to_json())
 
 
 @task()
@@ -25,4 +27,4 @@ def inspect_ms_task(ms: Path, log_level: str = "INFO") -> Path:
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    return inspect_ms(ms).to_json()
+    return MSInfo(ms).to_json()
