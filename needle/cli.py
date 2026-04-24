@@ -157,6 +157,25 @@ def run():
     )(cfg=cfg)
 
 
+def serve():
+    """Serve the pipeline as a deployment to a server"""
+    args = _parse_pipeline()
+    cfg = get_config()
+
+    if args.cluster_cfg:
+        cluster_cfg_path = Path(args.cluster_cfg)
+        task_runner = _load_slurm_task_runner(cluster_cfg_path)
+        print(f"Using SLURM task runner from {cluster_cfg_path}")
+    else:
+        print("Using local environment for task runs")
+        task_runner = _load_local_task_runner(cfg.flow.max_workers)
+
+    needle_pipeline.with_options(
+        task_runner=task_runner,
+        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=True),
+    ).serve(name="needle-pipeline", parameters=cfg.to_kwargs())
+
+
 def deploy():
     """Create a pipeline deployment using a container and a worker"""
     args = _parse_pipeline()

@@ -29,6 +29,7 @@ needle-clean-subtract= "needle.modules.clean:model_subtract"
 needle-mask= "needle.modules.mask:main"
 needle-source-find= "needle.modules.source_find:main"
 needle-deploy = "needle.cli:deploy"
+needle-serve = "needle.cli:serve"
 needle-run= "needle.cli:run"
 
 

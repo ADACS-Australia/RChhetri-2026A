@@ -69,6 +69,7 @@ flow:
   overwrite: True
   max_workers: 2
   log_level: DEBUG
+  interval_tasks: 10
   runtime:
     image: /software/projects/pawsey0008/ksmith1/needle.sif
     type: singularity
