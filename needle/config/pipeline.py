@@ -56,9 +56,9 @@ class MSBeamPair(BeamPair):
     @model_validator(mode="after")
     def validate_exists(self):
         if not self.tgt.exists():
-            raise ValidationError(f"{self.tgt} does not exist. Cannot construct model.")
+            raise ValueError(f"{self.tgt} does not exist. Cannot construct model.")
         if not self.cal.exists():
-            raise ValidationError(f"{self.cal} does not exist. Cannot construct model.")
+            raise ValueError(f"{self.cal} does not exist. Cannot construct model.")
         return self
 
 
