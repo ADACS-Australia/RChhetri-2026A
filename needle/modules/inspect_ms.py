@@ -1,12 +1,4 @@
-#!/usr/bin/env python3
-"""
-ms_inspect.py
--------------
-Inspect a Measurement Set and return structured metadata.
-"""
-
 import argparse
-import sys
 import json
 import logging
 from dataclasses import dataclass, asdict
@@ -18,10 +10,19 @@ import numpy as np
 
 from needle.lib.units import mjd_s_to_utc, rad_to_deg
 
-try:
-    from casatools import table
-except ImportError:
-    sys.exit("Error: casatools not found")
+
+def _get_table():
+    """Imports casatools and returns a table object. This exists to avoid top-level CASA importing - thereby
+    allowing this module to be loaded without having CASA installed. This is useful for orchestration."""
+    try:
+        from casatools import table
+
+        return table()
+    except ImportError:
+        raise RuntimeError(
+            "casatools is required to read an MS directly. Install it or load from JSON via MSInfo.from_json()."
+        )
+
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +249,7 @@ class MSInfo:
 
     def _read_time(self) -> TimeInfo:
         logger.debug(f"Reading time info from {self.ms}")
-        tb = table()
+        tb = _get_table()
         tb.open(str(self.ms))
         times = np.unique(tb.getcol("TIME"))
         tb.close()
@@ -272,7 +273,7 @@ class MSInfo:
 
     def _read_frequency(self) -> FrequencyInfo:
         logger.debug(f"Reading frequency info from {self.ms}")
-        tb = table()
+        tb = _get_table()
         tb.open(str(self.ms / "SPECTRAL_WINDOW"))
         n_spw = tb.nrows()
         chan_freqs = [tb.getcell("CHAN_FREQ", i) for i in range(n_spw)]
@@ -301,7 +302,7 @@ class MSInfo:
 
     def _read_baselines(self) -> BaselineInfo:
         logger.debug(f"Reading baseline info from {self.ms}")
-        tb = table()
+        tb = _get_table()
 
         tb.open(str(self.ms / "ANTENNA"))
         names = list(tb.getcol("NAME"))
@@ -340,7 +341,7 @@ class MSInfo:
 
     def _read_polarisation(self) -> PolarisationInfo:
         logger.debug(f"Reading polarisation info from {self.ms}")
-        tb = table()
+        tb = _get_table()
         tb.open(str(self.ms / "POLARIZATION"))
         corr_types = tb.getcell("CORR_TYPE", 0)
         tb.close()
@@ -350,7 +351,7 @@ class MSInfo:
 
     def _read_fields(self) -> FieldInfo:
         logger.debug(f"Reading field info from {self.ms}")
-        tb = table()
+        tb = _get_table()
         tb.open(str(self.ms / "FIELD"))
         names = list(tb.getcol("NAME"))
         phase_dir = tb.getcol("PHASE_DIR")  # shape (2, 1, n_fields)
@@ -367,7 +368,7 @@ class MSInfo:
 
     def _read_data_columns(self) -> dict[str, tuple]:
         logger.debug(f"Reading data columns from {self.ms}")
-        tb = table()
+        tb = _get_table()
         tb.open(str(self.ms))
         all_columns = tb.colnames()
         data_columns = {}
