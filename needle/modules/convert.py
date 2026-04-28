@@ -36,9 +36,8 @@ class ConvertContext(SubprocessExecContext):
             case ".uvfits":
                 expr = f"from casatasks import importuvfits; importuvfits(fitsfile='{self.input}', vis='{self.output}')"
             case ".mir":
-                expr = f"from casatasks import importuvfits; importmiriad(mirfile='{self.input}', vis='{self.output}')"
+                expr = f"from casatasks import importmiriad; importmiriad(mirfile='{self.input}', vis='{self.output}')"
             case ".ms":
-                expr = None
                 if self.output_dir:  # Copy to the provided output directory
                     if not self.output.exists():
                         logger.info(f"Copying {self.input} -> {self.output}")
@@ -46,6 +45,9 @@ class ConvertContext(SubprocessExecContext):
                     else:
                         logger.info(f"MS already exists at {self.output}, skipping copy")
                         return [[]]
+                else:
+                    logger.info(f"Input {self.input} is already an MS and no output_dir provided, skipping")
+                    return [[]]
             case _:
                 raise Exception(f"Unsupported file type: {self.input.suffix}")
 
