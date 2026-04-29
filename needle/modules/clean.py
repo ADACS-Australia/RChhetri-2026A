@@ -195,10 +195,9 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
 
 def _build_runtime(args: Namespace) -> ContainerConfig | None:
     """Constructs an container config from parsed args, or None if no image was provided"""
-    if not args.image:
-        return None
-    env = dict(item.split("=", 1) for item in args.env) if args.env else None
-    return ContainerConfig(image=args.image, binds=args.binds, env=env)
+    if args.image:
+        return ContainerConfig.from_namespace(args)
+    return None
 
 
 def _parse(parser: ArgumentParser) -> Namespace:

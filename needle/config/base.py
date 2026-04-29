@@ -6,6 +6,7 @@ from typing import Literal, Optional, Union, get_args, get_origin
 import yaml
 
 from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic_core import PydanticUndefinedType
 
 
 class NeedleModuleName(str, Enum):
@@ -47,7 +48,7 @@ class NeedleModel(BaseModel):
             arg_name = f"--{field_name}" if not prefix else f"--{prefix}.{field_name}"
             annotation = field_info.annotation
             help_text = field_info.description or ""
-            default = field_info.default
+            default = None if isinstance(field_info.default, PydanticUndefinedType) else field_info.default
 
             # Unwrap Optional[X] → X, handling both Union[X, None] and X | None
             origin = get_origin(annotation)
@@ -71,9 +72,7 @@ class NeedleModel(BaseModel):
                     default=[],
                     help=f"{help_text} (default: {default})",
                 )
-                continue
-
-            if origin is dict:
+            elif origin is dict:
                 parser.add_argument(
                     arg_name,
                     type=lambda s: s.split("=", 1),
@@ -82,14 +81,21 @@ class NeedleModel(BaseModel):
                     metavar="KEY=VALUE",
                     help=f"{help_text} (default: {default})",
                 )
-                continue
-
-            if annotation is bool:
+            elif annotation is bool:
                 parser.add_argument(
                     arg_name,
                     type=lambda x: x.lower() not in ("false", "0", "no"),
                     default=default,
                     metavar="BOOL",
+                    help=f"{help_text} (default: {default})",
+                )
+            elif get_origin(annotation) is Literal:
+                choices = get_args(annotation)
+                parser.add_argument(
+                    arg_name,
+                    type=str,
+                    choices=choices,
+                    default=default,
                     help=f"{help_text} (default: {default})",
                 )
             else:
@@ -116,9 +122,14 @@ class NeedleModel(BaseModel):
                 non_none = [a for a in get_args(annotation) if a is not type(None)]
                 annotation = non_none[0] if non_none else annotation
 
+            # Coerce argparse append-style list into dict
+            if get_origin(annotation) is dict:
+                raw = flat.get(field_name, [])
+                kwargs[field_name] = dict(item for item in raw) if raw else None
+                continue
+
             # Recurse into nested NeedleModel subclasses
             if isinstance(annotation, type) and issubclass(annotation, NeedleModel):
-                # Extract only the keys relevant to this sub-model
                 prefix = f"{field_name}."
                 sub_namespace = Namespace(**{k[len(prefix) :]: v for k, v in flat.items() if k.startswith(prefix)})
                 kwargs[field_name] = annotation.from_namespace(sub_namespace)
@@ -126,7 +137,7 @@ class NeedleModel(BaseModel):
                 if field_name in flat:
                     kwargs[field_name] = flat[field_name]
 
-        return cls(**kwargs)
+            return cls(**kwargs)
 
 
 class ContainerConfig(NeedleModel):

@@ -96,10 +96,10 @@ def main():
     ContainerConfig.add_to_parser(container_group)
 
     args = parser.parse_args()
+
     runtime = None
     if args.image:
-        env = dict(item.split("=", 1) for item in args.env) if args.env else None
-        runtime = ContainerConfig(image=args.image, binds=args.binds, env=env)
+        runtime = ContainerConfig.from_namespace(args)
 
     ctx = ConvertContext(runtime=runtime, input=args.input, output_dir=args.output_dir)
     convert_to_ms(ctx)
