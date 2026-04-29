@@ -8,9 +8,15 @@ The python modules and entrypoints in Needle can be installed the regular way as
 pip install .
 # editable:
 pip install -e .
+# Include CASA libraries for local environment execution
+pip install -e ".[casa]"
+# Include test libraries
+pip install -e ".[tests]"
 ```
 
 Modules can be run in the local environment. They each have a CLI entrypoint.
+Modules can be run either with the local runtime environment or with a container.
+Local environment execution may require the installation of some additional libraries such as CASA (instructions above) and WSClean.
 
 To set up the pipeline, the Prefect server needs to be set up. See below.
 
@@ -103,7 +109,7 @@ If using a SLURM cluster, an additional config file is required. Eg:
 account: "pawsey0008"
 queue: "work"
 cores: 2
-memory: "8GB"
+memory: "16GB"
 processes: 1
 walltime: "02:00:00"
 
