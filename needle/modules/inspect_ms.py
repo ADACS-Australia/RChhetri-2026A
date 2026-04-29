@@ -1,13 +1,17 @@
 import argparse
-import json
-import logging
 from dataclasses import dataclass, asdict
 from functools import cached_property
+import json
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
+from pydantic import field_validator
 import numpy as np
 
+from needle.modules.needle_context import SubprocessExecContext
+from needle.lib.validate import validate_path_ms
+from needle.config.base import ContainerConfig
 from needle.lib.units import mjd_s_to_utc, rad_to_deg
 
 
@@ -96,6 +100,9 @@ class MSInfo:
     All sub-info sections are computed on first access and cached.
     Construct directly from an MS path, or deserialise from JSON.
 
+    :param ms: Path to the measurement set
+    :param output_dir: Directory to output to. If None, uses ms directory
+
     Example usage::
 
         ms = MSInfo("/data/my_obs.ms")
@@ -105,10 +112,11 @@ class MSInfo:
         ms.to_json()
     """
 
-    def __init__(self, ms: Path | str):
+    def __init__(self, ms: Path | str, output_dir: Path | None = None):
         self.ms = Path(ms)
         if not self.ms.exists():
             raise FileNotFoundError(f"Measurement set not found: {self.ms}")
+        self.output_dir = output_dir or self.ms.parent
 
         # Populated only when loading from JSON, bypassing lazy computation.
         self._preloaded: dict = {}
@@ -149,16 +157,17 @@ class MSInfo:
             return self._preloaded["data_columns"]
         return self._read_data_columns()
 
-    def to_json(self, output_dir: Optional[Path] = None) -> Path:
+    @property
+    def output_path(self) -> Path:
+        return self.output_dir / f"{self.ms.stem}_inspect.json"
+
+    def to_json(self) -> Path:
         """Serialise all metadata to a JSON file next to the MS.
 
         Accessing this property triggers loading of all sections.
 
-        :param output_dir: Optional directory override; defaults to the MS parent.
         :returns: Path to the written JSON file.
         """
-        out_dir = output_dir or self.ms.parent
-        output_path = out_dir / f"{self.ms.stem}_inspect.json"
         payload = {
             "ms": str(self.ms),
             "time": asdict(self.time),
@@ -168,10 +177,10 @@ class MSInfo:
             "fields": asdict(self.fields),
             "data_columns": self.data_columns,
         }
-        logger.info(f"Writing inspection result to {output_path}")
-        with open(output_path, "w") as f:
+        logger.info(f"Writing inspection result to {self.output_path}")
+        with open(self.output_path, "w") as f:
             json.dump(payload, f, indent=2, default=str)
-        return output_path
+        return self.output_path
 
     @classmethod
     def from_json(cls, path: Path | str) -> "MSInfo":
@@ -194,6 +203,7 @@ class MSInfo:
         # Construct without existence check on the MS path.
         instance = object.__new__(cls)
         instance.ms = Path(data["ms"])
+        instance.output_dir = Path(data["ms"]).parent
         instance._preloaded = data
         return instance
 
@@ -383,12 +393,57 @@ class MSInfo:
         return data_columns
 
 
+class InspectMSContext(SubprocessExecContext):
+    ms: Path
+    "Path to the measurement set"
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    "Log level. Only relevant if runtime is set"
+
+    @field_validator("ms")
+    @classmethod
+    def _valid_ms(cls, ms: Path) -> Path:
+        validate_path_ms(ms)
+        return ms
+
+    @property
+    def _output_path(self) -> Path:
+        "Shortcut to get the same output path as MSInfo generates"
+        return MSInfo(self.ms).output_path
+
+    @property
+    def cmd(self) -> list[list[str]]:
+        return [["needle-inspect-ms", str(self.ms), "--log-level", self.log_level]]
+
+
+def inspect_ms(ctx: InspectMSContext) -> MSInfo:
+    """If runtime is provided, rerun self inside the provided container.
+    Otherwise, run in the current environment.
+
+    This allows us to run the inspection without needing CASA libraries installed locally.
+    Note that if a container runtime is invoked, MSInfo.to_json() will be invoked in the container.
+
+    :param ctx: The InspectMSContext object
+    :return: The MSInfo object
+    """
+    if ctx.runtime:
+        logger.info(f"Loading container: {ctx.runtime.image}")
+        ctx.log_cmd()
+        procs = ctx.execute()
+        for p in procs:
+            if p.stderr:
+                logger.warning(p.stderr)
+        return MSInfo.from_json(ctx._output_path)
+    logger.info(f"Inspecting measurement set: {ctx.ms}")
+    return MSInfo(ctx.ms)
+
+
 def main():
     from needle.lib.logging import setup_logging
 
-    parser = argparse.ArgumentParser(description="Inspect a Measurement Set.")
+    parser = argparse.ArgumentParser(description="Inspect a Measurement Set. Writes the info to JSON.")
     parser.add_argument("ms", type=Path, help="Path to the .ms file")
-    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument("--print", action="store_true", help="Print the info to stdout.")
     parser.add_argument(
         "--log-level",
         "--log_level",
@@ -397,15 +452,22 @@ def main():
         default="INFO",
         help="Logging level",
     )
+
+    container_group = parser.add_argument_group(title="Container Arguments")
+    ContainerConfig.add_to_parser(container_group)
+
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    msinfo = MSInfo(args.ms)
+    runtime = None
+    if args.image:
+        runtime = ContainerConfig.from_namespace(args)
 
-    if args.json:
-        msinfo.to_json()
-    else:
+    ctx = InspectMSContext(runtime=runtime, ms=args.ms, log_level=args.log_level)
+    msinfo = inspect_ms(ctx)
+    if args.print:
         msinfo.pretty_print()
+    msinfo.to_json()
 
 
 if __name__ == "__main__":
