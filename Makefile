@@ -20,7 +20,7 @@ APPTAINER_IMAGE = container/needle.sif
 	touch .worker_built
 
 $(APPTAINER_IMAGE): .needle_built
-	apptainer build $(APPTAINER_IMAGE) -F docker-daemon://$(NEEDLE_IMAGE)
+	apptainer build -F $(APPTAINER_IMAGE) docker-daemon://$(NEEDLE_IMAGE)
 
 .PHONY: base needle worker apptainer all clean
 base: .base_built
