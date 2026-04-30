@@ -148,9 +148,8 @@ def serve():
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     needle_pipeline.with_options(
-        task_runner=task_runner,
-        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=True),
-    ).serve(name="needle-pipeline", parameters=cfg.to_kwargs())
+        task_runner=task_runner, result_storage=cfg.flow.data_dir / Path("prefect_cache"), persist_result=True
+    ).serve(name="needle-pipeline", parameters={"cfg": cfg.to_kwargs()})
 
 
 def deploy():
