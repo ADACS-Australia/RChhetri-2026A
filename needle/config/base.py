@@ -137,7 +137,7 @@ class NeedleModel(BaseModel):
                 if field_name in flat:
                     kwargs[field_name] = flat[field_name]
 
-            return cls(**kwargs)
+        return cls(**kwargs)
 
 
 class ContainerConfig(NeedleModel):
