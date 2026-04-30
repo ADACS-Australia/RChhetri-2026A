@@ -6,29 +6,17 @@ import logging
 from pathlib import Path
 from typing import Optional, Literal
 
-from pydantic import field_validator
 import numpy as np
+from pydantic import BaseModel, field_validator
 
-from needle.modules.needle_context import SubprocessExecContext
-from needle.lib.validate import validate_path_ms
 from needle.config.base import ContainerConfig
+from needle.lib.validate import validate_path_ms
 from needle.lib.units import mjd_s_to_utc, rad_to_deg
-
-
-def _get_table():
-    """Imports casatools and returns a table object. This exists to avoid top-level CASA importing - thereby
-    allowing this module to be loaded without having CASA installed. This is useful for orchestration."""
-    try:
-        from casatools import table
-
-        return table()
-    except ImportError:
-        raise RuntimeError(
-            "casatools is required to read an MS directly. Install it or load from JSON via MSInfo.from_json()."
-        )
-
+from needle.lib.casa import open_table
+from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
+
 
 STOKES_MAP = {
     1: "I",
@@ -94,7 +82,7 @@ class FieldInfo:
     phase_centres_deg: list[dict]
 
 
-class MSInfo:
+class MSInfo(BaseModel):
     """Lazy-loading inspector for a CASA Measurement Set.
 
     All sub-info sections are computed on first access and cached.
@@ -112,11 +100,16 @@ class MSInfo:
         ms.to_json()
     """
 
-    def __init__(self, ms: Path | str, output_dir: Path | None = None):
-        self.ms = Path(ms)
-        if not self.ms.exists():
-            raise FileNotFoundError(f"Measurement set not found: {self.ms}")
-        self.output_dir = output_dir or self.ms.parent
+    ms: Path
+    "Path to the measurement set to perform diagnostics for"
+    gcal: Path | None
+    "Path to the gain cal solution table"
+    output_dir: Path | None
+    "Location to output the diagnostics to"
+
+    def model_post_init(self, __context):
+        if self.output_dir is None:
+            self.output_dir = self.ms.parent
 
         # Populated only when loading from JSON, bypassing lazy computation.
         self._preloaded: dict = {}
@@ -259,10 +252,9 @@ class MSInfo:
 
     def _read_time(self) -> TimeInfo:
         logger.debug(f"Reading time info from {self.ms}")
-        tb = _get_table()
-        tb.open(str(self.ms))
-        times = np.unique(tb.getcol("TIME"))
-        tb.close()
+        with open_table(self.ms) as tb:
+            tb.open(str(self.ms))
+            times = np.unique(tb.getcol("TIME"))
 
         if len(times) < 2:
             raise ValueError(f"MS {self.ms} has fewer than 2 unique timestamps — " "cannot determine integration time")
@@ -283,12 +275,11 @@ class MSInfo:
 
     def _read_frequency(self) -> FrequencyInfo:
         logger.debug(f"Reading frequency info from {self.ms}")
-        tb = _get_table()
-        tb.open(str(self.ms / "SPECTRAL_WINDOW"))
-        n_spw = tb.nrows()
-        chan_freqs = [tb.getcell("CHAN_FREQ", i) for i in range(n_spw)]
-        chan_width = [tb.getcell("CHAN_WIDTH", i) for i in range(n_spw)]
-        tb.close()
+
+        with open_table(self.ms / "SPECTRAL_WINDOW") as tb:
+            n_spw = tb.nrows()
+            chan_freqs = [tb.getcell("CHAN_FREQ", i) for i in range(n_spw)]
+            chan_width = [tb.getcell("CHAN_WIDTH", i) for i in range(n_spw)]
 
         centres, widths, nchan, fmin, fmax = [], [], [], [], []
         for i, freqs in enumerate(chan_freqs):
@@ -312,18 +303,13 @@ class MSInfo:
 
     def _read_baselines(self) -> BaselineInfo:
         logger.debug(f"Reading baseline info from {self.ms}")
-        tb = _get_table()
-
-        tb.open(str(self.ms / "ANTENNA"))
-        names = list(tb.getcol("NAME"))
-        positions = tb.getcol("POSITION").T.tolist()
-        tb.close()
-
+        with open_table(self.ms / "ANTENNA") as tb:
+            names = list(tb.getcol("NAME"))
+            positions = tb.getcol("POSITION").T.tolist()
         n_ant = len(names)
 
-        tb.open(str(self.ms))
-        uvw = tb.getcol("UVW")  # shape (3, n_rows)
-        tb.close()
+        with open_table(self.ms) as tb:
+            uvw = tb.getcol("UVW")  # shape (3, n_rows)
 
         uv_dist_m = np.sqrt(uvw[0] ** 2 + uvw[1] ** 2)
         uv_dist_m = uv_dist_m[uv_dist_m > 0]
@@ -351,21 +337,17 @@ class MSInfo:
 
     def _read_polarisation(self) -> PolarisationInfo:
         logger.debug(f"Reading polarisation info from {self.ms}")
-        tb = _get_table()
-        tb.open(str(self.ms / "POLARIZATION"))
-        corr_types = tb.getcell("CORR_TYPE", 0)
-        tb.close()
+        with open_table(self.ms / "POLARIZATION") as tb:
+            corr_types = tb.getcell("CORR_TYPE", 0)
 
         pols = [STOKES_MAP.get(int(c), f"Unknown({c})") for c in corr_types]
         return PolarisationInfo(polarisations=pols, n_pols=len(pols))
 
     def _read_fields(self) -> FieldInfo:
         logger.debug(f"Reading field info from {self.ms}")
-        tb = _get_table()
-        tb.open(str(self.ms / "FIELD"))
-        names = list(tb.getcol("NAME"))
-        phase_dir = tb.getcol("PHASE_DIR")  # shape (2, 1, n_fields)
-        tb.close()
+        with open_table(self.ms / "FIELD") as tb:
+            names = list(tb.getcol("NAME"))
+            phase_dir = tb.getcol("PHASE_DIR")  # shape (2, 1, n_fields)
 
         centres = [
             {
@@ -378,18 +360,17 @@ class MSInfo:
 
     def _read_data_columns(self) -> dict[str, tuple]:
         logger.debug(f"Reading data columns from {self.ms}")
-        tb = _get_table()
-        tb.open(str(self.ms))
-        all_columns = tb.colnames()
-        data_columns = {}
-        for col in all_columns:
-            if col == "DATA" or col.endswith("_DATA"):
-                try:
-                    val = tb.getcell(col, 0)
-                    data_columns[col] = getattr(val, "shape", ())
-                except Exception:
-                    pass
-        tb.close()
+        with open_table(self.ms) as tb:
+            all_columns = tb.colnames()
+            data_columns = {}
+            for col in all_columns:
+                if col == "DATA" or col.endswith("_DATA"):
+                    try:
+                        val = tb.getcell(col, 0)
+                        data_columns[col] = getattr(val, "shape", ())
+                    except Exception:
+                        pass
+            tb.close()
         return data_columns
 
 
@@ -420,7 +401,7 @@ def inspect_ms(ctx: InspectMSContext) -> MSInfo:
     """If runtime is provided, rerun self inside the provided container.
     Otherwise, run in the current environment.
 
-    This allows us to run the inspection without needing CASA libraries installed locally.
+    This setup allows us to run CASA functions without needing CASA libraries installed locally.
     Note that if a container runtime is invoked, MSInfo.to_json() will be invoked in the container.
 
     :param ctx: The InspectMSContext object
