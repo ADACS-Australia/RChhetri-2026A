@@ -1,5 +1,7 @@
-from prefect import task
+from pathlib import Path
 from typing import Optional
+
+from prefect import task
 
 from needle.config.pipeline import ContainerConfig
 from needle.config.pipeline import BeamPair, MSBeamPair
@@ -30,3 +32,15 @@ def convert_beam_pair_task(
     cal_ms = convert_to_ms(ctx)
 
     return MSBeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal_ms, parent_dir=pair.parent_dir)
+
+
+@task()
+def extract_tgt_task(pair: BeamPair) -> Path:
+    """Extract target from a BeamPair Object"""
+    return pair.tgt
+
+
+@task()
+def extract_cal_task(pair: BeamPair) -> Path:
+    """Extract calibrator from a BeamPair Object"""
+    return pair.cal
