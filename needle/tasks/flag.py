@@ -3,11 +3,10 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.pipeline import ContainerConfig
+from needle.config.pipeline import ContainerConfig, MSBeamPair
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.flag import FlagConfig
-from needle.config.pipeline import MSBeamPair
 from needle.modules.flag import flag_observation, FlagContext
 
 
@@ -25,6 +24,7 @@ def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ContainerConfig] =
     except ValueError as e:
         logger.warning(str(e))
         logger.warning("Attempting to continue anyway...")
+
     return ms
 
 

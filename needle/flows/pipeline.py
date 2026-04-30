@@ -7,9 +7,10 @@ from prefect_dask import DaskTaskRunner
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import PipelineConfig
 from needle.modules.inspect_ms import MSInfo
-from needle.tasks.calibrate import calibrate_pair_task
+from needle.tasks.calibrate import calibrate_pair_task, extract_tgt_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
+from needle.tasks.diagnostics import diagnostics_task, diagnostics_cal_output_task
 from needle.tasks.flag import flag_ms_pair_task
 from needle.tasks.inspect import inspect_pair_task, inspect_ms_task
 from needle.tasks.mask import create_mask_task
@@ -49,8 +50,17 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
         cfg.flow.beam_pairs, runtime=unmapped(cfg.flow.runtime), log_level=unmapped(cfg.flow.log_level)
     )
 
+    # Run diagnostics on the calibrator MS
+    cal_diagnostics_futures = diagnostics_task.map(
+        [bp.cal for bp in cfg.flow.beam_pairs],
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
+    )
+
     # Inspect the data - not used but nice to have
-    inspect_futures = inspect_pair_task.map(ms_pairs_futures, log_level=unmapped(cfg.flow.log_level))
+    inspect_futures = inspect_pair_task.map(
+        ms_pairs_futures, runtime=unmapped(cfg.flow.runtime), log_level=unmapped(cfg.flow.log_level)
+    )
 
     # Flag the data
     flag_pair_futures = flag_ms_pair_task.map(
@@ -61,15 +71,25 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     )
 
     # Calibrate - returns calibrated target ms
-    tgt_futures = calibrate_pair_task.map(
+    cal_output_futures = calibrate_pair_task.map(
         flag_pair_futures,
         cfg=unmapped(cfg.calibrate),
         runtime=unmapped(cfg.flow.runtime),
         log_level=unmapped(cfg.flow.log_level),
     )
+    tgt_futures = extract_tgt_task.map(cal_output_futures)
+
+    # Run diagnostics on calibrated target and calibrator solution tables
+    tgt_diagnostics_futures = diagnostics_cal_output_task.map(
+        cal_output_futures,
+        runtime=unmapped(cfg.flow.runtime),
+        log_level=unmapped(cfg.flow.log_level),
+    )
 
     # Inspect the calibrated_data - used later for interval cleaning
-    calibrated_inspect_futures = inspect_ms_task.map(tgt_futures, log_level=unmapped(cfg.flow.log_level))
+    calibrated_inspect_futures = inspect_ms_task.map(
+        tgt_futures, runtime=unmapped(cfg.flow.runtime), log_level=unmapped(cfg.flow.log_level)
+    )
 
     # Shallow Clean
     shallow_image_futures = clean_task.with_options(name="shallow_clean").map(
@@ -151,4 +171,6 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     )
 
     [f.result() for f in inspect_futures]
+    [f.result() for f in cal_diagnostics_futures]
+    [f.result() for f in tgt_diagnostics_futures]
     [f.result() for f in interval_clean_futures]  # Wait on the last output so that the flow doesn't end

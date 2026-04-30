@@ -10,13 +10,22 @@ import shutil
 
 from pydantic import field_validator
 
-from needle.config.base import ContainerConfig
+from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
+
+
+class CalibrateOutput(NeedleModel):
+    tgt: Path
+    "Path to the calibrated target measurement set"
+    gcal: Path
+    "Path to the gain calibration table"
+    bpcal: Path
+    "Path to the bandpass calibration table"
 
 
 class CalibrateContext(SubprocessExecContext):
@@ -111,7 +120,7 @@ class CalibrateContext(SubprocessExecContext):
         ]
 
 
-def calibrate_observation(ctx: CalibrateContext) -> Path:
+def calibrate_observation(ctx: CalibrateContext) -> CalibrateOutput:
     """Calibrate an observation using the given configuration.
 
     Runs the configured calibration steps in the correct order: setjy,
@@ -119,7 +128,7 @@ def calibrate_observation(ctx: CalibrateContext) -> Path:
     automatically passed forward to subsequent steps that need them.
 
     :param ctx: The calibrate context object
-    :returns: Path to the calibrated measurement set
+    :returns: The CalibrateOutput object containing the calibration outputs
     """
     logger.info(f"Running calibration on source {ctx.tgt} using calibrator {ctx.cal}")
     if ctx._calibrated_tgt_path.exists():
@@ -134,7 +143,7 @@ def calibrate_observation(ctx: CalibrateContext) -> Path:
             logger.warning(p.stderr)
         p.check_returncode()
     logger.info(f"Calibration complete. Written to {ctx._calibrated_tgt_path}")
-    return ctx._calibrated_tgt_path
+    return CalibrateOutput(tgt=ctx._calibrated_tgt_path, gcal=ctx._gcal_path, bpcal=ctx._bpcal_path)
 
 
 def main():
