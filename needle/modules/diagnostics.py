@@ -584,6 +584,8 @@ def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
         for p in procs:
             if p.stderr:
                 logger.warning(p.stderr)
+            if p.stdout:
+                print(p.stdout)
     else:
         msd.run_all_diagnostics()
 

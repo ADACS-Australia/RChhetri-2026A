@@ -414,6 +414,8 @@ def inspect_ms(ctx: InspectMSContext) -> MSInfo:
         for p in procs:
             if p.stderr:
                 logger.warning(p.stderr)
+            if p.stdout:
+                print(p.stdout)
         return MSInfo.from_json(ctx._output_path)
     logger.info(f"Inspecting measurement set: {ctx.ms}")
     return MSInfo(ctx.ms)
