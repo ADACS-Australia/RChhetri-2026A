@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Tuple
 
 from prefect import Flow, flow, unmapped
-from prefect.future import PrefectFuture
+from prefect.futures import PrefectFuture
 from prefect_dask import DaskTaskRunner
 
 from needle.lib.logging import setup_logging
