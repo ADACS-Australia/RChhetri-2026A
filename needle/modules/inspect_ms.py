@@ -102,9 +102,9 @@ class MSInfo(BaseModel):
 
     ms: Path
     "Path to the measurement set to perform diagnostics for"
-    gcal: Path | None
+    gcal: Path | None = None
     "Path to the gain cal solution table"
-    output_dir: Path | None
+    output_dir: Path | None = None
     "Location to output the diagnostics to"
 
     def model_post_init(self, __context):
@@ -194,9 +194,12 @@ class MSInfo(BaseModel):
             data = json.load(f)
 
         # Construct without existence check on the MS path.
-        instance = object.__new__(cls)
-        instance.ms = Path(data["ms"])
-        instance.output_dir = Path(data["ms"]).parent
+        ms_path = Path(data["ms"])
+        instance = cls.model_construct(
+            ms=ms_path,
+            gcal=Path(data["gcal"]) if data.get("gcal") else None,
+            output_dir=Path(data.get("output_dir", ms_path.parent)),
+        )
         instance._preloaded = data
         return instance
 
@@ -390,7 +393,7 @@ class InspectMSContext(SubprocessExecContext):
     @property
     def _output_path(self) -> Path:
         "Shortcut to get the same output path as MSInfo generates"
-        return MSInfo(self.ms).output_path
+        return MSInfo(ms=self.ms).output_path
 
     @property
     def cmd(self) -> list[list[str]]:
@@ -418,7 +421,7 @@ def inspect_ms(ctx: InspectMSContext) -> MSInfo:
                 print(p.stdout)
         return MSInfo.from_json(ctx._output_path)
     logger.info(f"Inspecting measurement set: {ctx.ms}")
-    return MSInfo(ctx.ms)
+    return MSInfo(ms=ctx.ms)
 
 
 def main():

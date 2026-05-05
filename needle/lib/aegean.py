@@ -17,73 +17,73 @@ class AegeanSource(NeedleModel):
     source: int
     "Source index within island"
 
-    background: float | None
+    background: float | None = None
     "Background flux density (Jy/beam)"
 
-    local_rms: float | None
+    local_rms: float | None = None
     "Local RMS noise (Jy/beam)"
 
     ra: float
     "Right ascension (deg)"
 
-    err_ra: float | None
+    err_ra: float | None = None
     "Uncertainty in right ascension (deg)"
 
     dec: float
     "Declination (deg)"
 
-    err_dec: float | None
+    err_dec: float | None = None
     "Uncertainty in declination (deg)"
 
-    peak_flux: float | None
+    peak_flux: float | None = None
     "Peak flux density (Jy/beam)"
 
-    err_peak_flux: float | None
+    err_peak_flux: float | None = None
     "Uncertainty in peak flux density (Jy/beam)"
 
-    int_flux: float | None
+    int_flux: float | None = None
     "Integrated flux density (Jy)"
 
-    err_int_flux: float | None
+    err_int_flux: float | None = None
     "Uncertainty in integrated flux density (Jy)"
 
-    a: float | None
+    a: float | None = None
     "Semi-major axis FWHM (arcsec)"
 
-    err_a: float | None
+    err_a: float | None = None
     "Uncertainty in semi-major axis (arcsec)"
 
-    b: float | None
+    b: float | None = None
     "Semi-minor axis FWHM (arcsec)"
 
-    err_b: float | None
+    err_b: float | None = None
     "Uncertainty in semi-minor axis (arcsec)"
 
-    pa: float | None
+    pa: float | None = None
     "Position angle, east of north (deg)"
 
-    err_pa: float | None
+    err_pa: float | None = None
     "Uncertainty in position angle (deg)"
 
     flags: str
     "Source flags as zero-padded 7-bit binary string, e.g. '0000001'"
 
-    residual_mean: float | None
+    residual_mean: float | None = None
     "Mean of fit residual (Jy/beam)"
 
-    residual_std: float | None
+    residual_std: float | None = None
     "Std dev of fit residual (Jy/beam)"
 
-    uuid: str | None
+    uuid: str | None = None
     "Unique identifier for this source"
 
-    psf_a: float | None
+    psf_a: float | None = None
     "PSF semi-major axis at source location (deg)"
 
-    psf_b: float | None
+    psf_b: float | None = None
     "PSF semi-minor axis at source location (deg)"
 
-    psf_pa: float | None
+    psf_pa: float | None = None
     "PSF position angle at source location (deg)"
 
     @field_validator("*", mode="before")
@@ -111,9 +111,10 @@ class AegeanSourceList(NeedleModel):
 
     @classmethod
     def from_json(cls, path: Path | str) -> "AegeanSourceList":
+        path = Path(path)
         if not path.suffix == ".json":
             raise ValueError(f"Expected .json, got file: {path}")
-        return cls(sources=[AegeanSource.model_validate(r) for r in json.loads(Path(path).read_text())])
+        return cls(sources=[AegeanSource.model_validate(r) for r in json.loads(path.read_text())])
 
     @classmethod
     def from_component_list(cls, srcs: list[ComponentSource]) -> "AegeanSourceList":
