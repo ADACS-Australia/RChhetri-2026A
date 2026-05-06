@@ -67,5 +67,5 @@ def test_subprocess_exec_context_execute_fail(mock_run):
     """Test error handling when a subprocess command fails."""
     mock_run.side_effect = subprocess.CalledProcessError(1, ["ls"], stderr="error")
     ctx = MockSubprocessContext()
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(RuntimeError):
         ctx.execute()

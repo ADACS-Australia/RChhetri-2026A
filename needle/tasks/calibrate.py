@@ -34,10 +34,4 @@ def calibrate_pair_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = CalibrateContext(runtime=runtime, cfg=cfg, cal=ms_pair.cal, tgt=ms_pair.tgt)
-    return calibrate_observation(ctx)
-
-
-@task()
-def extract_tgt_task(cal_output: CalibrateOutput) -> Path:
-    """Pulls the calibrated target ms from the CalibrateOuptut object"""
-    return cal_output.tgt
+ ,    return calibrate_observation(ctx)

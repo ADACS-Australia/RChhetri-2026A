@@ -68,7 +68,7 @@ class SubprocessExecContext(NeedleContext):
                 results.append(result)
             except subprocess.CalledProcessError as e:
                 logger.error(f"Command failed with exit code {e.returncode}")
-                logger.error(f"stdout: {e.stdout}")
-                logger.error(f"stderr: {e.stderr}")
-                raise
+                raise RuntimeError(
+                    f"Subprocess failed (exit {e.returncode}):\nSTDERR:\n{e.stderr}\nSTDOUT:\n{e.stdout}"
+                ) from e
         return results

@@ -9,14 +9,16 @@ from prefect_dask import DaskTaskRunner
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import PipelineConfig
 from needle.modules.inspect_ms import MSInfo
-from needle.tasks.calibrate import calibrate_pair_task, extract_tgt_task
+from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
-from needle.tasks.convert import convert_beam_pair_task, extract_cal_task
+from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.diagnostics import diagnostics_task, diagnostics_cal_output_task
 from needle.tasks.flag import flag_ms_pair_task
 from needle.tasks.inspect import inspect_pair_task
 from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
+from needle.tasks.utils import beam_pair_extract_cal_task, cal_output_extract_tgt_task
+
 
 FutureList = list[PrefectFuture]
 
@@ -48,8 +50,8 @@ def _flag_and_calibrate(cfg: PipelineConfig, f_ms_pairs: FutureList) -> Tuple[Fu
     defaults = _unmapped_defaults(cfg)
     flag_pair_futures = flag_ms_pair_task.map(f_ms_pairs, cfg=unmapped(cfg.flag), **defaults)
     f_cal_output = calibrate_pair_task.map(flag_pair_futures, cfg=unmapped(cfg.calibrate), **defaults)
-    f_tgt = extract_tgt_task.map(f_cal_output)
-    f_cal = extract_cal_task.map(f_cal_output)
+    f_tgt = cal_output_extract_tgt_task.map(f_cal_output)
+    f_cal = beam_pair_extract_cal_task.map(f_ms_pairs)
     return (f_cal_output, f_tgt, f_cal)
 
 
@@ -57,12 +59,12 @@ def _inspect_and_diagnose(
     cfg: PipelineConfig, f_ms_pairs: FutureList, f_cal_output: FutureList
 ) -> Tuple[FutureList, FutureList, FutureList]:
     defaults = _unmapped_defaults(cfg)
-    f_inspect = inspect_pair_task.map(f_ms_pairs, **defaults)
+    f_inspect_pair = inspect_pair_task.map(f_ms_pairs, **defaults)  # (cal, tgt)
     # Run diagnostics on the calibrator MS
-    f_cal_diagnostics = diagnostics_task.map(extract_cal_task.map(f_ms_pairs), **defaults)
+    f_cal_diagnostics = diagnostics_task.map(beam_pair_extract_cal_task.map(f_ms_pairs), **defaults)
     # Run diagnostics on calibrated target and calibrator solution tables
     f_tgt_diagnostics = diagnostics_cal_output_task.map(f_cal_output, **defaults)
-    return (f_inspect, f_cal_diagnostics, f_tgt_diagnostics)
+    return (f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics)
 
 
 def _source_find_and_mask(cfg: PipelineConfig, f_shallow_image: FutureList) -> FutureList:
@@ -93,7 +95,7 @@ def _create_and_subtract_model(
 
 def _expand_intervals(
     f_tgt: FutureList,
-    f_inspect: FutureList,
+    f_inspect_pair: FutureList,
     f_model_subtract: FutureList,
     f_mask: FutureList,
     n_intervals: int,
@@ -104,8 +106,8 @@ def _expand_intervals(
     all_model_subtracts = []
     all_masks = []
     all_intervals = []
-    for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect, f_model_subtract, f_mask):
-        inspect_path = inspect.result()  # resolve the path from the future
+    for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_pair, f_model_subtract, f_mask):
+        inspect_path = inspect.result()[1]  # resolve the path from the future - index 1 is tgt
         intervals = _split_ms_into_intervals(inspect_path, n_intervals=n_intervals)
         for interval in intervals:
             all_tgt.append(tgt)
@@ -127,11 +129,12 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
 
     # Convert pairs to measurement sets and set up working directories
     f_ms_pairs = convert_beam_pair_task.map(cfg.flow.beam_pairs, **defaults)
-    f_cal_output, f_tgt, _ = _flag_and_calibrate(cfg=cfg)
-    f_inspect, f_cal_diagnostics, f_tgt_diagnostics = _inspect_and_diagnose(
+    f_cal_output, f_tgt, _ = _flag_and_calibrate(cfg=cfg, f_ms_pairs=f_ms_pairs)
+    f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics = _inspect_and_diagnose(
         cfg=cfg, f_ms_pairs=f_ms_pairs, f_cal_output=f_cal_output
     )
 
+    # Clean, mask and model subtract
     f_shallow_image = clean_task.with_options(name="shallow_clean").map(
         f_tgt, cfg=unmapped(cfg.shallow_clean), **defaults
     )
@@ -139,12 +142,12 @@ def needle_pipeline(cfg: PipelineConfig) -> Flow:
     f_deep_image = clean_task.with_options(name="deep_clean").map(
         f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
     )
-    f_model_subtract = _create_and_subtract_model(cfg=cfg, f_deep_image=f_deep_image, f_mask=f_mask)
+    f_model_subtract = _create_and_subtract_model(cfg=cfg, f_tgt=f_tgt, f_deep_image=f_deep_image, f_mask=f_mask)
 
     # Clean on each interval - one task per (MS, interval) combination
     all_tgt, all_model_subtracts, all_masks, all_intervals = _expand_intervals(
         f_tgt=f_tgt,
-        f_inspect=f_inspect,
+        f_inspect_pair=f_inspect_pair,
         f_model_subtract=f_model_subtract,
         f_mask=f_mask,
         n_intervals=cfg.flow.interval_tasks,

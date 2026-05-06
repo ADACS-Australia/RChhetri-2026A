@@ -94,14 +94,18 @@ class MSDiagnostics(BaseModel):
 
     @field_validator("gcal")
     @classmethod
-    def _valid_gcal(cls, gcal: Path) -> Path:
+    def _valid_gcal(cls, gcal: Path | None) -> Path:
+        if not gcal:
+            return gcal
         if not gcal.exists():
             raise ValueError(f"Gaincal table does not exist: {gcal}")
         return gcal
 
     @field_validator("bpcal")
     @classmethod
-    def _valid_bpcal(cls, bpcal: Path) -> Path:
+    def _valid_bpcal(cls, bpcal: Path | None) -> Path:
+        if not bpcal:
+            return bpcal
         if not bpcal.exists():
             raise ValueError(f"Bandpass table does not exist: {bpcal}")
         return bpcal
@@ -231,8 +235,8 @@ class MSDiagnostics(BaseModel):
             ant1 = subtb.getcol("ANTENNA1")  # (nrow,)
             subtb.close()
 
-        # Apply flags
-        d = data[corr]  # (nchan, nrow)
+        # Apply flags to selected correlation
+        d = data[corr].astype(complex)  # (nchan, nrow)
         f = flags[corr]  # (nchan, nrow)
         d = np.where(f, np.nan + 0j, d)
 
@@ -244,7 +248,6 @@ class MSDiagnostics(BaseModel):
         amp = np.abs(d)
         phase = np.angle(d, deg=True)
 
-        # Normalise time to minutes from start
         t0 = np.nanmin(times)
         t_minutes = (times - t0) / 60.0
 
@@ -256,13 +259,12 @@ class MSDiagnostics(BaseModel):
         axes[1].set_xlim(t_minutes.min(), t_minutes.max())
 
         for i, name in enumerate(self._antenna_names):
-            mask = ant1 == i
+            mask = ant1 == self._active_antenna_indices[i]  # use actual MS antenna index
             if not np.any(mask):
                 continue
             axes[0].scatter(t_minutes[mask], amp[mask], s=2, color=self._antenna_colors[i], label=name, alpha=0.7)
             axes[1].scatter(t_minutes[mask], phase[mask], s=2, color=self._antenna_colors[i], alpha=0.7)
 
-        # Shared legend outside plot
         fig.legend(
             handles=self._antenna_legend_handles("scatter"), loc="center right", fontsize=7, bbox_to_anchor=(1.08, 0.5)
         )
@@ -287,14 +289,14 @@ class MSDiagnostics(BaseModel):
 
         channels = np.arange(nchan)
         fig, axes = self._amp_phase_fig(
-            xlabel="Time (minutes from start)",
+            xlabel="Channel",
             title_amp=f"Amplitude vs Channel  (spw={self.spw}, corr={corr})",
             title_phase=f"Phase vs Channel  (spw={self.spw}, corr={corr})",
         )
         axes[1].set_xlim(channels.min(), channels.max())
 
         for i, name in enumerate(self._antenna_names):
-            mask = ant1 == i
+            mask = ant1 == self._active_antenna_indices[i]  # use actual MS antenna index
             if not np.any(mask):
                 continue
             d_ant = d[:, mask]  # (nchan, nrows_for_ant)
@@ -375,7 +377,7 @@ class MSDiagnostics(BaseModel):
         axes[1].set_xlim(channels.min(), channels.max())
 
         for i, _ in enumerate(self._antenna_names):
-            mask = ant_col == i
+            mask = ant_col == self._active_antenna_indices[i]  # use actual MS antenna index
             if not np.any(mask):
                 continue
             g = gains[0, :, mask].T
@@ -503,7 +505,7 @@ class MSDiagnostics(BaseModel):
         data = np.where(flags, np.nan, np.abs(data))
         means, stds, names = [], [], []
         for i, name in enumerate(self._antenna_names):
-            mask = ant1 == i
+            mask = ant1 == self._active_antenna_indices[i]  # use actual MS antenna index
             if not np.any(mask):
                 continue
             vals = data[:, :, mask].flatten()
@@ -534,7 +536,6 @@ class MSDiagnostics(BaseModel):
         self._save(fig, self.antenna_amp_stats_plot)
         self._output.antenna_amp_stats_plot = self.antenna_amp_stats_plot
 
-        # Write to JSON
         stats = {
             name: {
                 "mean": round(float(means[i]), 6),
