@@ -98,7 +98,7 @@ def predict_task(
         raise RuntimeError(f"Expected output model to exist but cannot find with prefix: {ctx.name}")
 
     run_clean(ctx)
-    ms_info = MSInfo(ms)
+    ms_info = MSInfo(ms=ms)
     if "MODEL_DATA" not in ms_info.data_columns:
         raise RuntimeError(f"Coluld not find MODEL_DATA column in {ms} after wsclean predict")
 
