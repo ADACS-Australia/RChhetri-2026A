@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
-from needle.config.pipeline import BeamPair, MSBeamPair, PipelineFlowConfig
+from needle.config.pipeline import PipelineFlowConfig
+from needle.config.beam import BeamPair, MSBeamPair
 
 
 def test_beam_pair_dir(tmp_path):

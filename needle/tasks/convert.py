@@ -1,10 +1,9 @@
-from pathlib import Path
 from typing import Optional
 
 from prefect import task
 
 from needle.config.pipeline import ContainerConfig
-from needle.config.pipeline import BeamPair, MSBeamPair
+from needle.config.beam import BeamPair, MSBeamPair
 from needle.modules.convert import convert_to_ms, ConvertContext
 from needle.lib.logging import setup_logging
 
