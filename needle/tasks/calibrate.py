@@ -3,7 +3,7 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.pipeline import ContainerConfig
+from needle.config.base import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.config.beam import MSBeamPair
 from needle.modules.calibrate import calibrate_observation, CalibrateContext, CalibrateOutput

@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from prefect import task
 
-from needle.config.pipeline import ContainerConfig
+from needle.config.base import ContainerConfig
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
