@@ -8,6 +8,7 @@ from prefect_dask import DaskTaskRunner
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import PipelineConfig
+from needle.modules.beam import find_beam_pairs
 from needle.modules.inspect_ms import MSInfo
 from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
@@ -120,15 +121,22 @@ def _expand_intervals(
 # Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
 # so ThreadPooolRunner will not work
 @flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
-def needle_pipeline(cfg: PipelineConfig) -> Flow:
+def needle_pipeline(cfg: PipelineConfig, data_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
 
     os.makedirs(cfg.flow.beams_dir, exist_ok=True)  # Must be done in serial
     defaults = _unmapped_defaults(cfg)
 
+    # Get the beam pairs to work with
+    beam_pairs = find_beam_pairs(
+        search_dir=data_dir, tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
+    )
+    if not beam_pairs:
+        raise RuntimeError(f"No beam pairs found for observation. Search directory: {data_dir}")
+
     # Convert pairs to measurement sets and set up working directories
-    f_ms_pairs = convert_beam_pair_task.map(cfg.flow.beam_pairs, **defaults)
+    f_ms_pairs = convert_beam_pair_task.map(beam_pairs, **defaults)
     f_cal_output, f_tgt, _ = _flag_and_calibrate(cfg=cfg, f_ms_pairs=f_ms_pairs)
     f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics = _inspect_and_diagnose(
         cfg=cfg, f_ms_pairs=f_ms_pairs, f_cal_output=f_cal_output

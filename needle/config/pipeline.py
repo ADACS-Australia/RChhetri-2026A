@@ -1,10 +1,9 @@
 import logging
 from pathlib import Path
-import re
 from typing import Optional
 import yaml
 
-from pydantic import ValidationError, model_validator, field_validator
+from pydantic import ValidationError, field_validator
 
 from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
@@ -12,69 +11,21 @@ from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCle
 from needle.config.flag import FlagConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
+from needle.config.watcher import WatcherConfig
 
 logger = logging.getLogger(__name__)
-
-
-class BeamPair(NeedleModel):
-    """A matched target/calibrator pair belonging to the same beam."""
-
-    beam: str
-    "Beam identifier e.g. '00'"
-
-    tgt: Path
-    "Path to the target input file"
-
-    cal: Path
-    "Path to the calibrator input file"
-
-    parent_dir: Path
-    "Path to the directory to put this BeamPair into"
-
-    @property
-    def beam_dir(self) -> Path:
-        "Working directory for this beam"
-        return self.parent_dir / f"beam{self.beam}"
-
-    def setup_beam_dir(self) -> Path:
-        "Create the working directory for the beam"
-        # Do not make parents! This can lead to issues if multiple processes attempt to create the parent concurrently
-        self.beam_dir.mkdir(parents=False, exist_ok=True)
-        return self.beam_dir
-
-
-class MSBeamPair(BeamPair):
-    """A beam pair where both files are guaranteed to be measurement sets."""
-
-    @model_validator(mode="after")
-    def validate_ms_suffixes(self):
-        for field, path in [("target", self.tgt), ("calibrator", self.cal)]:
-            if path.suffix != ".ms":
-                raise ValueError(f"{field} must be a measurement set, got {path}")
-        return self
-
-    @model_validator(mode="after")
-    def validate_exists(self):
-        if not self.tgt.exists():
-            raise ValueError(f"{self.tgt} does not exist. Cannot construct model.")
-        if not self.cal.exists():
-            raise ValueError(f"{self.cal} does not exist. Cannot construct model.")
-        return self
 
 
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    tgt_pattern: str
-    "Path to the target Input file. Can be one of .mir, .uvfits or .ms"
+    tgt_pattern: str = r"(?P<name>.+)_(?P<beam>\d{2})\.(uvfits|mir|ms)"
+    "Pattern pointing to the target input files. Can be one of .mir, .uvfits or .ms"
 
-    cal_pattern: str
+    cal_pattern: str = r"cal_(?P<beam>\d{2})\.(uvfits|mir|ms)"
     "Path to the calibator Input file. Can be one of .mir, .uvfits or .ms"
 
-    data_dir: Path
-    "Local path containing the input data files"
-
-    overwrite: bool
+    overwrite: bool = True
     "Whether to overwrite any existing data"
 
     shm_size: str = "2gb"
@@ -101,43 +52,15 @@ class PipelineFlowConfig(NeedleModel):
             raise ValueError(f"log_level must be one of {valid_levels}, got '{v}'")
         return upper  # normalise to uppercase
 
-    @property
-    def beams_dir(self) -> Path:
-        "The directory to contain the separate processed beams"
-        return self.data_dir / "beams"
 
-    @property
-    def beam_pairs(self) -> list[BeamPair]:
-        "Match targets and calibrators by beam number"
-        targets = {
-            m.group("beam"): path for path in self.data_dir.iterdir() if (m := re.match(self.tgt_pattern, path.name))
-        }
-        calibrators = {
-            m.group("beam"): path for path in self.data_dir.iterdir() if (m := re.match(self.cal_pattern, path.name))
-        }
-
-        matched = targets.keys() & calibrators.keys()
-        unmatched_targets = targets.keys() - matched
-        unmatched_calibrators = calibrators.keys() - matched
-
-        if unmatched_targets:
-            logger.warning(f"Targets with no calibrator match for beams: {unmatched_targets}")
-        if unmatched_calibrators:
-            logger.warning(f"Calibrators with no target match for beams: {unmatched_calibrators}")
-        if not matched:
-            raise ValueError(f"No matching beam pairs found in {self.data_dir}")
-
-        return [
-            BeamPair(beam=beam, tgt=targets[beam], cal=calibrators[beam], parent_dir=self.beams_dir)
-            for beam in sorted(matched)
-        ]
-
-
-class PipelineConfig(NeedleModel):
+class NeedleConfig(NeedleModel):
     """The top-level config model, merges the flow config and the task cfgs"""
 
     flow: PipelineFlowConfig
-    "flow-level configuration — file discovery and beam matching"
+    "flow-level configuration"
+
+    watcher: WatcherConfig
+    "Config for the Watcher - which pushes events when files become available"
 
     flag: FlagConfig
     "Flagging config"

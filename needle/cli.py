@@ -1,16 +1,20 @@
 import argparse
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal, Optional
 import yaml
 
 from dask_jobqueue import SLURMCluster
+from prefect import serve
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
-from needle.flows.pipeline import needle_pipeline
-from needle.lib.flow import CONTAINER_DATA_DIR
-from needle.lib.config import get_config
 from needle.config.pipeline import PipelineConfig
 from needle.config.base import NeedleModel
+from needle.flows.pipeline import needle_pipeline
+from needle.flows.watcher import watcher_flow
+from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.config import get_config
 
 
 class Env(NeedleModel):
@@ -133,7 +137,7 @@ def run():
     )(cfg=cfg)
 
 
-def serve():
+def needle_serve():
     """Serve the pipeline as a deployment to a server"""
     args = _parse_pipeline()
     cfg = get_config()
@@ -146,9 +150,27 @@ def serve():
         print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
-    needle_pipeline.with_options(
-        task_runner=task_runner, result_storage=cfg.flow.data_dir / Path("prefect_cache"), persist_result=True
-    ).serve(name="needle-pipeline", parameters={"cfg": cfg.to_kwargs()})
+    serve(
+        watcher_flow.to_deployment(name="watcher", interval=timedelta(seconds=cfg.poll_interval_seconds)),
+        needle_pipeline.with_options(
+            task_runner=task_runner,
+            result_storage=cfg.flow.data_dir / Path("prefect_cache"),
+            persist_result=True,
+        ).to_deployment(
+            name="needle-pipeline",
+            parameters={"cfg": cfg.to_kwargs()},
+            triggers=[
+                DeploymentEventTrigger(
+                    name="files-ready-trigger",
+                    enabled=True,
+                    expect={"needle-pipeline.files.ready"},
+                    match={"prefect.resource.id": "landing-zone.watcher"},
+                    parameters={"data_dir": "{{ event.payload.data_dir }}"},
+                    flow_run_name="{{ event.payload.obs_name }}",
+                )
+            ],
+        ),
+    )
 
 
 def deploy():
