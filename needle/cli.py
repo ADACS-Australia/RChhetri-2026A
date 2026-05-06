@@ -9,7 +9,7 @@ from prefect import serve
 from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
-from needle.config.pipeline import PipelineConfig
+from needle.config.pipeline import NeedleConfig
 from needle.config.base import NeedleModel
 from needle.flows.pipeline import needle_pipeline
 from needle.flows.watcher import watcher_flow
@@ -61,7 +61,7 @@ def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     )
 
 
-def _load_slurm_deploy_kwargs(cfg: PipelineConfig) -> dict:
+def _load_slurm_deploy_kwargs(cfg: NeedleConfig) -> dict:
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool-slurm",
@@ -76,7 +76,7 @@ def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
     return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
 
 
-def _load_local_deploy_kwargs(cfg: PipelineConfig, env: Env) -> dict:
+def _load_local_deploy_kwargs(cfg: NeedleConfig, env: Env) -> dict:
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool",

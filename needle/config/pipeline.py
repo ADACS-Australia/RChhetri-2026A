@@ -87,7 +87,7 @@ class NeedleConfig(NeedleModel):
     "Deep clean config"
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "PipelineConfig":
+    def from_yaml(cls, path: Path) -> "NeedleConfig":
         with open(path) as f:
             merged = yaml.safe_load(f)
         try:

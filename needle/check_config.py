@@ -8,13 +8,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from needle.config.pipeline import PipelineConfig
+from needle.config.pipeline import NeedleConfig
 
 
 def check_config(path):
     print(f"Validating config: {path}\n")
 
-    cfg = PipelineConfig.from_yaml(path)
+    cfg = NeedleConfig.from_yaml(path)
     print("Config loaded successfully!\n")
     print("--- Summary ---")
     print(f"  flow.log_level:    {cfg.flow.log_level}")

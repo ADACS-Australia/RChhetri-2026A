@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from needle.lib.config import get_config
-from needle.config.pipeline import PipelineConfig
+from needle.config.pipeline import NeedleConfig
 
 
 def test_get_config_no_file():
@@ -20,10 +20,10 @@ def test_get_config_no_file():
 def test_get_config_success():
     """Test successful loading of the needle pipeline configuration."""
     mock_home = Path("/mock/home")
-    mock_pipeline_config = MagicMock(spec=PipelineConfig)
+    mock_pipeline_config = MagicMock(spec=NeedleConfig)
 
     with patch("pathlib.Path.home", return_value=mock_home):
         with patch("pathlib.Path.exists", return_value=True):
-            with patch("needle.config.pipeline.PipelineConfig.from_yaml", return_value=mock_pipeline_config):
+            with patch("needle.config.pipeline.NeedleConfig.from_yaml", return_value=mock_pipeline_config):
                 config = get_config()
                 assert config == mock_pipeline_config
