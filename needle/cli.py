@@ -151,10 +151,14 @@ def needle_serve():
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     serve(
-        watcher_flow.to_deployment(name="watcher", interval=timedelta(seconds=cfg.poll_interval_seconds)),
+        watcher_flow.to_deployment(
+            name="watcher",
+            interval=timedelta(seconds=cfg.watcher.poll_interval_seconds),
+            parameters={"cfg": cfg.watcher.to_kwargs()},
+        ),
         needle_pipeline.with_options(
             task_runner=task_runner,
-            result_storage=cfg.flow.data_dir / Path("prefect_cache"),
+            result_storage=cfg.watcher.staging_dir / Path("prefect_cache"),
             persist_result=True,
         ).to_deployment(
             name="needle-pipeline",
