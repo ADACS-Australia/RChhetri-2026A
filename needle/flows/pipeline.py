@@ -121,7 +121,7 @@ def _expand_intervals(
 # Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
 # so ThreadPooolRunner will not work
 @flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
-def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str, **kwargs) -> Flow:
+def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
 
