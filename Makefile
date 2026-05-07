@@ -1,6 +1,6 @@
-BASE_IMAGE = needle-base:latest
-NEEDLE_IMAGE = needle:latest
-WORKER_IMAGE = needle-worker:latest
+BASE_IMAGE = $(DOCKER_USER)/needle-base:latest
+NEEDLE_IMAGE = $(DOCKER_USER)/needle:latest
+WORKER_IMAGE = $(DOCKER_USER)/needle-worker:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
 WORKER_DOCKERFILE = container/worker.Dockerfile

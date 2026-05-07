@@ -121,7 +121,7 @@ def _expand_intervals(
 # Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
 # so ThreadPooolRunner will not work
 @flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
-def needle_pipeline(cfg: NeedleConfig, data_dir: Path | str) -> Flow:
+def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str, **kwargs) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
 
@@ -130,10 +130,10 @@ def needle_pipeline(cfg: NeedleConfig, data_dir: Path | str) -> Flow:
 
     # Get the beam pairs to work with
     beam_pairs = find_beam_pairs(
-        search_dir=data_dir, tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
+        search_dir=work_dir, tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
     )
     if not beam_pairs:
-        raise RuntimeError(f"No beam pairs found for observation. Search directory: {data_dir}")
+        raise RuntimeError(f"No beam pairs found for observation. Search directory: {work_dir}")
 
     # Convert pairs to measurement sets and set up working directories
     f_ms_pairs = convert_beam_pair_task.map(beam_pairs, **defaults)

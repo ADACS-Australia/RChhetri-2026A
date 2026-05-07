@@ -1,6 +1,7 @@
 import pytest
 from pathlib import Path
-from needle.config.pipeline import PipelineFlowConfig
+from unittest.mock import MagicMock, patch
+from needle.config.pipeline import PipelineFlowConfig, NeedleConfig
 from needle.config.beam import BeamPair, MSBeamPair
 
 
@@ -69,3 +70,27 @@ def test_pipeline_flow_config_invalid_log_level():
 
     with pytest.raises(ValidationError, match="log_level must be one of"):
         PipelineFlowConfig(tgt_pattern=".*", cal_pattern=".*", data_dir=Path("."), overwrite=False, log_level="INVALID")
+
+
+def test_get_config_no_file():
+    """Test error handling when the needle config file is missing."""
+    # Mock Path.home to return a specific directory
+    mock_home = Path("/mock/home")
+
+    with patch("pathlib.Path.home", return_value=mock_home):
+        # We also need to ensure exists() returns False for this path
+        with patch("pathlib.Path.exists", return_value=False):
+            with pytest.raises(FileNotFoundError, match="Expected file /mock/home/.needle.yaml does not exist"):
+                NeedleConfig.get_config()
+
+
+def test_get_config_success():
+    """Test successful loading of the needle pipeline configuration."""
+    mock_home = Path("/mock/home")
+    mock_pipeline_config = MagicMock(spec=NeedleConfig)
+
+    with patch("pathlib.Path.home", return_value=mock_home):
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("needle.config.pipeline.NeedleConfig.from_yaml", return_value=mock_pipeline_config):
+                config = NeedleConfig.get_config()
+                assert config == mock_pipeline_config

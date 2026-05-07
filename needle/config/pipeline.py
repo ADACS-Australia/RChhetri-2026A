@@ -3,11 +3,12 @@ from pathlib import Path
 from typing import Optional
 import yaml
 
-from pydantic import ValidationError, field_validator
+from pydantic import ValidationError, field_validator, model_validator
 
 from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
+from needle.config.data import DataConfig
 from needle.config.flag import FlagConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    tgt_pattern: str = r"(?P<name>.+)_(?P<beam>\d{2})\.(uvfits|mir|ms)"
+    tgt_pattern: str = r"(?!cal_)(?P<name>.+)_(?P<beam>\d{2})\.(uvfits|mir|ms)"
     "Pattern pointing to the target input files. Can be one of .mir, .uvfits or .ms"
 
     cal_pattern: str = r"cal_(?P<beam>\d{2})\.(uvfits|mir|ms)"
@@ -57,10 +58,13 @@ class NeedleConfig(NeedleModel):
     """The top-level config model, merges the flow config and the task cfgs"""
 
     flow: PipelineFlowConfig
-    "flow-level configuration"
+    "flow-level configuration for the pipeline"
+
+    data: DataConfig
+    "Config for the data specifics"
 
     watcher: WatcherConfig
-    "Config for the Watcher - which pushes events when files become available"
+    "Config for the Watcher"
 
     flag: FlagConfig
     "Flagging config"
@@ -98,3 +102,22 @@ class NeedleConfig(NeedleModel):
                 fields = ", ".join(f"'{f}'" for f in missing)
                 raise ValueError(f"Config file {path} is missing required section(s): {fields}") from e
             raise
+
+    @classmethod
+    def get_config(
+        cls,
+    ) -> "NeedleConfig":
+        """Attempts to load the pipeline config from the expected location"""
+        # cfg_path cannot be overridden. It must be static since CASA's config.py relies on it for configuration.
+        cfg_path = Path.home() / Path(".needle.yaml")
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
+        return NeedleConfig.from_yaml(cfg_path)
+
+    @model_validator(mode="after")
+    def courier_source_matches_watcher(self):
+        if self.courier.source != self.watcher.source:
+            raise ValueError(
+                f"courier.source '{self.courier.source}' must match " f"watcher.source '{self.watcher.source}'"
+            )
+        return self

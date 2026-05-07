@@ -1,6 +1,6 @@
 import argparse
-from datetime import timedelta
 from pathlib import Path
+import threading
 from typing import Literal, Optional
 import yaml
 
@@ -12,9 +12,10 @@ from prefect_dask import DaskTaskRunner
 from needle.config.pipeline import NeedleConfig
 from needle.config.base import NeedleModel
 from needle.flows.pipeline import needle_pipeline
-from needle.flows.watcher import watcher_flow
+from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
+from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.flow import CONTAINER_DATA_DIR
-from needle.lib.config import get_config
+from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 
 class Env(NeedleModel):
@@ -121,7 +122,7 @@ def run():
     """Run the pipeline locally, now"""
     args = _parse_pipeline()
 
-    cfg = get_config()
+    cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
@@ -140,7 +141,7 @@ def run():
 def needle_serve():
     """Serve the pipeline as a deployment to a server"""
     args = _parse_pipeline()
-    cfg = get_config()
+    cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
@@ -150,27 +151,44 @@ def needle_serve():
         print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
+    # Start the watcher in the background
+    watcher_thread = threading.Thread(target=watch, args=(cfg.watcher,), daemon=True)
+    watcher_thread.start()
+    print("Watcher thread started")
+
     serve(
-        watcher_flow.to_deployment(
-            name="watcher",
-            interval=timedelta(seconds=cfg.watcher.poll_interval_seconds),
-            parameters={"cfg": cfg.watcher.to_kwargs()},
+        courier_flow.to_deployment(
+            name="needle-courier",
+            parameters={"cfg": cfg.data.to_kwargs()},
+            triggers=[
+                DeploymentEventTrigger(
+                    name="observation-ready-trigger",
+                    enabled=True,
+                    expect={OBSERVATION_READY_EVENT},
+                    match={"prefect.resource.id": WATCHER_RESOURCE_ID},
+                    parameters={"entry_name": "{{ event.payload.entry_name }}"},
+                    flow_run_name="courier-{{ event.payload.entry_name }}",
+                )
+            ],
         ),
         needle_pipeline.with_options(
             task_runner=task_runner,
-            result_storage=cfg.watcher.staging_dir / Path("prefect_cache"),
+            result_storage=cfg.data.staging_dir / Path("prefect_cache"),
             persist_result=True,
         ).to_deployment(
             name="needle-pipeline",
             parameters={"cfg": cfg.to_kwargs()},
             triggers=[
                 DeploymentEventTrigger(
-                    name="files-ready-trigger",
+                    name="observation-staged-trigger",
                     enabled=True,
-                    expect={"needle-pipeline.files.ready"},
-                    match={"prefect.resource.id": "landing-zone.watcher"},
-                    parameters={"data_dir": "{{ event.payload.data_dir }}"},
-                    flow_run_name="{{ event.payload.obs_name }}",
+                    expect={OBSERVATION_STAGED_EVENT},
+                    match={"prefect.resource.id": COURIER_RESOURCE_ID},
+                    parameters={
+                        "entry_name": "{{ event.payload.entry_name }}",
+                        "work_dir": "{{ event.payload.staged_dir }}",
+                    },
+                    flow_run_name="pipeline-{{ event.payload.entry_name }}",
                 )
             ],
         ),
@@ -183,7 +201,7 @@ def deploy():
     deploy_args = parser.add_argument_group("Deploy Args")
     Env.add_to_parser(deploy_args)
     args = _parse_pipeline()
-    cfg = get_config()
+    cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         raise NotImplementedError("Deploying to a cluster is currently unsupported")
