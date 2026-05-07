@@ -17,6 +17,7 @@ from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,9 @@ def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     # Inject dashboard address into scheduler options
     cfg["scheduler_options"] = {"dashboard_address": f":{dashboard_port}"}
 
-    print(f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})")
+    logger.info(
+        f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})"
+    )
     return DaskTaskRunner(
         cluster_class=SLURMCluster,
         cluster_kwargs=cfg,
@@ -124,16 +127,16 @@ def _parse_pipeline(parser: Optional[argparse.ArgumentParser] = None) -> argpars
 
 def run():
     """Run the pipeline locally, now"""
+    logger = setup_logging()
     args = _parse_pipeline()
-
     cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        logger.info(f"Using SLURM task runner from {cluster_cfg_path}")
     else:
-        print("Using local environment for task runs")
+        logger.info("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     needle_pipeline.with_options(
@@ -154,21 +157,22 @@ def _watch_and_restart(watcher_cfg, data_cfg):
 
 def needle_serve():
     """Serve the pipeline as a deployment to a server"""
+    logger = setup_logging()
     args = _parse_pipeline()
     cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        logger.info(f"Using SLURM task runner from {cluster_cfg_path}")
     else:
-        print("Using local environment for task runs")
+        logger.info("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     # Start the watcher in the background
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
-    print("Watcher thread started")
+    logger.info("Watcher thread started")
 
     serve(
         courier_flow.to_deployment(

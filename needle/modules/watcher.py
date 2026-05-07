@@ -1,11 +1,10 @@
-import logging
 import time
 
 from needle.config.watcher import WatcherConfig
 from needle.config.data import DataConfig
 from needle.lib.events import emit_observation_ready
+from needle.lib.logging import setup_watcher_logger
 
-logger = logging.getLogger(__name__)
 
 WATCHER_RESOURCE_ID = "needle.watcher"
 
@@ -19,12 +18,19 @@ def watch(watcher_cfg: WatcherConfig, data_cfg: DataConfig):
     :param watcher_cfg: Watcher configuration
     :param data_cfg: data configuration
     """
+    logger = setup_watcher_logger(log_file=watcher_cfg.log_file, level=watcher_cfg.log_level)
 
     logger.info("Watching for ready entries...")
     while True:
-        for entry_name in data_cfg.data_source.get_ready_entries(data_cfg.stability_check):
+        logger.debug(f"Scanning source: {data_cfg.source}")
+        entries = data_cfg.data_source.get_ready_entries(data_cfg.stability_check)
+        if len(entries) == 0:
+            logger.debug("No entries found")
+
+        for entry_name in entries:
             event = emit_observation_ready(entry_name=entry_name, resource_id=WATCHER_RESOURCE_ID)
             if not event:
                 logger.warning(f"Error emitting observation-ready event for entry: {entry_name}")
             logger.info(f"Emitted event for {entry_name}: {event.model_dump()}")
+
         time.sleep(watcher_cfg.poll_interval)

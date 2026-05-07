@@ -1,9 +1,9 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 import yaml
 
-from pydantic import ValidationError, field_validator, model_validator
+from pydantic import ValidationError, field_validator
 
 from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
@@ -32,7 +32,7 @@ class PipelineFlowConfig(NeedleModel):
     shm_size: str = "2gb"
     "Size of /dev/shm in the runtime container"
 
-    log_level: str = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     "Logging level"
 
     max_workers: Optional[int] = None
@@ -43,15 +43,6 @@ class PipelineFlowConfig(NeedleModel):
 
     interval_tasks: int = 1
     "The number of tasks to split the interval cleaning into per beam"
-
-    @field_validator("log_level")
-    @classmethod
-    def valid_log_level(cls, v: str) -> str:
-        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        upper = v.upper()
-        if upper not in valid_levels:
-            raise ValueError(f"log_level must be one of {valid_levels}, got '{v}'")
-        return upper  # normalise to uppercase
 
 
 class NeedleConfig(NeedleModel):
