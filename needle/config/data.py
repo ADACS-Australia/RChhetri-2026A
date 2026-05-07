@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pydantic import field_validator
+
 from needle.config.base import NeedleModel
 from needle.lib.datasource import DataSource
 
@@ -21,4 +23,13 @@ class DataConfig(NeedleModel):
         """Construct a DataSource from the source URI.
         :return: A LocalDataSource or S3DataSource depending on the URI scheme
         """
-        return DataSource.from_string(self.source)
+        return DataSource.from_str(self.source)
+
+    @field_validator("source")
+    @classmethod
+    def valid_source(cls, v: str) -> str:
+        if not v.startswith("s3://"):
+            path = Path(v.removeprefix("local://"))
+            if not path.is_absolute():
+                raise ValueError(f"Local source path must be absolute, got '{path}'")
+        return v

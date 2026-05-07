@@ -90,20 +90,14 @@ class DataSource(ABC):
 
     @classmethod
     def from_str(cls, source: str) -> "DataSource":
-        """Constructor method that creates the appropriate DataSource object based on
-        a string input."""
-        if source.startswith("local://"):
-            path = Path(source.removeprefix("local://"))
-            return LocalDataSource(watch_dir=path)
-        elif source.startswith("s3://"):
-            # s3://bucket/prefix/
+        if source.startswith("s3://"):
             without_scheme = source.removeprefix("s3://")
             bucket, _, prefix = without_scheme.partition("/")
             return S3DataSource(bucket=bucket, prefix=prefix)
         else:
-            raise ValueError(
-                f"Unrecognised source URI '{source}'. " "Expected 'local:///path/to/dir' or 's3://bucket/prefix/'"
-            )
+            # Treat anything else as a local path, stripping local:// if present
+            path = Path(source.removeprefix("local://"))
+            return LocalDataSource(watch_dir=path)
 
 
 class LocalDataSource(DataSource):
