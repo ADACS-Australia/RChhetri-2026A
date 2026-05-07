@@ -1,3 +1,5 @@
+include .env
+
 BASE_IMAGE = $(DOCKER_USER)/needle-base:latest
 NEEDLE_IMAGE = $(DOCKER_USER)/needle:latest
 WORKER_IMAGE = $(DOCKER_USER)/needle-worker:latest

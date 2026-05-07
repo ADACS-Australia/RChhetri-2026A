@@ -1,6 +1,8 @@
 import argparse
+import logging
 from pathlib import Path
 import threading
+import time
 from typing import Literal, Optional
 import yaml
 
@@ -16,6 +18,8 @@ from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.flow import CONTAINER_DATA_DIR
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
+
+logger = logging.getLogger(__name__)
 
 
 class Env(NeedleModel):
@@ -138,6 +142,16 @@ def run():
     )(cfg=cfg)
 
 
+def _watch_and_restart(watcher_cfg, data_cfg):
+    """Run watch(), restarting on failure after restart_delay seconds."""
+    while True:
+        try:
+            watch(watcher_cfg, data_cfg)
+        except Exception as e:
+            logger.error(f"Watcher crashed: {e} — restarting in 30s", exc_info=True)
+            time.sleep(30)
+
+
 def needle_serve():
     """Serve the pipeline as a deployment to a server"""
     args = _parse_pipeline()
@@ -152,7 +166,7 @@ def needle_serve():
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     # Start the watcher in the background
-    watcher_thread = threading.Thread(target=watch, args=(cfg.watcher,), daemon=True)
+    watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
     print("Watcher thread started")
 

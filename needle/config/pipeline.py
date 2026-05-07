@@ -113,11 +113,3 @@ class NeedleConfig(NeedleModel):
         if not cfg_path.exists():
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
         return NeedleConfig.from_yaml(cfg_path)
-
-    @model_validator(mode="after")
-    def courier_source_matches_watcher(self):
-        if self.courier.source != self.watcher.source:
-            raise ValueError(
-                f"courier.source '{self.courier.source}' must match " f"watcher.source '{self.watcher.source}'"
-            )
-        return self
