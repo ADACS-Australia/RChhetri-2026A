@@ -177,7 +177,7 @@ def needle_serve():
     serve(
         courier_flow.to_deployment(
             name="needle-courier",
-            parameters={"cfg": cfg.data.to_kwargs()},
+            parameters={"data_cfg": cfg.data.to_kwargs()},
             triggers=[
                 DeploymentEventTrigger(
                     name="observation-ready-trigger",
@@ -203,7 +203,6 @@ def needle_serve():
                     expect={OBSERVATION_STAGED_EVENT},
                     match={"prefect.resource.id": COURIER_RESOURCE_ID},
                     parameters={
-                        "entry_name": "{{ event.payload.entry_name }}",
                         "work_dir": "{{ event.payload.staged_dir }}",
                     },
                     flow_run_name="pipeline-{{ event.payload.entry_name }}",
