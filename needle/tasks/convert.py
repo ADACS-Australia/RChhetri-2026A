@@ -20,14 +20,12 @@ def convert_beam_pair_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    beam_dir = pair.setup_beam_dir()  # Set up the working directory for this beam
-
-    ctx = ConvertContext(runtime=runtime, input=pair.tgt, output_dir=beam_dir)
+    ctx = ConvertContext(runtime=runtime, input=pair.tgt)
     logger.info(f"Creating measurement set from {pair.tgt}")
     tgt_ms = convert_to_ms(ctx)
 
-    ctx = ConvertContext(runtime=runtime, input=pair.cal, output_dir=beam_dir)
+    ctx = ConvertContext(runtime=runtime, input=pair.cal)
     logger.info(f"Creating measurement set from {pair.cal}")
     cal_ms = convert_to_ms(ctx)
 
-    return MSBeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal_ms, parent_dir=pair.parent_dir)
+    return MSBeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal_ms)

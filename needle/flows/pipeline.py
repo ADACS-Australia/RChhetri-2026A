@@ -131,7 +131,7 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     beam_pairs = find_beam_pairs(search_dir=Path(work_dir))
     if not beam_pairs:
         raise RuntimeError(f"No beam pairs found for observation. Search directory: {work_dir}")
-    f_beam_pairs = setup_beam_dir_task.map(beam_pairs, **defaults)
+    f_beam_pairs = setup_beam_dir_task.map(beam_pairs, log_level=unmapped(cfg.flow.log_level))
 
     # Convert pairs to measurement sets and set up working directories
     f_ms_pairs = convert_beam_pair_task.map(f_beam_pairs, **defaults)

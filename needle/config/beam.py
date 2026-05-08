@@ -30,14 +30,14 @@ class BeamPair(NeedleModel):
     def move_tgt(self, new_dir: Path):
         "Moves the target to a new location"
         new_dir.mkdir(parents=False, exist_ok=True)
-        new_path = new_dir / self.tgt.stem
+        new_path = new_dir / self.tgt.name
         self.tgt.rename(new_path)
         self.tgt = new_path
 
     def move_cal(self, new_dir: Path):
         "Moves the calibrator to a new location"
         new_dir.mkdir(parents=False, exist_ok=True)
-        new_path = new_dir / self.cal.stem
+        new_path = new_dir / self.cal.name
         self.cal.rename(new_path)
         self.cal = new_path
 
