@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Optional, Literal
 import yaml
 
-from pydantic import ValidationError, field_validator
+from pydantic import ValidationError
 
 from needle.config.base import ContainerConfig, NeedleModel
 from needle.config.calibrate import CalibrateConfig
@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    tgt_pattern: str = r"(?!cal_)(?P<name>.+)_(?P<beam>\d{2})\.(uvfits|mir|ms)"
+    tgt_pattern: str = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
     "Pattern pointing to the target input files. Can be one of .mir, .uvfits or .ms"
 
-    cal_pattern: str = r"cal_(?P<beam>\d{2})\.(uvfits|mir|ms)"
+    cal_pattern: str = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
     "Path to the calibator Input file. Can be one of .mir, .uvfits or .ms"
 
     overwrite: bool = True

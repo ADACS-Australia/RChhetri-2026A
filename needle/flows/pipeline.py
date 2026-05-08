@@ -125,12 +125,12 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
 
-    os.makedirs(cfg.flow.beams_dir, exist_ok=True)  # Must be done in serial
+    # os.makedirs(cfg.flow.beams_dir, exist_ok=True)  # Must be done in serial
     defaults = _unmapped_defaults(cfg)
 
     # Get the beam pairs to work with
     beam_pairs = find_beam_pairs(
-        search_dir=work_dir, tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
+        search_dir=Path(work_dir), tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
     )
     if not beam_pairs:
         raise RuntimeError(f"No beam pairs found for observation. Search directory: {work_dir}")

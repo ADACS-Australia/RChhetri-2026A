@@ -157,22 +157,21 @@ def _watch_and_restart(watcher_cfg, data_cfg):
 
 def needle_serve():
     """Serve the pipeline as a deployment to a server"""
-    logger = setup_logging()
     args = _parse_pipeline()
     cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        logger.info(f"Using SLURM task runner from {cluster_cfg_path}")
+        print(f"Using SLURM task runner from {cluster_cfg_path}")
     else:
-        logger.info("Using local environment for task runs")
+        print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     # Start the watcher in the background
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
-    logger.info("Watcher thread started")
+    print("Watcher thread started")
 
     serve(
         courier_flow.to_deployment(
