@@ -8,7 +8,7 @@ from needle.lib.logging import setup_logging
 
 
 @task
-def setup_beam_dir(beam_pair: BeamPair, log_level: str = "INFO") -> BeamPair:
+def setup_beam_dir_task(beam_pair: BeamPair, log_level: str = "INFO") -> BeamPair:
     """Sets up a beamXX directory for the provided beam in its parent directory
 
     :param beam_pair: The beam pair object to make the directory and move the files for
