@@ -32,7 +32,6 @@ def find_beam_pairs(
     if not matched:
         logger.debug(f"Failed to find beam pairs with patterns: \n{tgt_pattern} \n{cal_pattern}")
         logger.debug(f"Looked in directory and found files: {list(search_dir.iterdir())}")
-        raise ValueError(f"No matching beam pairs found in {search_dir}.")
 
     return [
         BeamPair(beam=beam, tgt=targets[beam], cal=calibrators[beam], parent_dir=search_dir / f"beam{beam}")
