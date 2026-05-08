@@ -20,12 +20,6 @@ logger = logging.getLogger(__name__)
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    tgt_pattern: str = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
-    "Pattern pointing to the target input files. Can be one of .mir, .uvfits or .ms"
-
-    cal_pattern: str = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
-    "Path to the calibator Input file. Can be one of .mir, .uvfits or .ms"
-
     overwrite: bool = True
     "Whether to overwrite any existing data"
 

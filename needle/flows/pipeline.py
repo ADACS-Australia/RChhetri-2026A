@@ -129,9 +129,7 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     defaults = _unmapped_defaults(cfg)
 
     # Get the beam pairs to work with
-    beam_pairs = find_beam_pairs(
-        search_dir=Path(work_dir), tgt_pattern=cfg.flow.tgt_pattern, cal_pattern=cfg.flow.cal_pattern
-    )
+    beam_pairs = find_beam_pairs(search_dir=Path(work_dir))
     if not beam_pairs:
         raise RuntimeError(f"No beam pairs found for observation. Search directory: {work_dir}")
 

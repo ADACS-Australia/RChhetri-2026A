@@ -6,12 +6,11 @@ from needle.config.beam import BeamPair
 
 logger = logging.getLogger(__name__)
 
+TGT_PATTERN = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
+CAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
 
-def find_beam_pairs(
-    search_dir: Path,
-    tgt_pattern: str = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)",
-    cal_pattern: str = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)",
-) -> list[BeamPair]:
+
+def find_beam_pairs(search_dir: Path, tgt_pattern: str = TGT_PATTERN, cal_pattern: str = CAL_PATTERN) -> list[BeamPair]:
     """Match targets and calibrators by beam number within a staged observation directory.
 
     :param search_dir: The directory to search for beam pairs
@@ -30,8 +29,8 @@ def find_beam_pairs(
     if unmatched_calibrators:
         logger.warning(f"Calibrators with no target match for beams: {unmatched_calibrators}")
     if not matched:
-        logger.debug(f"Failed to find beam pairs with patterns: \n{tgt_pattern} \n{cal_pattern}")
-        logger.debug(f"Looked in directory and found files: {list(search_dir.iterdir())}")
+        logger.debug(f"Failed to find beam pairs with patterns: \ntgt: {tgt_pattern} \ncal: {cal_pattern}")
+        logger.debug(f"Looked in directory and found (unmatched) files: {list(search_dir.iterdir())}")
 
     return [
         BeamPair(beam=beam, tgt=targets[beam], cal=calibrators[beam], parent_dir=search_dir / f"beam{beam}")
