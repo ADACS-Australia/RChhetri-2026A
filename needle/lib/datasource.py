@@ -31,6 +31,32 @@ class DataSource(ABC):
 
     def __init__(self):
         self._snapshots: dict[str, tuple[DirectorySnapshot, float]] = {}
+        self._received: set[str] = set()
+
+    @property
+    def received(self):
+        return self._received
+
+    @property
+    def snapshots(self):
+        return self._snapshots
+
+    @property
+    def state(self) -> dict:
+        """Return the current state of the data source for debugging.
+        :return: A dict containing the current snapshots and received entries
+        """
+        return {
+            "received": list(self.received),
+            "snapshots": {
+                name: {
+                    "file_count": snapshot.file_count,
+                    "total_size": snapshot.total_size,
+                    "stable_for": round(time.time() - stable_since, 1),
+                }
+                for name, (snapshot, stable_since) in self.snapshots.items()
+            },
+        }
 
     @abstractmethod
     def list_entries(self) -> list[str]:
@@ -39,6 +65,12 @@ class DataSource(ABC):
         :return: List of entry names (directory/prefix names, not full paths)
         """
         ...
+
+    def mark_received(self, entry_name: str):
+        """Mark an entry as received so it is not emitted again until it disappears.
+        :param entry_name: The entry name to mark as received
+        """
+        self._received.add(entry_name)
 
     @abstractmethod
     def snapshot(self, entry_name: str) -> DirectorySnapshot:
@@ -62,8 +94,8 @@ class DataSource(ABC):
     def get_ready_entries(self, stability_check: int = 60) -> list[str]:
         """Return entries that have been stable for at least stability_check seconds.
 
-        On each call, snapshots all visible entries and compares against the
-        previous snapshot. If unchanged, checks whether enough time has passed.
+        On each call, snapshots all visible entries (directories and compares against
+        the previous snapshot. If unchanged, checks whether enough time has passed.
         If changed, resets the stability timer.
 
         :param stability_check: How long a directory must be unchanged before it
@@ -73,7 +105,15 @@ class DataSource(ABC):
         now = time.time()
         ready = []
 
+        # Remove any entry from _recieved that is no longer in the directory
+        visible = set(self.list_entries())
+        self._received = {name for name in self._received if name in visible}
+
         for entry_name in self.list_entries():
+            if entry_name in self._received:
+                # Already received, ignore this
+                continue
+
             current = self.snapshot(entry_name)
             if entry_name in self._snapshots:
                 last_snapshot, stable_since = self._snapshots[entry_name]

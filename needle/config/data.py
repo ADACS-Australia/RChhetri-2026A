@@ -3,7 +3,6 @@ from pathlib import Path
 from pydantic import field_validator
 
 from needle.config.base import NeedleModel
-from needle.lib.datasource import DataSource
 
 
 class DataConfig(NeedleModel):
@@ -17,13 +16,6 @@ class DataConfig(NeedleModel):
 
     stability_check: int = 60
     "How long an entry must be unchanged before it is considered ready (seconds)"
-
-    @property
-    def data_source(self) -> DataSource:
-        """Construct a DataSource from the source URI.
-        :return: A LocalDataSource or S3DataSource depending on the URI scheme
-        """
-        return DataSource.from_str(self.source)
 
     @field_validator("source")
     @classmethod
