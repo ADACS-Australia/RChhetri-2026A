@@ -20,19 +20,26 @@ class BeamPair(NeedleModel):
     cal: Path
     "Path to the calibrator input file"
 
-    parent_dir: Path
-    "Path to the directory to put this BeamPair into"
-
-    @property
-    def beam_dir(self) -> Path:
-        "Working directory for this beam"
-        return self.parent_dir / f"beam{self.beam}"
-
-    def setup_beam_dir(self) -> Path:
-        "Create the working directory for the beam"
+    def move_files(self, new_dir):
+        "Move the tgt and cal to a new directory"
         # Do not make parents! This can lead to issues if multiple processes attempt to create the parent concurrently
-        self.beam_dir.mkdir(parents=False, exist_ok=True)
-        return self.beam_dir
+        new_dir.mkdir(parents=False, exist_ok=True)
+        self.move_tgt(new_dir)
+        self.move_cal(new_dir)
+
+    def move_tgt(self, new_dir: Path):
+        "Moves the target to a new location"
+        new_dir.mkdir(parents=False, exist_ok=True)
+        new_path = new_dir / self.tgt.stem
+        self.tgt.rename(new_path)
+        self.tgt = new_path
+
+    def move_cal(self, new_dir: Path):
+        "Moves the calibrator to a new location"
+        new_dir.mkdir(parents=False, exist_ok=True)
+        new_path = new_dir / self.cal.stem
+        self.cal.rename(new_path)
+        self.cal = new_path
 
 
 class MSBeamPair(BeamPair):
