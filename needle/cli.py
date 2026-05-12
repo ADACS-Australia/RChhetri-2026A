@@ -208,7 +208,6 @@ def needle_serve():
                 expect={OBSERVATION_STAGED_EVENT},
                 match={"prefect.resource.id": COURIER_RESOURCE_ID},
                 parameters={"work_dir": "{{ event.payload.staged_dir }}"},
-                flow_run_name="pipeline-{{ event.payload.entry_name }}",
             )
         ],
     )
