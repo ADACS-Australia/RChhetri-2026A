@@ -2,10 +2,8 @@ include .env
 
 BASE_IMAGE = $(DOCKER_USER)/needle-base:latest
 NEEDLE_IMAGE = $(DOCKER_USER)/needle:latest
-WORKER_IMAGE = $(DOCKER_USER)/needle-worker:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
-WORKER_DOCKERFILE = container/worker.Dockerfile
 APPTAINER_IMAGE = container/needle.sif
 
 # Sentinel files to track when each image was last built
@@ -17,19 +15,14 @@ APPTAINER_IMAGE = container/needle.sif
 	docker build --network=host -f $(NEEDLE_DOCKERFILE) -t $(NEEDLE_IMAGE) .
 	touch .needle_built
 
-.worker_built: $(WORKER_DOCKERFILE)
-	docker build -f $(WORKER_DOCKERFILE) -t $(WORKER_IMAGE) .
-	touch .worker_built
-
 $(APPTAINER_IMAGE): .needle_built
 	apptainer build -F $(APPTAINER_IMAGE) docker-daemon://$(NEEDLE_IMAGE)
 
-.PHONY: base needle worker apptainer all clean
+.PHONY: base needle apptainer all clean
 base: .base_built
 needle: .needle_built
-worker: .worker_built
 apptainer: $(APPTAINER_IMAGE)
-all: .base_built .needle_built .worker_built $(APPTAINER_IMAGE)
+all: .base_built .needle_built .$(APPTAINER_IMAGE)
 
 clean:
-	rm -f .base_built .needle_built .worker_built $(APPTAINER_IMAGE)
+	rm -f .base_built .needle_built .$(APPTAINER_IMAGE)
