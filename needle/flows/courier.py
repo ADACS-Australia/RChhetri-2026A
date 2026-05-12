@@ -1,4 +1,5 @@
 from prefect import flow, get_run_logger
+from prefect.runtime import flow_run
 
 from needle.config.data import DataConfig
 from needle.lib.datasource import DataSource
@@ -7,7 +8,13 @@ from needle.lib.events import emit_observation_staged
 COURIER_RESOURCE_ID = "needle.courier"
 
 
-@flow(name="courier", log_prints=True)
+def _courier_flow_name():
+    """Should be called only at runtime. Generates the name of the flow"""
+    params = flow_run.get_parameters()
+    return f"courier-{params['entry_name']}"
+
+
+@flow(name="needle-courier", log_prints=True, flow_run_name=_courier_flow_name)
 def courier_flow(data_cfg: DataConfig, entry_name: str):
     """Receive a staged observation and emit an event for the pipeline.
 

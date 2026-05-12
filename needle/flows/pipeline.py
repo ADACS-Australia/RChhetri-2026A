@@ -1,10 +1,10 @@
-import os
 from pathlib import Path
 from typing import Tuple
 
 from prefect import Flow, flow, unmapped
 from prefect.futures import PrefectFuture
 from prefect_dask import DaskTaskRunner
+from prefect.runtime import flow_run
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import NeedleConfig
@@ -48,6 +48,7 @@ def _unmapped_defaults(cfg: NeedleConfig) -> dict:
 
 
 def _flag_and_calibrate(cfg: NeedleConfig, f_ms_pairs: FutureList) -> Tuple[FutureList, FutureList, FutureList]:
+    """Flags the data and runs calibration"""
     defaults = _unmapped_defaults(cfg)
     flag_pair_futures = flag_ms_pair_task.map(f_ms_pairs, cfg=unmapped(cfg.flag), **defaults)
     f_cal_output = calibrate_pair_task.map(flag_pair_futures, cfg=unmapped(cfg.calibrate), **defaults)
@@ -59,6 +60,7 @@ def _flag_and_calibrate(cfg: NeedleConfig, f_ms_pairs: FutureList) -> Tuple[Futu
 def _inspect_and_diagnose(
     cfg: NeedleConfig, f_ms_pairs: FutureList, f_cal_output: FutureList
 ) -> Tuple[FutureList, FutureList, FutureList]:
+    """Inspects the data and runs diagnostics on it"""
     defaults = _unmapped_defaults(cfg)
     f_inspect_pair = inspect_pair_task.map(f_ms_pairs, **defaults)  # (cal, tgt)
     # Run diagnostics on the calibrator MS
@@ -118,9 +120,22 @@ def _expand_intervals(
     return all_tgt, all_model_subtracts, all_masks, all_intervals
 
 
+def _pipeline_flow_name() -> str:
+    """Should be called only at runtime. Generates the name of the flow"""
+    params = flow_run.get_parameters()
+    target_obs = Path(params["work_dir"]).stem
+    return f"pipeline-{target_obs}"
+
+
 # Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
 # so ThreadPooolRunner will not work
-@flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
+@flow(
+    name="needle-pipeline",
+    log_prints=True,
+    task_runner=DaskTaskRunner(),
+    persist_result=True,
+    flow_run_name=_pipeline_flow_name,
+)
 def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
