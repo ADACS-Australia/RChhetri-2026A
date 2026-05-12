@@ -7,7 +7,6 @@ from typing import Literal, Optional
 import yaml
 
 from dask_jobqueue import SLURMCluster
-from prefect import serve
 from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
@@ -159,25 +158,26 @@ def needle_serve():
     """Serve the pipeline as a deployment to a server"""
     args = _parse_pipeline()
     cfg = NeedleConfig.get_config()
-
     if args.cluster_cfg:
-        cluster_cfg_path = Path(args.cluster_cfg)
-        task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        task_runner = _load_slurm_task_runner(Path(args.cluster_cfg))
+        print(f"Using SLURM task runner from {args.cluster_cfg}")
     else:
-        print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
+        print("Using local environment for task runs")
 
-    # Start the watcher in the background
+    # Start watcher in background thread
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
-    print("Watcher thread started")
+    print(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
-    serve(
-        courier_flow.to_deployment(
-            name="needle-courier",
-            parameters={"data_cfg": cfg.data.to_kwargs()},
-            triggers=[
+    # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
+    # Serve courier in background thread
+    courier_thread = threading.Thread(
+        target=courier_flow.serve,
+        kwargs={
+            "name": "needle-courier",
+            "parameters": {"data_cfg": cfg.data.to_kwargs()},
+            "triggers": [
                 DeploymentEventTrigger(
                     name="observation-ready-trigger",
                     enabled=True,
@@ -187,27 +187,30 @@ def needle_serve():
                     flow_run_name="courier-{{ event.payload.entry_name }}",
                 )
             ],
-        ),
-        needle_pipeline.with_options(
-            task_runner=task_runner,
-            result_storage=cfg.data.staging_dir / Path("prefect_cache"),
-            persist_result=True,
-        ).to_deployment(
-            name="needle-pipeline",
-            parameters={"cfg": cfg.to_kwargs()},
-            triggers=[
-                DeploymentEventTrigger(
-                    name="observation-staged-trigger",
-                    enabled=True,
-                    expect={OBSERVATION_STAGED_EVENT},
-                    match={"prefect.resource.id": COURIER_RESOURCE_ID},
-                    parameters={
-                        "work_dir": "{{ event.payload.staged_dir }}",
-                    },
-                    flow_run_name="pipeline-{{ event.payload.entry_name }}",
-                )
-            ],
-        ),
+        },
+        daemon=True,
+    )
+    courier_thread.start()
+    print("Courier deployment started")
+
+    # Serve pipeline on main thread (blocks)
+    needle_pipeline.with_options(
+        task_runner=task_runner,
+        result_storage=cfg.data.staging_dir / Path("prefect_cache"),
+        persist_result=True,
+    ).serve(
+        name="needle-pipeline",
+        parameters={"cfg": cfg.to_kwargs()},
+        triggers=[
+            DeploymentEventTrigger(
+                name="observation-staged-trigger",
+                enabled=True,
+                expect={OBSERVATION_STAGED_EVENT},
+                match={"prefect.resource.id": COURIER_RESOURCE_ID},
+                parameters={"work_dir": "{{ event.payload.staged_dir }}"},
+                flow_run_name="pipeline-{{ event.payload.entry_name }}",
+            )
+        ],
     )
 
 
