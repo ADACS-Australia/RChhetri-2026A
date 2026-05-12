@@ -18,9 +18,9 @@ try:
         _CFG = yaml.load(f, Loader=yaml.SafeLoader)
 
     try:
-        data_dir = _CFG["flow"]["data_dir"]
+        data_dir = _CFG["data"]["staging_dir"]
     except KeyError:
-        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'flow.data_dir'")
+        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.staging_dir'")
     logs_dir = f"{data_dir}/logs"
 
     ## CASA Configuration for Needle ##
