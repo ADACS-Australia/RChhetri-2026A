@@ -8,9 +8,8 @@ from prefect_dask import DaskTaskRunner
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import NeedleConfig
-from needle.modules.beam import find_beam_pairs
 from needle.modules.inspect_ms import MSInfo
-from needle.tasks.beam import setup_beam_dir_task
+from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
@@ -128,10 +127,8 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     defaults = _unmapped_defaults(cfg)
 
     # Get the beam pairs to work with
-    beam_pairs = find_beam_pairs(search_dir=Path(work_dir))
-    if not beam_pairs:
-        raise RuntimeError(f"No beam pairs found for observation. Search directory: {work_dir}")
-    f_beam_pairs = setup_beam_dir_task.map(beam_pairs, log_level=unmapped(cfg.flow.log_level))
+    f_beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
+    f_beam_pairs = setup_beam_dir_task.map(f_beam_pairs, log_level=unmapped(cfg.flow.log_level))
 
     # Convert pairs to measurement sets and set up working directories
     f_ms_pairs = convert_beam_pair_task.map(f_beam_pairs, **defaults)

@@ -5,6 +5,20 @@ from prefect import task
 
 from needle.config.beam import BeamPair
 from needle.lib.logging import setup_logging
+from needle.modules.beam import find_beam_pairs
+
+
+@task
+def find_beam_pairs_task(search_dir: Path, log_level: str = "INFO") -> list[BeamPair]:
+    """Searches a directory for beam pairs
+
+    :param search_dir: The directory to scan
+    """
+    fn_inputs = locals().items()
+    logger = setup_logging(log_level)
+    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+
+    return find_beam_pairs(search_dir=search_dir)
 
 
 @task
