@@ -1,5 +1,7 @@
 """
-Wraps the flagging utility in CASA. Allows for multi-step flags. Order of flags is chosen by flag.py
+Flags a measurement set.
+Effectively wraps the flagging utility in CASA.
+Allows for multi-step flags. Order of flags is chosen by flag.py
 """
 
 from argparse import ArgumentParser

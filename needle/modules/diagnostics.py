@@ -1,3 +1,7 @@
+"""
+Runs diagnostics on a measurement set and generates plots and JSON data
+"""
+
 import argparse
 from functools import cached_property
 import json

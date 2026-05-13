@@ -1,5 +1,7 @@
 # Needle
 
+This project originated as part of an [ADACS](https://adacs.org.au/) project grant.
+
 ## Installation
 
 The python modules and entrypoints in Needle can be installed the regular way as it utilises a pyproject.toml

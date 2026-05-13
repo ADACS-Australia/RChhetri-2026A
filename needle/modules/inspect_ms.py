@@ -1,3 +1,7 @@
+"""
+Inspects a measurement set's basic details. Writes results to JSON
+"""
+
 import argparse
 from dataclasses import dataclass, asdict
 from functools import cached_property

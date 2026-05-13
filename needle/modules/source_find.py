@@ -1,7 +1,6 @@
 """
-find_sources.py
----------------
 Run BANE and Aegean on a FITS image to detect radio sources.
+
 Outputs the sources to a .json file
 """
 

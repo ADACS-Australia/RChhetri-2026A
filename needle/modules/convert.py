@@ -1,5 +1,5 @@
 """
-Converts a file to a .ms file
+Converts a .uvfits or .mir file to a measurement set (.ms)
 """
 
 import argparse

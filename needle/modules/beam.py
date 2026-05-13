@@ -1,3 +1,7 @@
+"""
+Handles finding and grouping calibrator and target observations into their respective BeamPairs
+"""
+
 import logging
 from pathlib import Path
 import re

@@ -1,6 +1,9 @@
 """
-Runs WSClean on a calibrated measurement set.
-Supports both shallow and deep cleaning via WSCleanConfig subclasses.
+Runs WSClean on a measurement set.
+Supports different cleaning modes:
+    - Shallow clean (no mask)
+    - Deep clean (with mask)
+    - Model subtraction
 """
 
 from argparse import ArgumentParser, Namespace

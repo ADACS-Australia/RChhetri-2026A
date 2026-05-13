@@ -1,22 +1,30 @@
-# Needle Module
+# Design
 
-Needle is stored in `needle/`. This doc contains some development information and highlights the design philosophy behind Needle.
+An overview of some of the design features of Needle.
 
-## File and Directory breakdown
+## Pydantic Models
 
-- `config/` - Data structures that act as static configuration for needle modules.
-- `modules/` - Python-scoped business logic. All code should be runnable natively and include a CLI entrypoint.
-- `tasks/` - Prefect-scoped business logic. Contains Prefect `tasks` that are run by flows. These tasks typically construct data models and pass them to `modules` to do work on.
-- `flows/` - Prefect-scoped orchestration logic.
-- `lib/` - Miscellaneous tools
-- `cli.py` - Used to access the main pipeline's run options.
+Needle makes heavy use of [Pydantic](https://pydantic.dev/docs/validation/latest/get-started/) as it provides:
 
-## Pydantic Model design
+- Easy documentation
+- Runtime type validation
+- Built-in dictionary serialisation
+- Data coercion
+
+Needle creates its own [NeedleModel class][needle.config.base.NeedleModel] that builds off the of pydantic base model by adding some features.
+
+### Config and Context
 
 Many of the models are either Config or Context models.
 
 Config models are constructed from static data that can be known before runtime (all stored in `config/`).
-Context models group the associated Config with runtime-derived variables. These also contain the means for execution of the work. All variables and configuration required to do the work is contained within the Context (contexts are stored in `modules/`)
+This is an important distinction, as it means that config objects should be built once and then treated as immutable.
+See [WSCleanConfig][needle.config.clean.WSCleanConfig] for an example.
+
+Context models group the associated Config with runtime-derived variables.
+All variables and configuration required to do the work is contained within the Context (contexts are stored in `modules/`)
+The [Context class][needle.modules.needle_context.SubprocessExecContext] is designed to be inherited by a module, which will run its `execute()` method in order to do work.
+See [WSCleanContext][needle.modules.clean.WSCleanContext] for an example.
 
 ## Tasks and Functions
 
