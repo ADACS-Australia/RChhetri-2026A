@@ -1,14 +1,15 @@
-import os
 from pathlib import Path
 from typing import Tuple
 
 from prefect import Flow, flow, unmapped
 from prefect.futures import PrefectFuture
 from prefect_dask import DaskTaskRunner
+from prefect.runtime import flow_run
 
 from needle.lib.logging import setup_logging
-from needle.config.pipeline import PipelineConfig
+from needle.config.pipeline import NeedleConfig
 from needle.modules.inspect_ms import MSInfo
+from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
@@ -42,11 +43,12 @@ def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[t
     return intervals
 
 
-def _unmapped_defaults(cfg: PipelineConfig) -> dict:
+def _unmapped_defaults(cfg: NeedleConfig) -> dict:
     return {"runtime": unmapped(cfg.flow.runtime), "log_level": unmapped(cfg.flow.log_level)}
 
 
-def _flag_and_calibrate(cfg: PipelineConfig, f_ms_pairs: FutureList) -> Tuple[FutureList, FutureList, FutureList]:
+def _flag_and_calibrate(cfg: NeedleConfig, f_ms_pairs: FutureList) -> Tuple[FutureList, FutureList, FutureList]:
+    """Flags the data and runs calibration"""
     defaults = _unmapped_defaults(cfg)
     flag_pair_futures = flag_ms_pair_task.map(f_ms_pairs, cfg=unmapped(cfg.flag), **defaults)
     f_cal_output = calibrate_pair_task.map(flag_pair_futures, cfg=unmapped(cfg.calibrate), **defaults)
@@ -56,8 +58,9 @@ def _flag_and_calibrate(cfg: PipelineConfig, f_ms_pairs: FutureList) -> Tuple[Fu
 
 
 def _inspect_and_diagnose(
-    cfg: PipelineConfig, f_ms_pairs: FutureList, f_cal_output: FutureList
+    cfg: NeedleConfig, f_ms_pairs: FutureList, f_cal_output: FutureList
 ) -> Tuple[FutureList, FutureList, FutureList]:
+    """Inspects the data and runs diagnostics on it"""
     defaults = _unmapped_defaults(cfg)
     f_inspect_pair = inspect_pair_task.map(f_ms_pairs, **defaults)  # (cal, tgt)
     # Run diagnostics on the calibrator MS
@@ -67,7 +70,7 @@ def _inspect_and_diagnose(
     return (f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics)
 
 
-def _source_find_and_mask(cfg: PipelineConfig, f_shallow_image: FutureList) -> FutureList:
+def _source_find_and_mask(cfg: NeedleConfig, f_shallow_image: FutureList) -> FutureList:
     """Source find on an image and create a mask"""
     defaults = _unmapped_defaults(cfg)
     f_json_sources = source_find_task.map(f_shallow_image, cfg=unmapped(cfg.source_find), **defaults)
@@ -81,7 +84,7 @@ def _source_find_and_mask(cfg: PipelineConfig, f_shallow_image: FutureList) -> F
 
 
 def _create_and_subtract_model(
-    cfg: PipelineConfig, f_tgt: FutureList, f_deep_image: FutureList, f_mask: FutureList
+    cfg: NeedleConfig, f_tgt: FutureList, f_deep_image: FutureList, f_mask: FutureList
 ) -> FutureList:
     """Creates a sky model and subtracts it from the data"""
     defaults = _unmapped_defaults(cfg)
@@ -117,18 +120,33 @@ def _expand_intervals(
     return all_tgt, all_model_subtracts, all_masks, all_intervals
 
 
+def _pipeline_flow_name() -> str:
+    """Should be called only at runtime. Generates the name of the flow"""
+    params = flow_run.get_parameters()
+    target_obs = Path(params["work_dir"]).stem
+    return f"pipeline-{target_obs}"
+
+
 # Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
 # so ThreadPooolRunner will not work
-@flow(log_prints=True, task_runner=DaskTaskRunner(), persist_result=True)
-def needle_pipeline(cfg: PipelineConfig) -> Flow:
+@flow(
+    name="needle-pipeline",
+    log_prints=True,
+    task_runner=DaskTaskRunner(),
+    persist_result=True,
+    flow_run_name=_pipeline_flow_name,
+)
+def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
-
-    os.makedirs(cfg.flow.beams_dir, exist_ok=True)  # Must be done in serial
     defaults = _unmapped_defaults(cfg)
 
+    # Get the beam pairs to work with
+    f_beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
+    f_beam_pairs = setup_beam_dir_task.map(f_beam_pairs, log_level=unmapped(cfg.flow.log_level))
+
     # Convert pairs to measurement sets and set up working directories
-    f_ms_pairs = convert_beam_pair_task.map(cfg.flow.beam_pairs, **defaults)
+    f_ms_pairs = convert_beam_pair_task.map(f_beam_pairs, **defaults)
     f_cal_output, f_tgt, _ = _flag_and_calibrate(cfg=cfg, f_ms_pairs=f_ms_pairs)
     f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics = _inspect_and_diagnose(
         cfg=cfg, f_ms_pairs=f_ms_pairs, f_cal_output=f_cal_output

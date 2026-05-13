@@ -7,7 +7,7 @@ Needle is stored in `needle/`. This doc contains some development information an
 - `config/` - Data structures that act as static configuration for needle modules.
 - `modules/` - Python-scoped business logic. All code should be runnable natively and include a CLI entrypoint.
 - `tasks/` - Prefect-scoped business logic. Contains Prefect `tasks` that are run by flows. These tasks typically construct data models and pass them to `modules` to do work on.
-- `flows/` - Prefect-scoped orchestration logic. Uses tasks to transform inputs.
+- `flows/` - Prefect-scoped orchestration logic.
 - `lib/` - Miscellaneous tools
 - `cli.py` - Used to access the main pipeline's run options.
 
@@ -23,12 +23,17 @@ Context models group the associated Config with runtime-derived variables. These
 The role of the `task` is to take the Config and use it to construct the Context at runtime, then pass this to the relevant `module` to do work.
 
 We would like as much of the business logic to be assigned to regular python functions rather than Prefect tasks.
+This helps with testability and reduces unnecessary abstraction.
 
 ## Modules and CLI
 
 Redeploying and running a flow from scratch can be costly. When developing, we want to do this as little as possible.
 
-Therefore, we should make an entrypoint to all of the Pythonic business logic wherever possible. This is why all modules contain a CLI entrypoint.
+Therefore, we should make an entrypoint to all of the Pythonic business logic wherever possible.
+
+We also want to give the user the option of doing any of the steps in isolation where feasible.
+
+For these reasons, all modules contain a CLI entrypoint.
 
 ## Configurability
 

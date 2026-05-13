@@ -1,16 +1,25 @@
 import argparse
+import logging
 from pathlib import Path
+import threading
+import time
 from typing import Literal, Optional
 import yaml
 
 from dask_jobqueue import SLURMCluster
+from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
-from needle.flows.pipeline import needle_pipeline
-from needle.lib.flow import CONTAINER_DATA_DIR
-from needle.lib.config import get_config
-from needle.config.pipeline import PipelineConfig
+from needle.config.pipeline import NeedleConfig
 from needle.config.base import NeedleModel
+from needle.flows.pipeline import needle_pipeline
+from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
+from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
+from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.logging import setup_logging
+from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
+
+logger = logging.getLogger(__name__)
 
 
 class Env(NeedleModel):
@@ -49,7 +58,9 @@ def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     # Inject dashboard address into scheduler options
     cfg["scheduler_options"] = {"dashboard_address": f":{dashboard_port}"}
 
-    print(f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})")
+    logger.info(
+        f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})"
+    )
     return DaskTaskRunner(
         cluster_class=SLURMCluster,
         cluster_kwargs=cfg,
@@ -57,7 +68,7 @@ def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     )
 
 
-def _load_slurm_deploy_kwargs(cfg: PipelineConfig) -> dict:
+def _load_slurm_deploy_kwargs(cfg: NeedleConfig) -> dict:
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool-slurm",
@@ -72,7 +83,7 @@ def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
     return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
 
 
-def _load_local_deploy_kwargs(cfg: PipelineConfig, env: Env) -> dict:
+def _load_local_deploy_kwargs(cfg: NeedleConfig, env: Env) -> dict:
     return dict(
         name="needle-pipeline",
         work_pool_name="needle-pool",
@@ -115,16 +126,16 @@ def _parse_pipeline(parser: Optional[argparse.ArgumentParser] = None) -> argpars
 
 def run():
     """Run the pipeline locally, now"""
+    logger = setup_logging()
     args = _parse_pipeline()
-
-    cfg = get_config()
+    cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        logger.info(f"Using SLURM task runner from {cluster_cfg_path}")
     else:
-        print("Using local environment for task runs")
+        logger.info("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     needle_pipeline.with_options(
@@ -133,22 +144,73 @@ def run():
     )(cfg=cfg)
 
 
-def serve():
+def _watch_and_restart(watcher_cfg, data_cfg):
+    """Run watch(), restarting on failure after restart_delay seconds."""
+    while True:
+        try:
+            watch(watcher_cfg, data_cfg)
+        except Exception as e:
+            logger.error(f"Watcher crashed: {e} — restarting in 30s", exc_info=True)
+            time.sleep(30)
+
+
+def needle_serve():
     """Serve the pipeline as a deployment to a server"""
     args = _parse_pipeline()
-    cfg = get_config()
-
+    cfg = NeedleConfig.get_config()
     if args.cluster_cfg:
-        cluster_cfg_path = Path(args.cluster_cfg)
-        task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
+        task_runner = _load_slurm_task_runner(Path(args.cluster_cfg))
+        print(f"Using SLURM task runner from {args.cluster_cfg}")
     else:
-        print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
+        print("Using local environment for task runs")
 
+    # Start watcher in background thread
+    watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
+    watcher_thread.start()
+    print(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
+
+    # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
+    # Serve courier in background thread
+    courier_thread = threading.Thread(
+        target=courier_flow.serve,
+        kwargs={
+            "name": "needle-courier",
+            "parameters": {"data_cfg": cfg.data.to_kwargs()},
+            "triggers": [
+                DeploymentEventTrigger(
+                    name="observation-ready-trigger",
+                    enabled=True,
+                    expect={OBSERVATION_READY_EVENT},
+                    match={"prefect.resource.id": WATCHER_RESOURCE_ID},
+                    parameters={"entry_name": "{{ event.payload.entry_name }}"},
+                    flow_run_name="courier-{{ event.payload.entry_name }}",
+                )
+            ],
+        },
+        daemon=True,
+    )
+    courier_thread.start()
+    print("Courier deployment started")
+
+    # Serve pipeline on main thread (blocks)
     needle_pipeline.with_options(
-        task_runner=task_runner, result_storage=cfg.flow.data_dir / Path("prefect_cache"), persist_result=True
-    ).serve(name="needle-pipeline", parameters={"cfg": cfg.to_kwargs()})
+        task_runner=task_runner,
+        result_storage=cfg.data.staging_dir / Path("prefect_cache"),
+        persist_result=True,
+    ).serve(
+        name="needle-pipeline",
+        parameters={"cfg": cfg.to_kwargs()},
+        triggers=[
+            DeploymentEventTrigger(
+                name="observation-staged-trigger",
+                enabled=True,
+                expect={OBSERVATION_STAGED_EVENT},
+                match={"prefect.resource.id": COURIER_RESOURCE_ID},
+                parameters={"work_dir": "{{ event.payload.staged_dir }}"},
+            )
+        ],
+    )
 
 
 def deploy():
@@ -157,7 +219,7 @@ def deploy():
     deploy_args = parser.add_argument_group("Deploy Args")
     Env.add_to_parser(deploy_args)
     args = _parse_pipeline()
-    cfg = get_config()
+    cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         raise NotImplementedError("Deploying to a cluster is currently unsupported")

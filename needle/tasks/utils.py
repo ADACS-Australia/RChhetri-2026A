@@ -2,7 +2,7 @@ from pathlib import Path
 
 from prefect import task
 
-from needle.config.pipeline import BeamPair
+from needle.config.beam import BeamPair
 from needle.modules.calibrate import CalibrateOutput
 
 

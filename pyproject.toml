@@ -7,6 +7,7 @@ requires-python = ">=3.11,<3.12"
 dependencies = [
     "aegeantools>=2.3.5",
     "astropy>=7.2.0",
+    "boto3>=1.43.5",
     "dask-jobqueue>=0.9.0",
     "prefect>=3.0.0",
     "prefect-dask>=0.3.6",
@@ -34,7 +35,7 @@ needle-diagnostics= "needle.modules.diagnostics:main"
 needle-mask= "needle.modules.mask:main"
 needle-source-find= "needle.modules.source_find:main"
 needle-deploy = "needle.cli:deploy"
-needle-serve = "needle.cli:serve"
+needle-serve = "needle.cli:needle_serve"
 needle-run= "needle.cli:run"
 
 

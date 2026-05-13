@@ -37,8 +37,6 @@ make all
 make base
 # Build needle
 make needle
-# Build worker
-make workder
 # Clean build artifacts
 make clean
 ```
@@ -50,12 +48,11 @@ The pipeline is orchestrated with [Prefect](https://www.prefect.io/).
 - Prefect database (Postgres)
 - Redis
 - Prefect webserver
-- Worker pool
 
-These components can be spun up with the `docker-compose.yaml` file.
+These components can be spun up with the `container/docker-compose-remote.yaml` file.
 
 ```bash
-docker compose up -d
+docker compose -f container/docker-compose-remote.yaml up -d
 ```
 
 This will also deploy the needle-pipeline deployment using an ephemeral container.
@@ -109,18 +106,23 @@ If using a SLURM cluster, an additional config file is required. Eg:
 account: "pawsey0008"
 queue: "work"
 cores: 2
-memory: "16GB"
+memory: "64GB"
 processes: 1
 walltime: "02:00:00"
 
 min_workers: 1
-max_workers: 8
+max_workers: 20
 
 local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
 log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
 
 job_script_prologue:
   - "module load singularity/4.1.0-slurm"
+  - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
+  - "export PREFECT_API_URL=http://localhost:4200/api"
+  - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
+  - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
+  - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
 
 job_extra_directives: []
 ```

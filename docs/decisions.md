@@ -23,7 +23,7 @@ The user must know to put .needle in the appropriate location (or symlink it). `
 **Context**
 CASA comes in two varieties - the monolithic version (a CLI), and a set of python libraries (modular).
 Monolithic CASA contains the entire suite of tools and can only be used via CLI.
-CLI use isn't a problem as we intend to do that anyway with Python subprocesses.
+CLI use isn't a problem as we intend to do that anyway with Python subprocesses. We use python subprocesses this way because we want to be able to supply a `.sif` for runtime execution.
 Needle only requires `casatasks` and `casatools`
 
 **Decision**
