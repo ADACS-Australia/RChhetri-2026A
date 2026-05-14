@@ -56,6 +56,7 @@ class WSCleanOutput(NeedleModel):
         by offsetting with the interval start (e.g. t0031 with interval_start=87 -> t0118).
 
         :param interval_start: The absolute timestep at which this interval chunk begins.
+        :raises ValueError: Raised if an image with an unrecognised interval token format is found.
         :returns: List of renamed image paths with absolute timestep indices.
         """
         clean_prefix = str(self.prefix).rsplit("_", 2)[0]
@@ -180,7 +181,6 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
     name prefix.
 
     :param ctx: WSClean run context object
-    :raises RuntimeError: If WSClean exits with a non-zero return code
     :returns: The wsclean output object
     """
     logger.info(f"Running WSClean on {ctx.ms}")

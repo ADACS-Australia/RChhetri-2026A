@@ -31,6 +31,8 @@ class ConvertContext(SubprocessExecContext):
         """
         Returns the relevant command to convert the input to a measurement set. If already a .ms, will put it in the
         appropriate directory if it's not already there.
+
+        :raises Exception: Raised if the input file type is not supported
         """
         match self.input.suffix:
             case ".uvfits":
@@ -57,8 +59,7 @@ class ConvertContext(SubprocessExecContext):
 def convert_to_ms(ctx: ConvertContext) -> Path:
     """Converts a valid observation file to a measurement set
 
-    :param input_path: The observation file to convert
-    :param output_dir: The directory to write the output to
+    :param ctx: The CovertContext object
     :return: The written measurement set path
     """
     if ctx.output.exists():

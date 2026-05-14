@@ -12,7 +12,7 @@ for path in sorted(Path("needle").rglob("*.py")):
 
     module_path = path.with_suffix("")
     doc_path = path.with_suffix(".md")
-    full_doc_path = Path("api") / doc_path  # files go in api/
+    full_doc_path = Path("api_reference") / doc_path  # files go in api/
 
     parts = list(module_path.parts)
     module_name = ".".join(parts)

@@ -41,7 +41,10 @@ class FlagContext(SubprocessExecContext):
 
     @property
     def cmd(self) -> list[list[str]]:
-        """Returns a list of flagdata commands for each active flagging step, in order"""
+        """Returns a list of flagdata commands for each active flagging step, in order
+
+        :raises ValueError: Raised if there are no configured flag steps
+        """
         steps = [
             self.cfg.quack,
             self.cfg.clip,
@@ -60,7 +63,6 @@ def flag_observation(ctx: FlagContext) -> None:
     """Flags an observation using the given configuration
 
     :param ctx: The flag context object
-    :raises ValueError: Raised if there are no configured steps to flag
     """
     logger.info(f"Flagging measurement set: {ctx.ms}")
     ctx.log_cmd()

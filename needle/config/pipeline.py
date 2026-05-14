@@ -77,6 +77,12 @@ class NeedleConfig(NeedleModel):
 
     @classmethod
     def from_yaml(cls, path: Path) -> "NeedleConfig":
+        """Constructs the object from a .yaml file
+
+        :param path: Path to the .yaml config file
+        :raises ValueErorr: Raised if the config is not valid
+        :returns: The NeedleConfig object constructed from the .yaml file
+        """
         with open(path) as f:
             merged = yaml.safe_load(f)
         try:
@@ -89,10 +95,12 @@ class NeedleConfig(NeedleModel):
             raise
 
     @classmethod
-    def get_config(
-        cls,
-    ) -> "NeedleConfig":
-        """Attempts to load the pipeline config from the expected location"""
+    def get_config(cls) -> "NeedleConfig":
+        """Attempts to load the pipeline config from the expected location
+
+        :raises FileNotFoundError: Raised if the config file is not found in the expected location
+        :returns: The NeedleConfig object constructed from the .yaml file
+        """
         # cfg_path cannot be overridden. It must be static since CASA's config.py relies on it for configuration.
         cfg_path = Path.home() / Path(".needle.yaml")
         if not cfg_path.exists():

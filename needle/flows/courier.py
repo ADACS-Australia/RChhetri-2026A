@@ -16,17 +16,18 @@ def _courier_flow_name():
 
 @flow(name="needle-courier", log_prints=True, flow_run_name=_courier_flow_name)
 def courier_flow(data_cfg: DataConfig, entry_name: str):
-    """Receive a staged observation and emit an event for the pipeline.
+    """Receive a staged observation (entry_name) and moves it to the appropriate location.
 
-    Triggered by a needle.observation.ready event from the watcher. Pulls the
-    observation from the data source into the staging directory, then emits a
+    Pulls the observation from the data source into the staging directory, then emits a
     needle.observation.staged event for the pipeline to consume.
 
-    The final staged_dir contains the data files and is of the form:
-    'data_cfg.staging_dir / entry_name'
+    The final staged_dir contains the data files and is of the form: 'data_cfg.staging_dir / entry_name'
+
+    Emits an event to indicate the data has been staged and is ready for work.
 
     :param data_cfg: The configuration information for the data
     :param entry_name: The name of this entry - identifies the observation
+    :raises RuntimeError: Raised if an error occurs during event emission
     """
     logger = get_run_logger()
     data_source = DataSource.from_str(data_cfg.source)

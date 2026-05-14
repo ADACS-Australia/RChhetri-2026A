@@ -2,9 +2,9 @@
 
 ## Needle
 
-Needle is stored in `needle/`.
+The program logic is stored in `needle/` and split into directories that define the code's scope and responsibility.
 
-- `config/` - Data structures that act as static configuration for needle modules. May also contain simple logic attached to the config classes.
+- `config/` - Data structures that act as static configuration for needle modules. May also contain some logic attached to the config classes.
 - `modules/` - Python-scoped business logic. All code should be runnable natively and include a CLI entrypoint. Doesn't know anything about the orchestrator.
 - `tasks/` - Prefect-scoped business logic. Contains Prefect `tasks` that are run by flows. These tasks typically construct data models using `config`s and pass them to `modules` to do work on.
 - `flows/` - Prefect-scoped orchestration logic. Flows should focus only on orchestration and as little on logic and work as possible. Flows should call `tasks` and not `modules`.

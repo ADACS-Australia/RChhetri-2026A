@@ -15,7 +15,10 @@ def create_mask_task(
     cfg: CreateMaskConfig,
     log_level: str = "INFO",
 ) -> Path:
-    """Creates a fits mask using a fits image as reference. Returns the path to the mask."""
+    """Creates a fits mask using a fits image as reference. Returns the path to the mask.
+
+    :raises FileNotFoundError: Raised if the mask file is not found after running the mask module
+    """
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
