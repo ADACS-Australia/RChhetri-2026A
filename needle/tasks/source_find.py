@@ -15,7 +15,10 @@ from needle.config.source_find import SourceFindConfig
 def source_find_task(
     fits_path: Path, cfg: SourceFindConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> Path:
-    """Find sources in fits images. Returns a path to a json of sources"""
+    """Find sources in fits images. Returns a path to a json of sources
+
+    :raises FileNotFoundError: Raised if the source find file is not found after running the source finder
+    """
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))

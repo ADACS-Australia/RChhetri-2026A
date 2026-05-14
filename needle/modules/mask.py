@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """
-Read an Aegean source catalogue JSON and a reference FITS image, then write
-a FITS mask file suitable for WSClean (-fits-mask).
-
-Each source gets a rectangular box, sized as `padding * major_axis`, written
-as non-zero pixels into an otherwise zero mask. WSClean will only clean inside
-these boxes.
+Takes the .json output from source_find to create a .fits mask around the sources
 """
 
 from argparse import ArgumentParser

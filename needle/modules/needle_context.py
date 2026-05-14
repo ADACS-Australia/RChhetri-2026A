@@ -42,7 +42,10 @@ class SubprocessExecContext(NeedleContext):
     @model_validator(mode="after")
     def _validate_cmd(self) -> "NeedleContext":
         """Ensures that cmd is a list of lists.
-        The lists contained are allowed to be empty as they will be no-ops in execute."""
+        The lists contained are allowed to be empty as they will be no-ops in execute.
+
+        :raises ValueError: Raised if self.cmd is not a list of lists
+        """
         cmd = self.cmd
         if not isinstance(cmd, list) or not all(isinstance(c, list) for c in cmd):
             raise ValueError("cmd must be a list of lists")
@@ -57,6 +60,9 @@ class SubprocessExecContext(NeedleContext):
     def execute(self) -> list[subprocess.CompletedProcess]:
         """Executes the commands using the runtime provided.
         Returns a list of CompletedProcess objects for each command run.
+
+        :raises RuntimeError: Raised if the subprocess fails
+        :returns: The completed processes
         """
         results = []
         for c in self._resolved_cmds:

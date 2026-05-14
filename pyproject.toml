@@ -21,6 +21,13 @@ casa = [
     "casatasks>=6.7",
     "casatools>=6.7",
 ]
+docs = [
+    "mkdocs==1.6.1", # Pinned for good reason. MkDocs unmaintained
+    "mkdocs-gen-files>=0.6.1", 
+    "mkdocs-literate-nav>=0.6.3",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.4",
+]
 
 [project.scripts]
 needle-inspect-ms = "needle.modules.inspect_ms:main"

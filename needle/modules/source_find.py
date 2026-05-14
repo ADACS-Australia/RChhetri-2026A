@@ -1,7 +1,6 @@
 """
-find_sources.py
----------------
 Run BANE and Aegean on a FITS image to detect radio sources.
+
 Outputs the sources to a .json file
 """
 
@@ -147,6 +146,7 @@ def run_bane(fits_path: Path, cores: int = 1) -> Tuple[Path, Path]:
 
     :param fits_path: The path to the fits image file to operate on
     :param cores: The number of cores to use for processing
+    :raises FileNotFoundError: Raised if the two expected files do not exist after running BANE
     :return: The path to the background image and rms noise image respectively
     """
 

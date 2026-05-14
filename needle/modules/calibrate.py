@@ -1,6 +1,6 @@
 """
-Wraps CASA calibration tasks: setjy, bandpass, gaincal, applycal, split.
-Each step is an explicit function call — no strategy abstraction.
+Determines calibration solutions and applies them to a target source.
+Effectively wraps CASA calibration tasks: setjy, bandpass, gaincal, applycal, split.
 """
 
 from argparse import ArgumentParser

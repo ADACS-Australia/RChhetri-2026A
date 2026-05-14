@@ -1,4 +1,10 @@
-# Decisions made during the creation of Needle
+# Decisions
+
+This is a log of the decisions made during the creation of Needle.
+
+This record serves to clarify what may otherwise be obscure choices.
+
+Records may be deleted should they no longer be relevant.
 
 ## Needle Config Path is a predetermined location
 

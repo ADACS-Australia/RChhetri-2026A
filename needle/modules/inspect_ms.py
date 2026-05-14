@@ -1,3 +1,7 @@
+"""
+Inspects a measurement set's basic details. Writes results to JSON
+"""
+
 import argparse
 from dataclasses import dataclass, asdict
 from functools import cached_property
@@ -88,11 +92,7 @@ class MSInfo(BaseModel):
     All sub-info sections are computed on first access and cached.
     Construct directly from an MS path, or deserialise from JSON.
 
-    :param ms: Path to the measurement set
-    :param output_dir: Directory to output to. If None, uses ms directory
-
     Example usage::
-
         ms = MSInfo("/data/my_obs.ms")
         print(ms.time.total_duration_min)
         print(ms.frequency.n_spw)

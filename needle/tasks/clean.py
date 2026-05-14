@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from prefect import task
 
-from needle.config.base import ContainerConfig
+from needle.config.pipeline import ContainerConfig
 from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
@@ -22,7 +22,10 @@ def interval_clean_task(
     log_level: str = "INFO",
     wait_for_: Optional[Any] = None,
 ) -> list[Path]:
-    """Cleans a single time interval slice of a measurement set."""
+    """Cleans a single time interval slice of a measurement set.
+
+    :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
+    """
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
@@ -41,8 +44,11 @@ def interval_clean_task(
         output_dir=output_dir,
     )
     wsclean_output = run_clean(ctx)
-    if not wsclean_output.image:
-        raise FileNotFoundError(f"Expected image file from wsclean '{wsclean_output.image}' does not exist")
+    n_expected = interval[1] - interval[0]
+    if not len(wsclean_output.image) == n_expected:
+        raise FileNotFoundError(
+            f"Expected number of image files ({n_expected}) do not match actual count ({len(wsclean_output.image)})"
+        )
 
     for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
         os.remove(f)
@@ -59,7 +65,10 @@ def clean_task(
     runtime: Optional[ContainerConfig] = None,
     log_level: str = "INFO",
 ) -> Path:
-    """Perform a clean on a measurement set with an optional mask input. Return the fits image path"""
+    """Perform a clean on a measurement set with an optional mask input. Return the fits image path.
+    Expects only one image output.
+
+    :raises RuntimeError: Raised if there is not exactly one image output"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
@@ -67,10 +76,8 @@ def clean_task(
     ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, fits_mask=mask)
     wsclean_output = run_clean(ctx)
 
-    if len(wsclean_output.image) > 1:
-        raise RuntimeError(f"More than one output from wsclean. Please investigate. Found {wsclean_output.image}")
-    if len(wsclean_output.image) < 1:
-        raise RuntimeError(f"No image output from wsclean. Search prefix: {wsclean_output.prefix} ")
+    if len(wsclean_output.image) != 1:
+        raise RuntimeError(f"Unexpected number of wsclean image outputs: {wsclean_output.image}")
 
     return wsclean_output.image[0]
 
@@ -85,21 +92,13 @@ def predict_task(
 ) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
-    Mostly the same as clean_task but checks for MODEL_DATA and doesn't return the wsclean output."""
+    Mostly the same as clean_task but doesn't return the wsclean output.
+    """
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = wait_for_
 
     ctx = WSCleanContext(runtime=runtime, cfg=cfg, ms=ms, predict=True)
-    if not len(ctx.output.model) == 1:
-        raise RuntimeError(f"Unexcpected number of output model files found with prefix: {ctx.name}")
-    if not ctx.output.model[0].exists():
-        raise RuntimeError(f"Expected output model to exist but cannot find with prefix: {ctx.name}")
-
     run_clean(ctx)
-    ms_info = MSInfo(ms=ms)
-    if "MODEL_DATA" not in ms_info.data_columns:
-        raise RuntimeError(f"Coluld not find MODEL_DATA column in {ms} after wsclean predict")
-
     return ms

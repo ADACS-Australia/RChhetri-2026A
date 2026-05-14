@@ -1,0 +1,23 @@
+.md-typeset h1 {
+    color: #7986cb;
+    font-weight: 900;
+    font-size: 2em;
+}
+
+.md-typeset h2 {
+    color: #7986cb;
+    font-weight: 700;
+    font-size: 1.5em;
+}
+
+.md-typeset h3 {
+    color: #7986cb;
+    font-weight: 500;
+    font-size: 1.2em;
+}
+
+.md-typeset h4 {
+    color: #7986cb;
+    font-weight: 500;
+    font-size: 1em;
+}
