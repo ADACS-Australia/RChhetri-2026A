@@ -5,14 +5,12 @@ from typing import Any, Optional
 from prefect import task
 
 from needle.config.pipeline import ContainerConfig
-from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
 from needle.modules.clean import run_clean, WSCleanContext
-from needle.modules.inspect_ms import MSInfo
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def interval_clean_task(
     ms: Path,
     cfg: WSCleanConfig,
@@ -57,7 +55,7 @@ def interval_clean_task(
     return wsclean_output.remap_interval_images(interval_start=interval[0])
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def clean_task(
     ms: Path,
     cfg: WSCleanConfig,
@@ -82,7 +80,7 @@ def clean_task(
     return wsclean_output.image[0]
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def predict_task(
     ms: Path,
     cfg: WSCleanConfig,

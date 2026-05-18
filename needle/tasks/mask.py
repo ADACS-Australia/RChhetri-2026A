@@ -4,11 +4,10 @@ from prefect import task
 
 from needle.config.mask import CreateMaskConfig
 from needle.modules.mask import create_mask, CreateMaskContext
-from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def create_mask_task(
     sources_json: Path,
     fits_image: Path,

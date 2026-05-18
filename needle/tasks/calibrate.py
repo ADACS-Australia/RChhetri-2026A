@@ -11,7 +11,7 @@ from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def calibrate_task(
     cal: Path, tgt: Path, cfg: CalibrateConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> CalibrateOutput:
@@ -24,7 +24,7 @@ def calibrate_task(
     return calibrate_observation(ctx)
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def calibrate_pair_task(
     ms_pair: MSBeamPair, cfg: CalibrateConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> CalibrateOutput:

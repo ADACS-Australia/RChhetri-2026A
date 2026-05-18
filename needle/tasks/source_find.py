@@ -6,12 +6,11 @@ from prefect import task
 from needle.config.base import ContainerConfig
 from needle.lib.aegean import AegeanSourceList
 from needle.lib.logging import setup_logging
-from needle.lib.flow import CACHE_EXPIRATION, CACHE_STRATEGY
 from needle.modules.source_find import source_find, SourceFindContext
 from needle.config.source_find import SourceFindConfig
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def source_find_task(
     fits_path: Path, cfg: SourceFindConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
 ) -> Path:
