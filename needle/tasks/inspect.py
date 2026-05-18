@@ -5,12 +5,11 @@ from prefect import task
 
 from needle.config.base import ContainerConfig
 from needle.config.beam import MSBeamPair
-from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.modules.inspect_ms import InspectMSContext, inspect_ms
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def inspect_pair_task(
     ms_pair: MSBeamPair, runtime: ContainerConfig = None, log_level: str = "INFO"
 ) -> Tuple[Path, Path]:
@@ -24,7 +23,7 @@ def inspect_pair_task(
     return (cal_info.to_json(), tgt_info.to_json())
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def inspect_ms_task(ms: Path, runtime: ContainerConfig = None, log_level: str = "INFO") -> Path:
     """Inspects a measurement set. Outputs the metadata to a json file for each ms"""
     fn_inputs = locals().items()

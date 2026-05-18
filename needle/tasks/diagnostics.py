@@ -4,13 +4,12 @@ from typing import Optional
 from prefect import task
 
 from needle.config.base import ContainerConfig
-from needle.lib.flow import CACHE_STRATEGY, CACHE_EXPIRATION
 from needle.lib.logging import setup_logging
 from needle.modules.diagnostics import DiagnosticsContext, DiagnosticsOutput, diagnostics
 from needle.modules.calibrate import CalibrateOutput
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def diagnostics_task(
     ms: Path,
     gcal: Optional[Path] = None,
@@ -29,7 +28,7 @@ def diagnostics_task(
     return diagnostics(ctx)
 
 
-@task(cache_policy=CACHE_STRATEGY, persist_result=True, cache_expiration=CACHE_EXPIRATION)
+@task()
 def diagnostics_cal_output_task(
     cal_output: CalibrateOutput,
     runtime: Optional[ContainerConfig] = None,

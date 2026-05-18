@@ -31,7 +31,7 @@ class Env(NeedleModel):
     "Required for needle logging in prefect UI"
     PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     "Log level for needle logging"
-    PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "true"
+    PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "false"
     "Whether to cache results by default"
     PREFECT_LOCAL_STORAGE_PATH: str = f"{CONTAINER_DATA_DIR}/prefect_cache"
     "Location to store the cache if caching is enabled"
@@ -140,7 +140,7 @@ def run():
 
     needle_pipeline.with_options(
         task_runner=task_runner,
-        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=True),
+        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=False),
     )(cfg=cfg)
 
 
@@ -197,7 +197,7 @@ def needle_serve():
     needle_pipeline.with_options(
         task_runner=task_runner,
         result_storage=cfg.data.staging_dir / Path("prefect_cache"),
-        persist_result=True,
+        persist_result=False,
     ).serve(
         name="needle-pipeline",
         parameters={"cfg": cfg.to_kwargs()},
