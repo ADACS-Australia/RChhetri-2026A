@@ -34,8 +34,6 @@ class FlagContext(SubprocessExecContext):
 
     def _flagdata_cmd(self, step: FlagStepConfig) -> list[str]:
         """Constructs a single casa flagdata command for the given step"""
-        # expr = f"flagdata(vis='{self.ms}', {step._flagdata_kwargs})"
-        # return ["casa", "--nogui", "-c", expr]
         expr = f"from casatasks import flagdata; flagdata(vis='{self.ms}', {step._flagdata_kwargs})"
         return ["python3", "-c", expr]
 

@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class CalibrateOutput(NeedleModel):
+    """Class to encompass the expected output of a full calibration application"""
+
     tgt: Path
     "Path to the calibrated target measurement set"
     gcal: Path
@@ -29,6 +31,8 @@ class CalibrateOutput(NeedleModel):
 
 
 class CalibrateContext(SubprocessExecContext):
+    """Context class for calibration solution and application"""
+
     cfg: CalibrateConfig
     "Static config values"
     cal: Path
