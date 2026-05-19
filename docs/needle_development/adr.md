@@ -1,4 +1,4 @@
-# Decisions
+# Architectural Decision Record
 
 This is a log of the decisions made during the creation of Needle.
 
