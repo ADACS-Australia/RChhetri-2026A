@@ -9,7 +9,7 @@ nav:
       - Overview: needle_development/overview.md
       - Project Structure: needle_development/project_structure.md
       - Basic Design: needle_development/design.md
-      - Decisions: needle_development/decisions.md
+      - Architectural Decisions: needle_development/adr.md
   - API Reference: api_reference/
 
 plugins:
