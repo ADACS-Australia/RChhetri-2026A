@@ -15,7 +15,8 @@ from pydantic import field_validator
 
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms, validate_path_fits
-from needle.config.base import ContainerConfig, NeedleModel
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 from needle.config.clean import WSCleanConfig, ShallowCleanConfig, DeepCleanConfig, ModelSubtractCleanConfig
 from needle.modules.needle_context import SubprocessExecContext
 

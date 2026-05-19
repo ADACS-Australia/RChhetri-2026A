@@ -5,7 +5,8 @@ import yaml
 
 from pydantic import ValidationError
 
-from needle.config.base import ContainerConfig, NeedleModel
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.data import DataConfig

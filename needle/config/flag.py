@@ -18,6 +18,8 @@ class FlagStepConfig(NeedleModel):
 
 
 class QuackConfig(FlagStepConfig):
+    """Config for CASA's 'quack' flag operation"""
+
     interval: float = 10.0
     "Quack interval in seconds"
 
@@ -38,6 +40,8 @@ class QuackConfig(FlagStepConfig):
 
 
 class ClipConfig(FlagStepConfig):
+    """Config for CASA's 'clip' flag operation"""
+
     min_amp: float = 0.0
     "Minimum amplitude to keep"
 
@@ -59,6 +63,8 @@ class ClipConfig(FlagStepConfig):
 
 
 class TfCropConfig(FlagStepConfig):
+    """Config for CASA's 'tfcrop' flag operation"""
+
     time_cutoff: float = 4.0
     "Time sigma cutoff"
 
@@ -84,6 +90,8 @@ class TfCropConfig(FlagStepConfig):
 
 
 class RFlagConfig(FlagStepConfig):
+    """Config for CASA's 'rflag' flag operation"""
+
     time_devscale: float = 5.0
     "Time deviation scale factor"
 
@@ -102,6 +110,8 @@ class RFlagConfig(FlagStepConfig):
 
 
 class ExtendConfig(FlagStepConfig):
+    """Config for CASA's 'extend' flag operation"""
+
     grow_time: float = 80.0
     "Percentage of timesteps flagged to extend to all"
 
@@ -117,6 +127,8 @@ class ExtendConfig(FlagStepConfig):
 
 
 class ManualConfig(FlagStepConfig):
+    """Config for any manual flags"""
+
     spw: str = ""
     "Spectral window selection"
 
@@ -138,6 +150,8 @@ class ManualConfig(FlagStepConfig):
 
 
 class FlagConfig(NeedleModel):
+    """Flagging configuration. Flag steps are omitted by default."""
+
     # TODO: Add more validators for all of the sub-cfgs
 
     quack: QuackConfig | None = None

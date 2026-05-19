@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import field_validator
 
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 from needle.config.flag import FlagConfig, FlagStepConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms

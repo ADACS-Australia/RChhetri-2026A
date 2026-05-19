@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)

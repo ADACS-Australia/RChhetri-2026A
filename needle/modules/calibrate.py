@@ -10,7 +10,8 @@ import shutil
 
 from pydantic import field_validator
 
-from needle.config.base import ContainerConfig, NeedleModel
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms

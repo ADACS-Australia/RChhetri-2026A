@@ -3,7 +3,7 @@ from typing import Tuple
 
 from prefect import task
 
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 from needle.config.beam import MSBeamPair
 from needle.lib.logging import setup_logging
 from needle.modules.inspect_ms import InspectMSContext, inspect_ms

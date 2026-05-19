@@ -1,10 +1,10 @@
 from argparse import ArgumentParser, Namespace, _ArgumentGroup
 from pathlib import Path
 import types
-from typing import Literal, Optional, Union, get_args, get_origin
+from typing import Literal, Union, get_args, get_origin
 import yaml
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticUndefinedType
 
 
@@ -126,39 +126,3 @@ class NeedleModel(BaseModel):
                     kwargs[field_name] = flat[field_name]
 
         return cls(**kwargs)
-
-
-class ContainerConfig(NeedleModel):
-    image: Path
-    "Path to the image (.sif) file"
-    binds: Optional[list[Path]] = None
-    "Host paths to bind mount into the container"
-    env: Optional[dict[str, str]] = None
-    "Environment variables to set inside the container"
-    writable: bool = False
-    "Mount the container as writable (--writable)"
-    type: Literal["apptainer", "singularity"] = "apptainer"
-    "The container executor"
-
-    @field_validator("image")
-    @classmethod
-    def _valid_image(cls, v: Path) -> Path:
-        if not v.exists():
-            raise ValueError(f"Container image not found: {v}")
-        if v.suffix != ".sif":
-            raise ValueError(f"Expected a .sif file, got: {v.suffix}")
-        return v
-
-    def to_args(self) -> list[str]:
-        """Converts the config to apptainer/singularity exec arguments"""
-        args = [self.type, "exec"]
-        if self.writable:
-            args.append("--writable")
-        if self.binds:
-            for b in self.binds:
-                args += ["--bind", str(b)]
-        if self.env:
-            for k, v in self.env.items():
-                args += ["--env", f"{k}={v}"]
-        args.append(str(self.image))
-        return args

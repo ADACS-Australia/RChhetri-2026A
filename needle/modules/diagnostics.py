@@ -16,7 +16,7 @@ matplotlib.use("Agg")  # non-interactive backend, safe for scripting
 import matplotlib.pyplot as plt
 from pydantic import BaseModel, field_validator
 
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 from needle.lib.validate import validate_path_ms
 from needle.lib.casa import open_table, open_msmetadata
 from needle.modules.needle_context import SubprocessExecContext
