@@ -1,7 +1,5 @@
 import time
-from pathlib import Path
-import pytest
-from needle.lib.datasource import LocalDataSource, DirectorySnapshot, DataSource
+from needle.lib.datasource import LocalDataSource, DataSource
 
 def test_directory_snapshot(tmp_path):
     """Test DirectorySnapshot calculation in LocalDataSource."""

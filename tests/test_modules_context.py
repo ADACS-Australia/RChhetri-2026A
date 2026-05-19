@@ -2,7 +2,7 @@ import pytest
 import subprocess
 from unittest.mock import MagicMock, patch
 from needle.modules.needle_context import NeedleContext, SubprocessExecContext
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 
 
 def test_needle_context_execute_not_implemented():
