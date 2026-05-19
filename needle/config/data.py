@@ -8,10 +8,10 @@ from needle.config.base import NeedleModel
 class DataConfig(NeedleModel):
     """Configuration for data ingestion and staging."""
 
-    source: str
-    "Data source URI. Use 'local:///path/to/dir' or 's3://bucket/prefix/'"
+    source: str | Path = Path.home() / "observations"
+    "Data source URI. Use 'local:///path/to/dir' or /path/to/dir for local or 's3://bucket/prefix/' for S3"
 
-    staging_dir: Path
+    staging_dir: Path = Path.home() / "needle_data"
     "Local directory where received entries are staged before processing"
 
     stability_check: int = 60

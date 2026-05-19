@@ -3,7 +3,7 @@ from typing import Optional
 
 from prefect import task
 
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 from needle.lib.aegean import AegeanSourceList
 from needle.lib.logging import setup_logging
 from needle.modules.source_find import source_find, SourceFindContext

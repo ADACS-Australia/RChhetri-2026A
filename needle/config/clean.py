@@ -1,8 +1,8 @@
-from typing import ClassVar, Literal
+from typing import Literal
 
 from pydantic import model_validator, Field
 
-from needle.config.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel
 
 
 class WSCleanConfig(NeedleModel):
@@ -67,8 +67,6 @@ class ShallowCleanConfig(WSCleanConfig):
     """Shallow clean without masking — used for initial imaging and mask generation.
     This is essentially the same as its parent class, but with sensible defaults."""
 
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.SHALLOW_CLEAN
-
     tag: str = Field("shallow", description=WSCleanConfig.model_fields["tag"].description)
     niter: int = Field(10000, description=WSCleanConfig.model_fields["niter"].description)
 
@@ -76,8 +74,6 @@ class ShallowCleanConfig(WSCleanConfig):
 class DeepCleanConfig(WSCleanConfig):
     """Deep clean with masking — used for final imaging.
     This is essentially the same as its parent class, but with sensible defaults."""
-
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.DEEP_CLEAN
 
     tag: str = Field("deep", description=WSCleanConfig.model_fields["tag"].description)
     niter: int = Field(50000, description=WSCleanConfig.model_fields["niter"].description)
@@ -89,8 +85,6 @@ class ModelSubtractCleanConfig(WSCleanConfig):
     """Model subtraction 'clean'. Doesn't do any actual cleaning by default, just subtracts MODEL_DATA from DATA>
     This is essentially the same as its parent class, but with sensible defaults."""
 
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.SUBTRACT_MODEL_CLEAN
-
     tag: str = Field("subtract_model", description=WSCleanConfig.model_fields["tag"].description)
     niter: int = Field(0, description=WSCleanConfig.model_fields["niter"].description)
     subtract_model: bool = Field(True, description=WSCleanConfig.model_fields["subtract_model"].description)
@@ -99,8 +93,6 @@ class ModelSubtractCleanConfig(WSCleanConfig):
 class IntervalCleanConfig(WSCleanConfig):
     """Interval cleaning configuration - many snapshots over the length of an obs.
     This is essentially the same as its parent class, but with sensible defaults."""
-
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.INTERVAL_CLEAN
 
     tag: str = Field("intervals", description=WSCleanConfig.model_fields["tag"].description)
     niter: int = Field(300, description=WSCleanConfig.model_fields["niter"].description)

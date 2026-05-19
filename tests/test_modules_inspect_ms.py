@@ -14,7 +14,7 @@ from needle.modules.inspect_ms import (
     InspectMSContext,
     inspect_ms,
 )
-from needle.config.base import ContainerConfig
+from needle.config.container import ContainerConfig
 
 
 @pytest.fixture

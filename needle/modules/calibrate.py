@@ -10,7 +10,8 @@ import shutil
 
 from pydantic import field_validator
 
-from needle.config.base import ContainerConfig, NeedleModel
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class CalibrateOutput(NeedleModel):
+    """Class to encompass the expected output of a full calibration application"""
+
     tgt: Path
     "Path to the calibrated target measurement set"
     gcal: Path
@@ -29,6 +32,8 @@ class CalibrateOutput(NeedleModel):
 
 
 class CalibrateContext(SubprocessExecContext):
+    """Context class for calibration solution and application"""
+
     cfg: CalibrateConfig
     "Static config values"
     cal: Path

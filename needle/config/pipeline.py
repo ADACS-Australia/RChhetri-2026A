@@ -5,7 +5,8 @@ import yaml
 
 from pydantic import ValidationError
 
-from needle.config.base import ContainerConfig, NeedleModel
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.data import DataConfig
@@ -42,37 +43,37 @@ class PipelineFlowConfig(NeedleModel):
 class NeedleConfig(NeedleModel):
     """The top-level config model, merges the flow config and the task cfgs"""
 
-    flow: PipelineFlowConfig
-    "flow-level configuration for the pipeline"
+    flow: PipelineFlowConfig = PipelineFlowConfig()
+    "Flow-level configuration for the pipeline"
 
-    data: DataConfig
+    data: DataConfig = DataConfig()
     "Config for the data specifics"
 
-    watcher: WatcherConfig
+    watcher: WatcherConfig = WatcherConfig()
     "Config for the Watcher"
 
-    flag: FlagConfig
+    flag: FlagConfig = FlagConfig()
     "Flagging config"
 
-    calibrate: CalibrateConfig
+    calibrate: CalibrateConfig = CalibrateConfig()
     "Calibration config"
 
-    shallow_clean: ShallowCleanConfig
+    shallow_clean: ShallowCleanConfig = ShallowCleanConfig()
     "Shallow clean config"
 
-    source_find: SourceFindConfig
+    source_find: SourceFindConfig = SourceFindConfig()
     "Source find config"
 
-    create_mask: CreateMaskConfig
+    create_mask: CreateMaskConfig = CreateMaskConfig()
     "Mask creation config"
 
-    deep_clean: DeepCleanConfig
+    deep_clean: DeepCleanConfig = DeepCleanConfig()
     "Deep clean config"
 
-    model_subtract: ModelSubtractCleanConfig
+    model_subtract: ModelSubtractCleanConfig = ModelSubtractCleanConfig()
     "Deep clean config"
 
-    interval_clean: IntervalCleanConfig
+    interval_clean: IntervalCleanConfig = IntervalCleanConfig()
     "Deep clean config"
 
     @classmethod

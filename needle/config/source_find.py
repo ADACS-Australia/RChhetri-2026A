@@ -1,12 +1,10 @@
-from typing import Optional, ClassVar
+from typing import Optional
 
-from needle.config.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel
 
 
 class SourceFindConfig(NeedleModel):
     """Config for running BANE + Aegean source finding"""
-
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.SOURCE_FIND
 
     innerclip: int = 7
     "Inner clip threshold SNR"

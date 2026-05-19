@@ -3,7 +3,8 @@ import subprocess
 
 from pydantic import model_validator
 
-from needle.config.base import NeedleModel, ContainerConfig
+from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
 
 logger = logging.getLogger(__name__)
 

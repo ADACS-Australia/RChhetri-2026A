@@ -1,8 +1,7 @@
 import logging
 from pathlib import Path
-from typing import ClassVar
 
-from needle.config.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +19,6 @@ class CreateMaskOutput(NeedleModel):
 
 class CreateMaskConfig(NeedleModel):
     """Config for the mask creation step"""
-
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.CREATE_MASK
 
     padding: float = 5.0
     "The padding around each source"
