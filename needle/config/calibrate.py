@@ -1,7 +1,6 @@
 import logging
-from typing import ClassVar
 
-from needle.config.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +94,18 @@ class SplitConfig(NeedleModel):
 
 
 class CalibrateConfig(NeedleModel):
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.CALIBRATE
 
-    setjy: SetjyConfig
+    setjy: SetjyConfig = SetjyConfig()
     "Set flux density scale"
 
-    bandpass: BandpassConfig
+    bandpass: BandpassConfig = BandpassConfig()
     "Bandpass calibration"
 
-    gaincal: GaincalConfig
+    gaincal: GaincalConfig = GaincalConfig()
     "Gain calibration"
 
-    applycal: ApplycalConfig
+    applycal: ApplycalConfig = ApplycalConfig()
     "Apply calibration solutions"
 
-    split: SplitConfig
+    split: SplitConfig = SplitConfig()
     "Split out calibrated data"

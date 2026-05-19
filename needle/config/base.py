@@ -1,5 +1,4 @@
 from argparse import ArgumentParser, Namespace, _ArgumentGroup
-from enum import Enum
 from pathlib import Path
 import types
 from typing import Literal, Optional, Union, get_args, get_origin
@@ -7,17 +6,6 @@ import yaml
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_core import PydanticUndefinedType
-
-
-class NeedleModuleName(str, Enum):
-    FLAG = "flag"
-    CALIBRATE = "calibrate"
-    SHALLOW_CLEAN = "shallow_clean"
-    SOURCE_FIND = "source_find"
-    CREATE_MASK = "create_mask"
-    DEEP_CLEAN = "deep_clean"
-    SUBTRACT_MODEL_CLEAN = "subtract_model"
-    INTERVAL_CLEAN = "interval_clean"
 
 
 class NeedleModel(BaseModel):

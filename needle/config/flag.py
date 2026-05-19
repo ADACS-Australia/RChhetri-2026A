@@ -1,9 +1,8 @@
 from abc import abstractmethod
-from typing import ClassVar
 
 from pydantic import field_validator, model_validator
 
-from needle.config.base import NeedleModel, NeedleModuleName
+from needle.config.base import NeedleModel
 
 
 class FlagStepConfig(NeedleModel):
@@ -140,7 +139,6 @@ class ManualConfig(FlagStepConfig):
 
 class FlagConfig(NeedleModel):
     # TODO: Add more validators for all of the sub-cfgs
-    module: ClassVar[NeedleModuleName] = NeedleModuleName.FLAG
 
     quack: QuackConfig | None = None
     "Quack flagging step — omit to skip"
