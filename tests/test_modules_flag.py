@@ -14,17 +14,17 @@ def mock_ms(tmp_path):
 
 def test_flag_context_cmd(mock_ms):
     """Test that FlagContext generates the correct command-line arguments."""
-    cfg = FlagConfig(quack=QuackConfig(enabled=True, mode="beg"), clip=ClipConfig(enabled=False))
+    cfg = FlagConfig(quack=QuackConfig(), clip=ClipConfig())
     ctx = FlagContext(cfg=cfg, ms=mock_ms)
     cmds = ctx.cmd
-    assert len(cmds) == 1
+    assert len(cmds) == 2
     assert "quack" in cmds[0][2]
     assert "flagdata" in cmds[0][2]
 
 
 def test_flag_context_no_active_steps(mock_ms):
     """Test that FlagContext raises an error when no flagging steps are enabled."""
-    cfg = FlagConfig(quack=QuackConfig(enabled=False), clip=ClipConfig(enabled=False))
+    cfg = FlagConfig(quack=None, clip=None)
     with pytest.raises(ValidationError, match="No flagging steps configured"):
         FlagContext(cfg=cfg, ms=mock_ms)
 
@@ -33,7 +33,7 @@ def test_flag_context_no_active_steps(mock_ms):
 def test_flag_observation(mock_execute, mock_ms):
     """Test the execution of the flagging process on an observation."""
     mock_execute.return_value = [MagicMock(stdout="done", stderr="")]
-    cfg = FlagConfig(quack=QuackConfig(enabled=True))
+    cfg = FlagConfig(quack=QuackConfig())
     ctx = FlagContext(cfg=cfg, ms=mock_ms)
 
     flag_observation(ctx)

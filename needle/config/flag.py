@@ -8,9 +8,6 @@ from needle.config.base import NeedleModel
 class FlagStepConfig(NeedleModel):
     """Base class for all flagging step cfgs."""
 
-    enabled: bool = False
-    "Whether to run this flagging step"
-
     @property
     @abstractmethod
     def _flagdata_kwargs(self) -> str:

@@ -51,7 +51,8 @@ class FlagContext(SubprocessExecContext):
             self.cfg.extend,
             self.cfg.manual,
         ]
-        active_steps = [s for s in steps if s is not None and s.enabled]
+        # Flag options are disabled by default
+        active_steps = [s for s in steps if s is not None]
         if not active_steps:
             raise ValueError("No flagging steps configured")
         return [self._flagdata_cmd(s) for s in active_steps]
