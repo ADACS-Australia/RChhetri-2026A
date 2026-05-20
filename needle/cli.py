@@ -1,6 +1,7 @@
 import argparse
 import logging
 from pathlib import Path
+import sys
 import threading
 import time
 from typing import Literal, Optional
@@ -68,41 +69,9 @@ def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
     )
 
 
-def _load_slurm_deploy_kwargs(cfg: NeedleConfig) -> dict:
-    return dict(
-        name="needle-pipeline",
-        work_pool_name="needle-pool-slurm",
-        parameters={"cfg": cfg.model_dump()},
-        push=False,
-        build=False,
-    )
-
-
 def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
     """Original local Dask cluster task runner (Docker mode)."""
     return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
-
-
-def _load_local_deploy_kwargs(cfg: NeedleConfig, env: Env) -> dict:
-    return dict(
-        name="needle-pipeline",
-        work_pool_name="needle-pool",
-        image="needle:latest",
-        job_variables={
-            "volumes": [
-                f"{cfg.flow.data_dir}:{CONTAINER_DATA_DIR}",
-                "casa_data:/opt/needle/.casa/data",
-            ],
-            "image_pull_policy": "Never",
-            "auto_remove": False,
-            "networks": ["needle-network"],
-            "env": env.model_dump(),
-            "container_create_kwargs": {"shm_size": cfg.flow.shm_size},
-        },
-        parameters={"cfg": cfg.model_dump()},
-        push=False,
-        build=False,
-    )
 
 
 def _parse_pipeline(parser: Optional[argparse.ArgumentParser] = None) -> argparse.Namespace:
@@ -213,25 +182,30 @@ def needle_serve():
     )
 
 
-def deploy():
-    """Create a pipeline deployment using a container and a worker"""
-    parser = argparse.ArgumentParser("Deploys the Needle Pipeline.")
-    deploy_args = parser.add_argument_group("Deploy Args")
-    Env.add_to_parser(deploy_args)
-    args = _parse_pipeline()
-    cfg = NeedleConfig.get_config()
+def validate_config():
+    parser = argparse.ArgumentParser(description="Validates a needle pipeline YAML config file.")
+    cfg_default = Path.home() / Path(".needle.yaml")
+    parser.add_argument(
+        "-c",
+        "--cfg",
+        default=cfg_default,
+        help=f"Path to the config YAML file (default: {cfg_default})",
+    )
+    parser.add_argument(
+        "-p",
+        "--pretty_print",
+        action="store_true",
+        help="Whether to pretty print the config",
+    )
+    args = parser.parse_args()
+    path = Path(args.cfg)
+    if not path.exists():
+        print(f"ERROR: File not found: {path}")
+        sys.exit(1)
 
-    if args.cluster_cfg:
-        raise NotImplementedError("Deploying to a cluster is currently unsupported")
-        # cluster_cfg_path = Path(args.cluster_cfg)
-        # task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        # print(f"Using SLURM task runner from {cluster_cfg_path}")
-        # kwargs = _load_slurm_deploy_kwargs(cfg)
-    else:
-        task_runner = _load_local_task_runner(cfg.flow.max_workers)
-        print("Using local Dask task runner (Docker mode)")
-        env = Env(args.deploy_args.to_kwargs())
-        kwargs = _load_local_deploy_kwargs(cfg, env)
-
-    print(f"Deploy kwargs: {kwargs}")
-    needle_pipeline.with_options(task_runner=task_runner).deploy(**kwargs)
+    valid = NeedleConfig.validate(path=path)
+    if not valid:
+        return
+    if args.pretty_print:
+        print()
+        NeedleConfig.load(path=path).pretty_print()

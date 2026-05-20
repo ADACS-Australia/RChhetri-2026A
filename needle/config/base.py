@@ -29,6 +29,27 @@ class NeedleModel(BaseModel):
         "Serialise this model to a flat dict of kwargs for passing to tasks"
         return self.model_dump(exclude_none=True)
 
+    def pretty_print(self, _last_levels: tuple[bool, ...] = ()) -> None:
+        """Pretty prints the model, including any nested models"""
+        if not _last_levels:
+            print(f"[{type(self).__name__}]")
+        fields = list(type(self).model_fields.keys())
+        for i, field_name in enumerate(fields):
+            field_val = getattr(self, field_name)
+            is_last = i == len(fields) - 1
+            pad = "".join("    " if last else "│   " for last in _last_levels)
+
+            if isinstance(field_val, NeedleModel):
+                connector = "└── " if is_last else "├── "
+                if not _last_levels:  # Don't pad the final level
+                    print(f"{pad}│")
+                print(f"{pad}{connector}{field_name}: [{type(field_val).__name__}]")
+                field_val.pretty_print(_last_levels=(*_last_levels, is_last))
+
+            else:
+                connector = "└── " if is_last else "│   "
+                print(f"{pad}{connector}{field_name}: {field_val}")
+
     @classmethod
     def add_to_parser(cls, parser: ArgumentParser | _ArgumentGroup, prefix: str = ""):
         "Add this model's fields to an argument parser, with dot-notation for nested models"

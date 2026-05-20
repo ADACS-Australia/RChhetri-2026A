@@ -77,22 +77,25 @@ class NeedleConfig(NeedleModel):
     "Deep clean config"
 
     @classmethod
-    def from_yaml(cls, path: Path) -> "NeedleConfig":
-        """Constructs the object from a .yaml file
+    def load(cls, source: Path | str | dict) -> "NeedleConfig":
+        """Constructs the object from a .yaml path or dictionary
 
-        :param path: Path to the .yaml config file
+        :param source: Path to the .yaml config file, or a dictionary of config data
         :raises ValueErorr: Raised if the config is not valid
         :returns: The NeedleConfig object constructed from the .yaml file
         """
-        with open(path) as f:
-            merged = yaml.safe_load(f)
+        if isinstance(source, dict):
+            data = source
+        else:
+            with open(Path(source)) as f:
+                data = yaml.safe_load(f)
         try:
-            return cls.model_validate(merged)
+            return cls.model_validate(data)
         except ValidationError as e:
             missing = [err["loc"][0] for err in e.errors() if err["type"] == "missing"]
             if missing:
                 fields = ", ".join(f"'{f}'" for f in missing)
-                raise ValueError(f"Config file {path} is missing required section(s): {fields}") from e
+                raise ValueError(f"Config is missing required section(s): {fields}") from e
             raise
 
     @classmethod
@@ -106,4 +109,56 @@ class NeedleConfig(NeedleModel):
         cfg_path = Path.home() / Path(".needle.yaml")
         if not cfg_path.exists():
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
-        return NeedleConfig.from_yaml(cfg_path)
+        return NeedleConfig.load(cfg_path)
+
+    @classmethod
+    def validate(cls, source: str | Path | dict, quiet: bool = False) -> bool:
+        """Attempts to validate each section of the config independently, then the whole thing.
+
+        :param source: Path to a YAML config file, or a dictionary of config data
+        :param quiet: Whether to suppress output
+        :returns: Whether the config is valid
+        """
+
+        def emit(msg: str):
+            if not quiet:
+                print(msg)
+
+        raw = source if isinstance(source, dict) else yaml.safe_load(Path(source).read_text())
+
+        emit("\n--- Config Validation ---")
+        errors = {}
+        validated = {}
+
+        for f, field_info in cls.model_fields.items():
+            section_type = field_info.annotation
+            section_data = raw.get(f)
+            try:
+                validated[f] = section_type.model_validate(section_data or {})
+            except ValidationError as e:
+                errors[f] = e
+
+        for f in cls.model_fields:
+            if f in validated:
+                emit(f"  ✓ {f}: {type(validated[f]).__name__}")
+            elif f in errors:
+                emit(f"  ✗ {f}: FAILED")
+
+        if errors:
+            emit(f"\n{len(errors)} section(s) failed validation:\n")
+            for f, exc in errors.items():
+                emit(f"[{f}]")
+                for err in exc.errors():
+                    loc = " -> ".join(str(i) for i in err["loc"])
+                    prefix = f"{loc}: " if loc else ""
+                    emit(f"  {prefix}{err['msg']}")
+                emit("")
+        else:
+            emit("\nAll sections validated OK.")
+            try:
+                cls.from_config(raw)
+                emit("  ✓ Full config loaded successfully")
+            except Exception as e:
+                emit(f"  ✗ Full config FAILED: {e}")
+
+        return not errors

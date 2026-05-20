@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from needle.config.pipeline import NeedleConfig
 
 
@@ -12,4 +13,4 @@ def get_config() -> NeedleConfig:
     cfg_path = Path.home() / Path(".needle.yaml")
     if not cfg_path.exists():
         raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
-    return NeedleConfig.from_yaml(cfg_path)
+    return NeedleConfig.load(cfg_path)
