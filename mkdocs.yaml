@@ -2,7 +2,7 @@ site_name: Needle Documentation
 
 nav:
   - Home: index.md
-  - Installation: installation.md
+  - Installation & Setup: installation_and_setup.md
   - Configuration: configuration.md
   - Pipeline Reference: pipeline_reference.md
   - Needle Development:
