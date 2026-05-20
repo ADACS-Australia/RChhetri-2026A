@@ -2,13 +2,27 @@
 
 ## Needle Pipeline
 
-Needle revolves around its main pipeline. Such is the nature of ETL pipelines that their orchestration should remain largely immutable. The order and structure of processing steps is fixed by design.
+Needle revolves around its main pipeline. The order and structure of the pipeline's processing steps is largely fixed by design.
 
-However, the user may know more about their dataset or working environment than the pipeline does. Therefore, every module in the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the characteristics of a given dataset.
+The user may know more about their dataset or working environment than the pipeline does. Therefore, every module in the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the characteristics of a given dataset.
 
 To see which parameters are available for each module, see the module's appropriate config (example - [clean config][needle.config.clean.WSCleanConfig])
 
-Below is an example configuration:
+### Config Validation
+
+Configuration validation can be done before attempting to run via the CLI entrypoint
+
+```bash
+needle-validate -c /path/to/config.yaml
+```
+
+Which will validate each subsection of the config.
+
+The config as seen by Needle can also be dumped. This can be useful as a quick and easy way to check what fields are defaulted to when not assigned:
+
+```bash
+needle-validate -c /path/to/conifg.yaml -p
+```
 
 ### Minimal Configuration
 
@@ -38,7 +52,7 @@ flag:
   tfcrop: {}
 ```
 
-### Involved Configuration
+### Extensive Configuration
 
 For more complex pipelines, you can fine-tune almost every aspect of the processing. This example demonstrates a more involved configuration, including container runtime settings, multiple flagging steps, and specific cleaning parameters.
 
