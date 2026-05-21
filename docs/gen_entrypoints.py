@@ -5,13 +5,24 @@ from unittest.mock import patch
 
 import mkdocs_gen_files
 
+DOC_TEXT = """
+# CLI Entrypoints
+
+Needle exposes many command line entrypoints - mostly the Python modules that the main pipeline relies on and the pipeline itself.
+
+This doc serves as a list of the available entrypoints with a brief description of their function.
+
+## Available Entrypoints
+
+"""
+
 with open("pyproject.toml", "rb") as f:
     pyproject = tomllib.load(f)
 
 entrypoints = pyproject.get("project", {}).get("scripts", {})
 
-with mkdocs_gen_files.open("module_entrypoints.md", "w") as f:
-    f.write("# Entrypoints\n\n")
+with mkdocs_gen_files.open("cli_entrypoints.md", "w") as f:
+    f.write(DOC_TEXT)
     for name, target in entrypoints.items():
         module_path, func_name = target.split(":")
 
@@ -40,7 +51,7 @@ with mkdocs_gen_files.open("module_entrypoints.md", "w") as f:
         except Exception as e:
             description = ""
 
-        f.write(f"## `{name}`\n\n")
+        f.write(f"### `{name}`\n\n")
         if description:
             f.write(f"{description}\n\n")
         f.write(f"**Entrypoint:** `{target}`\n\n")

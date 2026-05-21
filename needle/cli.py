@@ -181,7 +181,8 @@ def needle_serve():
 
 
 def validate_config():
-    parser = argparse.ArgumentParser(description="Validates a needle pipeline YAML config file.")
+    desc = """Validates a needle pipeline YAML config file. Optionally pretty-prints to stdout."""
+    parser = argparse.ArgumentParser(description=desc)
     cfg_default = Path.home() / Path(".needle.yaml")
     parser.add_argument(
         "-c",

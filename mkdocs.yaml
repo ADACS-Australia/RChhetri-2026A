@@ -5,7 +5,7 @@ nav:
   - Installation & Setup: installation_and_setup.md
   - Configuration: configuration.md
   - Pipeline Reference: pipeline_reference.md
-  - Module Entrypoints: module_entrypoints.md
+  - CLI Entrypoints: cli_entrypoints.md
   - Triggering Setup: triggering_setup.md
   - Needle Development:
       - Overview: needle_development/overview.md
