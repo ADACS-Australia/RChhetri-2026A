@@ -82,7 +82,7 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
 def main():
     desc = """Converts a file to a .ms file. Accepts .uvfits and .mir file types.
     Will do nothing if already a measurement set."""
-    parser = argparse.ArgumentParser(desc)
+    parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("--input", type=Path, required=True, help="The path to the file to convert")
     parser.add_argument(
         "--output-dir",

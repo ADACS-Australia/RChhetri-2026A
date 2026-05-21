@@ -6,6 +6,23 @@ This record serves to clarify what may otherwise be obscure choices.
 
 Records may be deleted should they no longer be relevant.
 
+## Event Driven Triggering System
+
+**Context**
+We want to set up a triggering system that looks at a data source for new observations, moves it to the appropriate local directory, then processes it.
+First, I attempted to make a separate flow that scans the source and moves the data before directly triggering the pipeline flow. This worked but wasn't ideal because it runs very frequently, clogs the flow feed and is tightly coupled to the pipeline itself.
+
+**Decision**
+Run a script (watcher) that polls the data source independently of the pipeline that emits an event when it finds an observation.
+Deploy a flow that listens to this event and moves the data when it is published/consumed.
+
+**Pros**
+The event driven architecture makes this highly scalable and loosely coupled.
+
+**Cons**
+Requires a separate running python process - which in turn requires a separate logging system.
+The event driven nature is harder to trace.
+
 ## Needle Config Path is a predetermined location
 
 **Context**

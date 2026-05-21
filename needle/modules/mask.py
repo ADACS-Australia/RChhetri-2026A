@@ -171,9 +171,8 @@ def create_mask(ctx: CreateMaskContext) -> CreateMaskOutput:
 
 
 def main():
-    parser = CreateMaskConfig.add_to_parser(
-        ArgumentParser("Calibrate a target measurement set using a calibrator measurement set.")
-    )
+    desc = """Takes the JSON output from source-find to create a .fits mask around the sources. Masks can be used for cleaning with WSClean."""
+    parser = CreateMaskConfig.add_to_parser(ArgumentParser(description=desc))
     parser.add_argument("--image", type=Path, required=True, help="The path to the .fits image. Used as a refernce")
     parser.add_argument(
         "--sources",

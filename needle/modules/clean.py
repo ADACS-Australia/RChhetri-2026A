@@ -6,7 +6,7 @@ Supports different cleaning modes:
     - Model subtraction
 """
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 from glob import glob
 import logging
 from pathlib import Path
@@ -197,13 +197,6 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
     return ctx.output
 
 
-def _build_runtime(args: Namespace) -> ContainerConfig | None:
-    """Constructs an container config from parsed args, or None if no image was provided"""
-    if args.image:
-        return ContainerConfig.from_namespace(args)
-    return None
-
-
 def _parse(parser: ArgumentParser) -> Namespace:
     required_group = parser.add_argument_group("Required Arguments")
     required_group.add_argument("--ms", type=Path, required=True, help="The path to the measurement set to clean")
@@ -222,54 +215,55 @@ def _parse(parser: ArgumentParser) -> Namespace:
         required=False,
         help="The minimum threshold logging level",
     )
-    return parser.parse_args()
-
-
-def model_subtract():
-    """Create the MODEL_DATA column"""
-    parser = ModelSubtractCleanConfig.add_to_parser(
-        ArgumentParser("Run WSClean on a measurement set with model-subtract presets")
-    )
-    args = _parse(parser)
-    setup_logging(args.log_level)
-    ctx = WSCleanContext(
-        cfg=ModelSubtractCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask, runtime=_build_runtime(args)
-    )
-    run_clean(ctx)
-
-
-def shallow():
-    """Shallow clean preset configuration"""
-    parser = ShallowCleanConfig.add_to_parser(
-        ArgumentParser("Run WSClean on a measurement set with shallow-clean presets")
-    )
-    args = _parse(parser)
-    setup_logging(args.log_level)
-    ctx = WSCleanContext(
-        cfg=ShallowCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask, runtime=_build_runtime(args)
-    )
-    run_clean(ctx)
-
-
-def deep():
-    """Deep clean preset configuration"""
-    parser = DeepCleanConfig.add_to_parser(ArgumentParser("Run WSClean on a measurement set with deep-clean presets"))
-    args = _parse(parser)
-    setup_logging(args.log_level)
-    ctx = WSCleanContext(
-        cfg=DeepCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask, runtime=_build_runtime(args)
-    )
-    run_clean(ctx)
 
 
 def main():
-    """Generic WSClean configuration"""
-    parser = WSCleanConfig.add_to_parser(ArgumentParser("Run WSClean on a measurement set"))
-    args = _parse(parser)
+    desc = """Run WSClean on a measurement set. 
+
+Runs with one of several configuration presets:
+
+run :: Use the generic configuration  
+shallow :: Use configration for shallow cleaning  
+deep :: Use configuration for deep cleaning  
+subtract :: Use configuration for subtracting the model from the data  
+    """
+    parser = ArgumentParser(description=desc, formatter_class=RawDescriptionHelpFormatter)
+    subparsers = parser.add_subparsers(dest="preset", required=True)
+
+    # Generic
+    generic = subparsers.add_parser("run", description="Run WSClean with generic configuration")
+    WSCleanConfig.add_to_parser(generic)
+    _parse(generic)
+
+    # Shallow
+    shallow = subparsers.add_parser("shallow", description="Run WSClean with shallow-clean presets")
+    ShallowCleanConfig.add_to_parser(shallow)
+    _parse(shallow)
+
+    # Deep
+    deep = subparsers.add_parser("deep", description="Run WSClean with deep-clean presets")
+    DeepCleanConfig.add_to_parser(deep)
+    _parse(deep)
+
+    # Model subtract
+    subtract = subparsers.add_parser("subtract", description="Run WSClean with model-subtract presets")
+    ModelSubtractCleanConfig.add_to_parser(subtract)
+    _parse(subtract)
+
+    args = parser.parse_args()
     setup_logging(args.log_level)
-    ctx = WSCleanContext(
-        cfg=WSCleanConfig.from_namespace(args), ms=args.ms, fits_mask=args.mask, runtime=_build_runtime(args)
-    )
+    runtime = None
+    if args.image:
+        runtime = ContainerConfig.from_namespace(args)
+
+    configs = {
+        "run": WSCleanConfig,
+        "shallow": ShallowCleanConfig,
+        "deep": DeepCleanConfig,
+        "subtract": ModelSubtractCleanConfig,
+    }
+    cfg = configs[args.preset].from_namespace(args)
+    ctx = WSCleanContext(cfg=cfg, ms=args.ms, fits_mask=args.mask, runtime=runtime)
     run_clean(ctx)
 
 
