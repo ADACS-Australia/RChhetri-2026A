@@ -14,9 +14,10 @@ import numpy as np
 from pydantic import BaseModel, field_validator
 
 from needle.config.container import ContainerConfig
+from needle.lib.casa import open_table
+from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
 from needle.lib.units import mjd_s_to_utc, rad_to_deg
-from needle.lib.casa import open_table
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -425,9 +426,8 @@ def inspect_ms(ctx: InspectMSContext) -> MSInfo:
 
 
 def main():
-    from needle.lib.logging import setup_logging
-
-    parser = argparse.ArgumentParser(description="Inspect a Measurement Set. Writes the info to JSON.")
+    desc = """Inspect a Measurement Set (.ms), providing basic details on the data/observation. Writes to JSON."""
+    parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("ms", type=Path, help="Path to the .ms file")
     parser.add_argument("--print", action="store_true", help="Print the info to stdout.")
     parser.add_argument(

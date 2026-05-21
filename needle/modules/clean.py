@@ -227,9 +227,8 @@ def _parse(parser: ArgumentParser) -> Namespace:
 
 def model_subtract():
     """Create the MODEL_DATA column"""
-    parser = ModelSubtractCleanConfig.add_to_parser(
-        ArgumentParser("Run WSClean on a measurement set with model-subtract presets")
-    )
+    desc = "Run WSClean on a measurement set with model-subtract presets. This creates the MODEL_DATA column in the measurement set."
+    parser = ModelSubtractCleanConfig.add_to_parser(ArgumentParser(description=desc))
     args = _parse(parser)
     setup_logging(args.log_level)
     ctx = WSCleanContext(
@@ -240,9 +239,8 @@ def model_subtract():
 
 def shallow():
     """Shallow clean preset configuration"""
-    parser = ShallowCleanConfig.add_to_parser(
-        ArgumentParser("Run WSClean on a measurement set with shallow-clean presets")
-    )
+    desc = """Run WSClean on a measurement set with shallow-clean presets. Typically used to create an initial image from a measurement set."""
+    parser = ShallowCleanConfig.add_to_parser(ArgumentParser(description=desc))
     args = _parse(parser)
     setup_logging(args.log_level)
     ctx = WSCleanContext(
@@ -253,7 +251,9 @@ def shallow():
 
 def deep():
     """Deep clean preset configuration"""
-    parser = DeepCleanConfig.add_to_parser(ArgumentParser("Run WSClean on a measurement set with deep-clean presets"))
+    desc = """Run WSClean on a measurement set with deep-clean presets. 
+    Typically used alongside a mask to make a high-quality image from a measurement set."""
+    parser = DeepCleanConfig.add_to_parser(ArgumentParser(description=desc))
     args = _parse(parser)
     setup_logging(args.log_level)
     ctx = WSCleanContext(
@@ -264,7 +264,8 @@ def deep():
 
 def main():
     """Generic WSClean configuration"""
-    parser = WSCleanConfig.add_to_parser(ArgumentParser("Run WSClean on a measurement set"))
+    desc = "Run WSClean on a measurement set"
+    parser = WSCleanConfig.add_to_parser(ArgumentParser(description=desc))
     args = _parse(parser)
     setup_logging(args.log_level)
     ctx = WSCleanContext(

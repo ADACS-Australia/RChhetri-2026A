@@ -152,9 +152,8 @@ def calibrate_observation(ctx: CalibrateContext) -> CalibrateOutput:
 
 
 def main():
-    parser = CalibrateConfig.add_to_parser(
-        ArgumentParser("Calibrate a target measurement set using a calibrator measurement set.")
-    )
+    desc = """Determine and apply calibation solutons to a target measurement set using a calibrator measurement set."""
+    parser = CalibrateConfig.add_to_parser(ArgumentParser(desc))
 
     container_group = parser.add_argument_group(title="Container Arguments")
     ContainerConfig.add_to_parser(container_group)

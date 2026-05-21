@@ -26,7 +26,7 @@ needle-validate -c /path/to/conifg.yaml -p
 
 ### Minimal Configuration
 
-The pipeline itself requires very minimal manually set options to function. However, this will not prevent most steps from running, they will simply run with the default settings. As such, it is a good idea to become familiar with the defaults in the [config api reference][needle.config].
+The pipeline itself requires very minimal manually set options to function. However, this will not prevent most steps from running, they will simply run with the default settings. As such, it is a good idea to become familiar with the defaults in the [config api reference][needle.config.pipeline.NeedleConfig].
 
 ```yaml
 flow:

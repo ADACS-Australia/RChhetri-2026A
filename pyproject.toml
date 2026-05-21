@@ -31,22 +31,20 @@ docs = [
 ]
 
 [project.scripts]
+needle-serve = "needle.cli:needle_serve"
+needle-run= "needle.cli:run"
+needle-validate= "needle.cli:validate_config"
 needle-inspect-ms = "needle.modules.inspect_ms:main"
+needle-diagnostics= "needle.modules.diagnostics:main"
 needle-convert= "needle.modules.convert:main"
 needle-flag = "needle.modules.flag:main"
 needle-calibrate= "needle.modules.calibrate:main"
+needle-source-find= "needle.modules.source_find:main"
+needle-mask= "needle.modules.mask:main"
 needle-clean= "needle.modules.clean:main"
 needle-clean-shallow= "needle.modules.clean:shallow"
 needle-clean-deep= "needle.modules.clean:deep"
 needle-clean-subtract= "needle.modules.clean:model_subtract"
-needle-diagnostics= "needle.modules.diagnostics:main"
-needle-mask= "needle.modules.mask:main"
-needle-source-find= "needle.modules.source_find:main"
-needle-deploy = "needle.cli:deploy"
-needle-serve = "needle.cli:needle_serve"
-needle-run= "needle.cli:run"
-needle-validate= "needle.cli:validate_config"
-
 
 [build-system]
 requires = ["hatchling"]

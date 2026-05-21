@@ -26,3 +26,15 @@ The base dockerfile takes a long time to build, which is the main reason it's se
 Contains the unit tests. These are in a flat directory for now.
 
 Tests are minimal for now as Needle is undergoing heavy development.
+
+To run the tests, the test libraries must be installed
+
+```bash
+pip install .[tests]
+```
+
+Tests can be run with pytest
+
+```bash
+pytest -v .
+```

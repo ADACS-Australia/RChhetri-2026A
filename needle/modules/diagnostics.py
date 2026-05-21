@@ -17,8 +17,9 @@ import matplotlib.pyplot as plt
 from pydantic import BaseModel, field_validator
 
 from needle.config.container import ContainerConfig
-from needle.lib.validate import validate_path_ms
 from needle.lib.casa import open_table, open_msmetadata
+from needle.lib.logging import setup_logging
+from needle.lib.validate import validate_path_ms
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -598,11 +599,8 @@ def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
 
 
 def main():
-    from needle.lib.logging import setup_logging
-
-    parser = argparse.ArgumentParser(
-        description="Run diagnostics on a measurement set. Optionally supply bandpass/gain calibrators."
-    )
+    desc = """Run diagnostics on a measurement set. Optionally supply bandpass/gain calibrators. Plots and data are written to files."""
+    parser = argparse.ArgumentParser(description=desc)
     parser.add_argument("ms", type=Path, help="Path to the .ms file")
     parser.add_argument(
         "--output_dir",

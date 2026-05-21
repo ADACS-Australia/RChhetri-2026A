@@ -76,8 +76,8 @@ def flag_observation(ctx: FlagContext) -> None:
 
 
 def main():
-    parser = ArgumentParser("Flag a measurement set")
-    FlagConfig.add_to_parser(parser)
+    desc = """Flag a measurement set using CASA's flagging utilities."""
+    parser = FlagConfig.add_to_parser(ArgumentParser(description=desc))
     parser.add_argument(
         "--log_level",
         type=str,

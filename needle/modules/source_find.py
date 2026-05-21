@@ -205,9 +205,8 @@ def source_find(ctx: SourceFindContext) -> SourceFindOutput:
 
 
 def main():
-    parser = SourceFindConfig.add_to_parser(
-        argparse.ArgumentParser(description="Run BANE + Aegean to find sources in a FITS image.")
-    )
+    desc = """Finds sources in a .fits image. Uses BANE for noise mapping and Aegean for source finding."""
+    parser = SourceFindConfig.add_to_parser(argparse.ArgumentParser(description=desc))
 
     required_group = parser.add_argument_group("Required Arguments")
     required_group.add_argument(

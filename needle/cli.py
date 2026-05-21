@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import threading
 import time
-from typing import Literal, Optional
+from typing import Literal
 import yaml
 
 from dask_jobqueue import SLURMCluster
@@ -17,7 +17,6 @@ from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.flow import CONTAINER_DATA_DIR
-from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
@@ -74,11 +73,7 @@ def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
     return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
 
 
-def _parse_pipeline(parser: Optional[argparse.ArgumentParser] = None) -> argparse.Namespace:
-    if not parser:
-        parser = argparse.ArgumentParser(
-            "Runs the Needle Pipeline. Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."
-        )
+def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
     parser.add_argument(
         "--cluster-cfg",
         "--cluster_cfg",
@@ -94,17 +89,17 @@ def _parse_pipeline(parser: Optional[argparse.ArgumentParser] = None) -> argpars
 
 
 def run():
-    """Run the pipeline locally, now"""
-    logger = setup_logging()
-    args = _parse_pipeline()
+    desc = """Runs the Needle Pipeline now.
+    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
+    args = _parse_pipeline(argparse.ArgumentParser(description=desc))
     cfg = NeedleConfig.get_config()
 
     if args.cluster_cfg:
         cluster_cfg_path = Path(args.cluster_cfg)
         task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        logger.info(f"Using SLURM task runner from {cluster_cfg_path}")
+        print(f"Using SLURM task runner from {cluster_cfg_path}")
     else:
-        logger.info("Using local environment for task runs")
+        print("Using local environment for task runs")
         task_runner = _load_local_task_runner(cfg.flow.max_workers)
 
     needle_pipeline.with_options(
@@ -124,8 +119,11 @@ def _watch_and_restart(watcher_cfg, data_cfg):
 
 
 def needle_serve():
-    """Serve the pipeline as a deployment to a server"""
-    args = _parse_pipeline()
+    desc = """Starts the Watcher, which polls the source directory for observations.
+    Serves the Courier and Needle Pipeline to the Prefect Server.
+    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
+    args = _parse_pipeline(argparse.ArgumentParser(description=desc))
+
     cfg = NeedleConfig.get_config()
     if args.cluster_cfg:
         task_runner = _load_slurm_task_runner(Path(args.cluster_cfg))
