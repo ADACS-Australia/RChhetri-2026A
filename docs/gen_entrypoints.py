@@ -51,7 +51,7 @@ with mkdocs_gen_files.open("cli_entrypoints.md", "w") as f:
         except Exception as e:
             description = ""
 
-        f.write(f"### `{name}`\n\n")
+        f.write(f"### {name}\n\n")
         if description:
             f.write(f"{description}\n\n")
         f.write(f"**Entrypoint:** `{target}`\n\n")
