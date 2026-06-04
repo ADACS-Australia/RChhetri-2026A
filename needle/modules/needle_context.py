@@ -1,15 +1,14 @@
 import logging
 import subprocess
 
-from pydantic import model_validator
+from pydantic import BaseModel, model_validator
 
-from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
 
 logger = logging.getLogger(__name__)
 
 
-class NeedleContext(NeedleModel):
+class NeedleContext(BaseModel):
     """The context to pass to a module. Contains everything needed to execute a piece of work"""
 
     def execute(self) -> None:
