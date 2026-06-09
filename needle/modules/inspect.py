@@ -377,6 +377,9 @@ class InspectMSContext(NeedleContext):
     ms: Path
     "Path to the measurement set"
 
+    output_dir: Path | None = None
+    "Path to to the output directory for the inspection"
+
     @field_validator("ms")
     @classmethod
     def _valid_ms(cls, ms: Path) -> Path:
@@ -384,7 +387,7 @@ class InspectMSContext(NeedleContext):
         return ms
 
     def execute(self) -> MSInfo:
-        return MSInfo(self.ms)
+        return MSInfo(ms=self.ms, output_dir=self.output_dir)
 
 
 def inspect_ms(ctx: InspectMSContext) -> MSInfo:

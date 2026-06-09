@@ -1,4 +1,4 @@
-import sys
+from pathlib import Path
 from typing import Optional
 
 from dask_jobqueue.slurm import SLURMJob, SLURMCluster
@@ -15,9 +15,8 @@ class SifSLURMJob(SLURMJob):
     ):
         self.container_cfg = container_cfg
         if container_cfg:
-            python = kwargs.get("python", sys.executable)
             # prepend the container executable command
-            kwargs["python"] = f"{' '.join(container_cfg.to_args())} {python}"
+            kwargs["python"] = f"{' '.join(container_cfg.to_args())} python"
         super().__init__(*args, **kwargs)
 
 
