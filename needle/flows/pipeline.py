@@ -8,7 +8,7 @@ from prefect.runtime import flow_run
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import NeedleConfig
-from needle.modules.inspect_ms import MSInfo
+from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
@@ -62,7 +62,7 @@ def _inspect_and_diagnose(
 ) -> Tuple[FutureList, FutureList, FutureList]:
     """Inspects the data and runs diagnostics on it"""
     defaults = _unmapped_defaults(cfg)
-    f_inspect_pair = inspect_pair_task.map(f_ms_pairs, **defaults)  # (cal, tgt)
+    f_inspect_pair = inspect_pair_task.map(f_ms_pairs, unmapped(cfg.flow.log_level))  # (cal, tgt)
     # Run diagnostics on the calibrator MS
     f_cal_diagnostics = diagnostics_task.map(beam_pair_extract_cal_task.map(f_ms_pairs), **defaults)
     # Run diagnostics on calibrated target and calibrator solution tables

@@ -8,7 +8,7 @@ from functools import cached_property
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional
 
 import numpy as np
 from pydantic import BaseModel, field_validator
@@ -18,7 +18,7 @@ from needle.lib.casa import open_table
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
 from needle.lib.units import mjd_s_to_utc, rad_to_deg
-from needle.modules.needle_context import SubprocessExecContext
+from needle.modules.needle_context import NeedleContext
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +103,7 @@ class MSInfo(BaseModel):
 
     ms: Path
     "Path to the measurement set to perform diagnostics for"
-    gcal: Path | None = None
-    "Path to the gain cal solution table"
+
     output_dir: Path | None = None
     "Location to output the diagnostics to"
 
@@ -196,11 +195,7 @@ class MSInfo(BaseModel):
 
         # Construct without existence check on the MS path.
         ms_path = Path(data["ms"])
-        instance = cls.model_construct(
-            ms=ms_path,
-            gcal=Path(data["gcal"]) if data.get("gcal") else None,
-            output_dir=Path(data.get("output_dir", ms_path.parent)),
-        )
+        instance = cls.model_construct(ms=ms_path, output_dir=Path(data.get("output_dir", ms_path.parent)))
         instance._preloaded = data
         return instance
 
@@ -378,12 +373,9 @@ class MSInfo(BaseModel):
         return data_columns
 
 
-class InspectMSContext(SubprocessExecContext):
+class InspectMSContext(NeedleContext):
     ms: Path
     "Path to the measurement set"
-
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-    "Log level. Only relevant if runtime is set"
 
     @field_validator("ms")
     @classmethod
@@ -391,38 +383,18 @@ class InspectMSContext(SubprocessExecContext):
         validate_path_ms(ms)
         return ms
 
-    @property
-    def _output_path(self) -> Path:
-        "Shortcut to get the same output path as MSInfo generates"
-        return MSInfo(ms=self.ms).output_path
-
-    @property
-    def cmd(self) -> list[list[str]]:
-        return [["needle-inspect-ms", str(self.ms), "--log-level", self.log_level]]
+    def execute(self) -> MSInfo:
+        return MSInfo(self.ms)
 
 
 def inspect_ms(ctx: InspectMSContext) -> MSInfo:
-    """If runtime is provided, rerun self inside the provided container.
-    Otherwise, run in the current environment.
-
-    This setup allows us to run CASA functions without needing CASA libraries installed locally.
-    Note that if a container runtime is invoked, MSInfo.to_json() will be invoked in the container.
+    """Inspect a measurement set
 
     :param ctx: The InspectMSContext object
     :return: The MSInfo object
     """
-    if ctx.runtime:
-        logger.info(f"Loading container: {ctx.runtime.image}")
-        ctx.log_cmd()
-        procs = ctx.execute()
-        for p in procs:
-            if p.stderr:
-                logger.warning(p.stderr)
-            if p.stdout:
-                print(p.stdout)
-        return MSInfo.from_json(ctx._output_path)
     logger.info(f"Inspecting measurement set: {ctx.ms}")
-    return MSInfo(ms=ctx.ms)
+    return ctx.execute()
 
 
 def main():
@@ -439,18 +411,10 @@ def main():
         help="Logging level",
     )
 
-    container_group = parser.add_argument_group(title="Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
-
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
-
-    ctx = InspectMSContext(runtime=runtime, ms=args.ms, log_level=args.log_level)
-    msinfo = inspect_ms(ctx)
+    msinfo = inspect_ms(InspectMSContext(ms=args.ms))
     if args.print:
         msinfo.pretty_print()
     msinfo.to_json()

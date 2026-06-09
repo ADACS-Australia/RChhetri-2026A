@@ -7,16 +7,17 @@ import time
 from typing import Literal
 import yaml
 
-from dask_jobqueue import SLURMCluster
 from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
-from needle.config.pipeline import NeedleConfig
 from needle.config.base import NeedleModel
+from needle.config.container import ContainerConfig
+from needle.config.pipeline import NeedleConfig
 from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.slurm_cluster import SifSLURMCluster
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
@@ -38,31 +39,25 @@ class Env(NeedleModel):
 
 
 def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
-    """
-    Parse a cluster.yaml file into a DaskTaskRunner backed by a SLURMCluster.
-
-    Keys min_workers and max_workers control adaptive scaling and are not
-    passed to SLURMCluster directly — all other keys are forwarded as-is.
-    """
     if not cluster_cfg_path.exists():
         raise FileNotFoundError(f"Cluster config not found: {cluster_cfg_path}")
-
     with open(cluster_cfg_path) as f:
         cfg = yaml.safe_load(f)
 
-    # Pull out scaling params — these are not SLURMCluster constructor args
     min_workers: int = cfg.pop("min_workers", 1)
-    max_workers: int = cfg.pop("max_workers", 4)
+    max_workers: int = cfg.pop("max_workers", 1)
     dashboard_port: int = cfg.pop("dashboard_port", 8787)
-
-    # Inject dashboard address into scheduler options
     cfg["scheduler_options"] = {"dashboard_address": f":{dashboard_port}"}
 
+    # Build container config if sif_path is present, otherwise SifSLURMCluster is a no-op
+    container_data = cfg.pop("container", None)
+    cfg["container_cfg"] = ContainerConfig(**container_data) if container_data else None
+
     logger.info(
-        f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})"
+        f"Building SifSLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})"
     )
     return DaskTaskRunner(
-        cluster_class=SLURMCluster,
+        cluster_class=SifSLURMCluster,
         cluster_kwargs=cfg,
         adapt_kwargs={"minimum": min_workers, "maximum": max_workers},
     )
@@ -80,7 +75,7 @@ def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
         dest="cluster_cfg",
         default=None,
         help=(
-            "Path to a cluster.yaml file. When provided, tasks run on a SLURM cluster via dask-jobqueue."
+            "Path to a cluster.yaml file. When provided, tasks run on a SLURM cluster via dask-jobqueue. "
             "When omitted, a local Dask cluster is created and used."
         ),
         required=False,
