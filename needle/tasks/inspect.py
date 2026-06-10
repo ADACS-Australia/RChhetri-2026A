@@ -10,7 +10,7 @@ from needle.modules.inspect import InspectMSContext, inspect_ms
 
 @task()
 def inspect_pair_task(ms_pair: MSBeamPair, log_level: str = "INFO") -> Tuple[Path, Path]:
-    """Inspects a pair measurement sets. Outputs the metadata to a json file for each ms"""
+    """Inspects a pair of measurement sets. Outputs the metadata to a json file for each ms"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))

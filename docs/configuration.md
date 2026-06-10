@@ -31,9 +31,6 @@ The pipeline itself requires very minimal manually set options to function. Howe
 ```yaml
 flow:
   log_level: DEBUG
-  runtime:
-    image: /path/to/image/needle.sif
-    type: singularity
 
 watcher:
   log_level: INFO
@@ -62,9 +59,6 @@ flow:
   shm_size: "4gb"
   log_level: DEBUG
   max_workers: 4
-  runtime:
-    image: /path/to/images/needle.sif
-    type: apptainer
   interval_tasks: 2
 
 data:
@@ -158,25 +152,49 @@ interval_clean:
 
 ## Cluster
 
-If using a SLURM cluster, an additional (.yaml) config file is required to configure the Dask worker.
+If using a Dask cluster, either locally or via Slurm, an additional (.yaml) config file is required to configure the Dask worker.
 
-This is a Prefect/Dask construct, so is not codified in Needle.
+### Local Cluster
+
+```yaml
+type: local # required - either 'slurm' or 'local'
+# N-Cores tasks will run concurrently in a single dask worker (slurm job)
+# Keep this in mind when choosing cores and memory
+cores: 2
+memory: "8GB"
+processes: 1
+
+# Number of simultaneous dask workers
+min_workers: 1
+max_workers: 2
+
+# A directory for dask operational stuff
+local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
+# A directory for dask to output its logs
+log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+
+container:
+  image: /path/to/image/needle.sif
+  type: singularity # Should be either singularity or apptainer
+```
+
+### Slurm Cluster
+
 For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few dask-specific additions
 
 Use the below example as a reference.
 
 ```yaml
+type: slurm # required - either 'slurm' or 'local'
 account: "pawsey0008"
 queue: "work"
-# N-Cores tasks will run concurrently in a single dask worker (slurm job)
-# Keep this in mind when choosing cores and memory
 cores: 2
 memory: "64GB"
 processes: 1
 # Max time per dask worker
 walltime: "02:00:00"
 
-# Number of simultaneous dask workers
+# Number of simultaneous dask workers per job
 min_workers: 1
 max_workers: 20
 
@@ -195,4 +213,8 @@ job_script_prologue:
   - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
 
 job_extra_directives: []
+
+container:
+  image: /path/to/image/needle.sif
+  type: singularity # Should be either singularity or apptainer
 ```

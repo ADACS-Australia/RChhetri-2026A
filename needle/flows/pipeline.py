@@ -44,7 +44,7 @@ def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[t
 
 
 def _unmapped_defaults(cfg: NeedleConfig) -> dict:
-    return {"runtime": unmapped(cfg.flow.runtime), "log_level": unmapped(cfg.flow.log_level)}
+    return {"log_level": unmapped(cfg.flow.log_level)}
 
 
 def _flag_and_calibrate(cfg: NeedleConfig, f_ms_pairs: FutureList) -> Tuple[FutureList, FutureList, FutureList]:
@@ -89,7 +89,7 @@ def _create_and_subtract_model(
     """Creates a sky model and subtracts it from the data"""
     defaults = _unmapped_defaults(cfg)
     # Create Model - updates the ms in place with the MODEL_DATA columnn
-    f_model_create = predict_task.map(f_tgt, cfg=unmapped(cfg.deep_clean), wait_for_=f_deep_image, **defaults)
+    f_model_create = predict_task.map(f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults)
     # Model subtract - removes the MODEL_DATA from the DATA visibilities
     return clean_task.with_options(name="model_subtract").map(
         f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
@@ -175,7 +175,7 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
         cfg=unmapped(cfg.interval_clean),
         mask=all_masks,
         interval=all_intervals,  # each task gets its own slice
-        wait_for_=all_model_subtracts,
+        dependencies=all_model_subtracts,
         **defaults,
     )
 

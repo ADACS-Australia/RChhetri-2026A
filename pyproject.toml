@@ -3,7 +3,7 @@ name = "needle"
 version = "0.1.0"
 description = "Pipeline for ASKAP data imaging and point-source detection" 
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = "==3.12"
 dependencies = [
     "aegeantools>=2.3.5",
     "astropy>=7.2.0",

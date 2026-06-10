@@ -1,9 +1,7 @@
 from pathlib import Path
-from typing import Optional
 
 from prefect import task
 
-from needle.config.container import ContainerConfig
 from needle.lib.aegean import AegeanSourceList
 from needle.lib.logging import setup_logging
 from needle.modules.source_find import source_find, SourceFindContext
@@ -11,9 +9,7 @@ from needle.config.source_find import SourceFindConfig
 
 
 @task()
-def source_find_task(
-    fits_path: Path, cfg: SourceFindConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
-) -> Path:
+def source_find_task(fits_path: Path, cfg: SourceFindConfig, log_level: str = "INFO") -> Path:
     """Find sources in fits images. Returns a path to a json of sources
 
     :raises FileNotFoundError: Raised if the source find file is not found after running the source finder
@@ -22,7 +18,7 @@ def source_find_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = SourceFindContext(runtime=runtime, cfg=cfg, image=fits_path)
+    ctx = SourceFindContext(cfg=cfg, image=fits_path)
     output = source_find(ctx)
     if not output.sources_txt.exists():
         raise FileNotFoundError(f"Expected file output from source_find '{output.sources_txt}' does not exist")

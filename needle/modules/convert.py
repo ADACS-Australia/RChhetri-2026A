@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from needle.config.container import ContainerConfig
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -93,16 +92,9 @@ def main():
         help="Directory to write the output MS to",
     )
 
-    container_group = parser.add_argument_group(title="Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
-
     args = parser.parse_args()
 
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
-
-    ctx = ConvertContext(runtime=runtime, input=args.input, output_dir=args.output_dir)
+    ctx = ConvertContext(input=args.input, output_dir=args.output_dir)
     convert_to_ms(ctx)
 
 

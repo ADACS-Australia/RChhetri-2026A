@@ -10,7 +10,6 @@ from pathlib import Path
 
 from pydantic import field_validator
 
-from needle.config.container import ContainerConfig
 from needle.config.flag import FlagConfig, FlagStepConfig
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
@@ -87,19 +86,12 @@ def main():
         help="The minimum threshold logging level",
     )
 
-    container_group = parser.add_argument_group(title="Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
-
     required = parser.add_argument_group(title="Required Arguments")
     required.add_argument("--ms", type=Path, required=True, help="The path to the measurement set")
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
-
-    ctx = FlagContext(cfg=FlagConfig.from_namespace(args), ms=args.ms, runtime=runtime)
+    ctx = FlagContext(cfg=FlagConfig.from_namespace(args), ms=args.ms)
     flag_observation(ctx)
 
 

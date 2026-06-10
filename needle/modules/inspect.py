@@ -13,7 +13,6 @@ from typing import Optional
 import numpy as np
 from pydantic import BaseModel, field_validator
 
-from needle.config.container import ContainerConfig
 from needle.lib.casa import open_table
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms

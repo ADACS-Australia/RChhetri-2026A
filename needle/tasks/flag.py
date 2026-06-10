@@ -11,14 +11,14 @@ from needle.modules.flag import flag_observation, FlagContext
 
 
 @task()
-def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO") -> Path:
+def flag_ms_task(ms: Path, cfg: FlagConfig, log_level: str = "INFO") -> Path:
     """Flags a measurement set. Returns the same measurement set"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     try:
-        ctx = FlagContext(runtime=runtime, cfg=cfg, ms=ms)
+        ctx = FlagContext(cfg=cfg, ms=ms)
         logger.info(f"Flagging measurement set: {ms.name}")
         flag_observation(ctx)
     except ValueError as e:
@@ -29,17 +29,15 @@ def flag_ms_task(ms: Path, cfg: FlagConfig, runtime: Optional[ContainerConfig] =
 
 
 @task()
-def flag_ms_pair_task(
-    ms_pair: MSBeamPair, cfg: FlagConfig, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO"
-) -> MSBeamPair:
+def flag_ms_pair_task(ms_pair: MSBeamPair, cfg: FlagConfig, log_level: str = "INFO") -> MSBeamPair:
     """Flags a pair of measurement sets. Returns the same measurement set pair"""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     try:
-        tgt_ctx = FlagContext(runtime=runtime, cfg=cfg, ms=ms_pair.tgt)
-        cal_ctx = FlagContext(runtime=runtime, cfg=cfg, ms=ms_pair.cal)
+        tgt_ctx = FlagContext(cfg=cfg, ms=ms_pair.tgt)
+        cal_ctx = FlagContext(cfg=cfg, ms=ms_pair.cal)
         flag_observation(tgt_ctx)
         flag_observation(cal_ctx)
     except ValueError as e:

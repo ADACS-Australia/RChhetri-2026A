@@ -154,9 +154,6 @@ def calibrate_observation(ctx: CalibrateContext) -> CalibrateOutput:
 def main():
     desc = """Determine and apply calibation solutons to a target measurement set using a calibrator measurement set."""
     parser = CalibrateConfig.add_to_parser(ArgumentParser(desc))
-
-    container_group = parser.add_argument_group(title="Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
     parser.add_argument(
         "--log_level",
         type=str,
@@ -171,16 +168,7 @@ def main():
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
-
-    ctx = CalibrateContext(
-        cfg=CalibrateConfig.from_namespace(args),
-        cal=args.cal,
-        tgt=args.tgt,
-        runtime=runtime,
-    )
+    ctx = CalibrateContext(cfg=CalibrateConfig.from_namespace(args), cal=args.cal, tgt=args.tgt)
     calibrate_observation(ctx)
 
 
