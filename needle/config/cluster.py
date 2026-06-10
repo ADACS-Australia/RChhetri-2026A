@@ -11,15 +11,6 @@ from needle.lib.cluster_slurm import SifSLURMCluster
 from needle.lib.cluster_local import SifLocalCluster
 
 
-class ClusterResourceConfig(NeedleModel):
-    """Resource allocation per worker"""
-
-    cores: int = 1
-    "Number of cores per worker"
-    memory: str = "4GB"
-    "Memory per worker e.g. '4GB'"
-
-
 class ClusterScalingConfig(NeedleModel):
     """Worker scaling configuration"""
 
@@ -32,14 +23,37 @@ class ClusterScalingConfig(NeedleModel):
 
 
 class SlurmConfig(NeedleModel):
-    """SLURM-specific configuration"""
+    """SLURM-specific configuration passed directly to dask-jobqueue"""
 
+    account: Optional[str] = None
+    "SLURM account to charge"
     queue: Optional[str] = None
     "SLURM queue/partition to submit to"
+    cores: Optional[int] = None
+    "Number of cores per job"
+    memory: Optional[str] = None
+    "Memory per job e.g. '64GB'"
+    processes: Optional[int] = None
+    "Number of Python processes per job"
     walltime: Optional[str] = None
-    "Maximum walltime per job e.g. '01:00:00'"
+    "Maximum walltime per job e.g. '02:00:00'"
+    local_directory: Optional[str] = None
+    "Local directory for workers to use for scratch space"
+    log_directory: Optional[str] = None
+    "Directory to write worker logs to"
+    job_script_prologue: Optional[list[str]] = None
+    "Lines to prepend to the job script e.g. module loads"
     job_extra_directives: Optional[list[str]] = None
-    "Extra SLURM directives e.g. ['--mem-per-cpu=2GB']"
+    "Extra SLURM directives"
+
+
+class LocalConfig(NeedleModel):
+    """Local cluster configuration"""
+
+    cores: Optional[int] = None
+    "Number of cores per worker"
+    memory: Optional[str] = None
+    "Memory per worker e.g. '4GB'"
 
 
 class ClusterConfig(NeedleModel):
@@ -47,14 +61,14 @@ class ClusterConfig(NeedleModel):
 
     type: Literal["local", "slurm"]
     "Cluster type - 'local' for local container workers, 'slurm' for SLURM cluster"
-    resources: ClusterResourceConfig = ClusterResourceConfig()
-    "Resource allocation per worker"
     scaling: ClusterScalingConfig = ClusterScalingConfig()
     "Worker scaling configuration"
     container: Optional[ContainerConfig] = None
     "Container configuration for worker execution"
     slurm: Optional[SlurmConfig] = None
     "SLURM-specific configuration (required when type is 'slurm')"
+    local: Optional[LocalConfig] = None
+    "Local cluster configuration (used when type is 'local')"
 
     @classmethod
     def get_config(cls) -> "ClusterConfig":
@@ -65,12 +79,13 @@ class ClusterConfig(NeedleModel):
 
     def to_task_runner(self) -> DaskTaskRunner:
         cluster_kwargs = {
-            **self.resources.model_dump(),
             "container_cfg": self.container,
             "scheduler_options": {"dashboard_address": f":{self.scaling.dashboard_port}"},
         }
         if self.type == "slurm" and self.slurm:
             cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
+        elif self.type == "local" and self.local:
+            cluster_kwargs.update(self.local.model_dump(exclude_none=True))
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         return DaskTaskRunner(
@@ -97,8 +112,6 @@ class ClusterConfig(NeedleModel):
 
     @classmethod
     def validate(cls, source: Path | str | dict, quiet: bool = False) -> bool:
-        """Validates each section independently then the whole config"""
-
         def emit(msg: str):
             if not quiet:
                 print(msg)

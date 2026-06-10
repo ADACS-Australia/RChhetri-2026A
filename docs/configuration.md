@@ -152,69 +152,68 @@ interval_clean:
 
 ## Cluster
 
-If using a Dask cluster, either locally or via Slurm, an additional (.yaml) config file is required to configure the Dask worker.
+If using a Dask cluster, either locally or via Slurm, an additional `.yaml` config file is required at `~/.needle_cluster.yaml`.
+
+For the full picture, please see the [config api reference][needle.config.cluster.ClusterConfig].
 
 ### Local Cluster
 
 ```yaml
 type: local # required - either 'slurm' or 'local'
-# N-Cores tasks will run concurrently in a single dask worker (slurm job)
-# Keep this in mind when choosing cores and memory
-cores: 2
-memory: "8GB"
-processes: 1
 
-# Number of simultaneous dask workers
-min_workers: 1
-max_workers: 2
-
-# A directory for dask operational stuff
-local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
-# A directory for dask to output its logs
-log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+scaling:
+  min_workers: 1
+  max_workers: 2
+  dashboard_port: 8787 # optional, default 8787
 
 container:
   image: /path/to/image/needle.sif
-  type: singularity # Should be either singularity or apptainer
+  type: apptainer # either 'singularity' or 'apptainer'
+
+local:
+  cores: 2 # number of cores per worker
+  memory: "8GB" # memory per worker
 ```
 
-### Slurm Cluster
+### SLURM Cluster
 
-For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few dask-specific additions
-
-Use the below example as a reference.
+For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few Dask-specific additions.
 
 ```yaml
 type: slurm # required - either 'slurm' or 'local'
-account: "pawsey0008"
-queue: "work"
-cores: 2
-memory: "64GB"
-processes: 1
-# Max time per dask worker
-walltime: "02:00:00"
 
-# Number of simultaneous dask workers per job
-min_workers: 1
-max_workers: 20
-
-# A directory for dask operational stuff
-local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
-# A directory for dask to output its logs
-log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
-
-# Anything to execute per-job before running the task
-job_script_prologue:
-  - "module load singularity/4.1.0-slurm"
-  - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
-  - "export PREFECT_API_URL=http://localhost:4200/api"
-  - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
-  - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
-  - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
-
-job_extra_directives: []
+scaling:
+  min_workers: 1
+  max_workers: 20
+  dashboard_port: 8787 # optional, default 8787
 
 container:
   image: /path/to/image/needle.sif
-  type: singularity # Should be either singularity or apptainer
+  type: singularity # either 'singularity' or 'apptainer'
+  binds:
+    - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts
+
+slurm:
+  account: "pawsey0008"
+  queue: "work"
+  cores: 2
+  memory: "64GB"
+  processes: 1
+  walltime: "02:00:00"
+
+  # A directory for Dask operational files
+  local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
+  # A directory for Dask to output its logs
+  log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+
+  # Commands to execute per-job before running the task
+  job_script_prologue:
+    - "module load singularity/4.1.0-slurm"
+    - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
+    - "export PREFECT_API_URL=http://localhost:4200/api"
+    - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
+    - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
+    - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
+
+  job_extra_directives: []
 ```
