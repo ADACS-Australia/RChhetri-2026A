@@ -37,7 +37,7 @@ class DiagnosticsOutput(BaseModel):
 
     @property
     def all_files(self) -> list[Path]:
-        return [p for p in self.model_fields_set if p is not None]
+        return [getattr(self, p) for p in self.model_fields_set if getattr(self, p) is not None]
 
 
 class MSDiagnostics(BaseModel):

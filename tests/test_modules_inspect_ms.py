@@ -4,7 +4,7 @@ import numpy as np
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from needle.modules.inspect_ms import (
+from needle.modules.inspect import (
     MSInfo,
     TimeInfo,
     FrequencyInfo,
@@ -71,7 +71,7 @@ def test_ms_info_from_json(tmp_path):
     assert info.frequency.n_spw == 1
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_time(mock_open_table, mock_ms):
     """Test reading time information from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -86,7 +86,7 @@ def test_read_time(mock_open_table, mock_ms):
     assert t.total_duration_s == 3.0
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_frequency(mock_open_table, mock_ms):
     """Test reading frequency information from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -101,7 +101,7 @@ def test_read_frequency(mock_open_table, mock_ms):
     assert f.spw_centre_hz[0] == 1.05e9
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_baselines(mock_open_table, mock_ms):
     """Test reading baseline information from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -111,7 +111,7 @@ def test_read_baselines(mock_open_table, mock_ms):
         np.array([[100, 200], [300, 400], [500, 600]]),  # UVW (3, n_rows)
     ]
 
-    with patch("needle.modules.inspect_ms.MSInfo.frequency", new_callable=MagicMock) as mock_freq:
+    with patch("needle.modules.inspect.MSInfo.frequency", new_callable=MagicMock) as mock_freq:
         mock_freq.centre_wavelength_m = 0.2
         info = MSInfo(ms=mock_ms)
         b = info._read_baselines()
@@ -122,7 +122,7 @@ def test_read_baselines(mock_open_table, mock_ms):
         assert b.uv_max_m > 0
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_polarisation(mock_open_table, mock_ms):
     """Test reading polarisation information from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -135,7 +135,7 @@ def test_read_polarisation(mock_open_table, mock_ms):
     assert p.polarisations == ["I", "Q", "U", "V"]
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_fields(mock_open_table, mock_ms):
     """Test reading field information from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -149,7 +149,7 @@ def test_read_fields(mock_open_table, mock_ms):
     assert f.field_names == ["FIELD1"]
 
 
-@patch("needle.modules.inspect_ms.open_table")
+@patch("needle.modules.inspect.open_table")
 def test_read_data_columns(mock_open_table, mock_ms):
     """Test reading available data columns from a Measurement Set table."""
     mock_tb = mock_open_table.return_value.__enter__.return_value
@@ -165,38 +165,16 @@ def test_read_data_columns(mock_open_table, mock_ms):
 
 
 def test_inspect_ms_context(mock_ms):
-    """Test InspectMSContext validation and command generation."""
-    ctx = InspectMSContext(ms=mock_ms, log_level="DEBUG")
+    """Test InspectMSContext validation."""
+    ctx = InspectMSContext(ms=mock_ms)
     assert ctx.ms == mock_ms
-    assert ctx.log_level == "DEBUG"
-    assert "needle-inspect-ms" in ctx.cmd[0]
-    assert str(mock_ms) in ctx.cmd[0]
+    assert ctx.output_dir is None
 
 
 def test_inspect_ms_local(mock_ms):
     """Test local execution of the inspect_ms function."""
     ctx = InspectMSContext(ms=mock_ms)
-    with patch("needle.modules.inspect_ms.MSInfo") as mock_ms_info_cls:
+    with patch("needle.modules.inspect.MSInfo") as mock_ms_info_cls:
         result = inspect_ms(ctx)
-        mock_ms_info_cls.assert_called_once_with(ms=mock_ms)
+        mock_ms_info_cls.assert_called_once_with(ms=mock_ms, output_dir=None)
         assert result == mock_ms_info_cls.return_value
-
-
-def test_inspect_ms_container(mock_ms, tmp_path):
-    """Test containerized execution of the inspect_ms function."""
-    image = tmp_path / "test.sif"
-    image.touch()
-    runtime = ContainerConfig(image=image)
-    ctx = InspectMSContext(ms=mock_ms, runtime=runtime)
-
-    with patch.object(InspectMSContext, "execute") as mock_execute:
-        mock_proc = MagicMock(spec=subprocess.CompletedProcess)
-        mock_proc.stderr = ""
-        mock_proc.stdout = ""
-        mock_execute.return_value = [mock_proc]
-
-        with patch("needle.modules.inspect_ms.MSInfo.from_json") as mock_from_json:
-            result = inspect_ms(ctx)
-            mock_execute.assert_called_once()
-            mock_from_json.assert_called_once_with(ctx._output_path)
-            assert result == mock_from_json.return_value

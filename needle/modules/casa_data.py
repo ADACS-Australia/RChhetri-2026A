@@ -1,11 +1,9 @@
 from argparse import ArgumentParser
 import logging
-import sys
 from pathlib import Path
 
 from needle.lib.logging import setup_logging
 from needle.config.container import ContainerConfig
-from needle.config.pipeline import NeedleConfig
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -27,23 +25,19 @@ def download_casa_rundata(ctx: CasaDataUpdateContext) -> None:
 
     :param ctx: Casa data update context object
     """
-    try:
-        procs = ctx.execute()
-        for p in procs:
-            if p.stdout:
-                logger.info(p.stdout)
-            if p.stderr:
-                logger.warning(p.stderr)
-    except RuntimeError as e:
-        logger.error(f"CASA data update failed: {e}")
-        sys.exit(1)
+    procs = ctx.execute()
+    for p in procs:
+        if p.stdout:
+            logger.info(p.stdout)
+        if p.stderr:
+            logger.warning(p.stderr)
+        p.check_returncode()
 
     readme_path = ctx.casa_data_path / "readme.txt"
     if readme_path.exists():
         logger.info("CASA measures data successfully populated.")
     else:
         logger.warning("data_update completed but readme.txt still not found.")
-        sys.exit(1)
 
 
 def main():
