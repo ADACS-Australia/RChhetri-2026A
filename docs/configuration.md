@@ -186,7 +186,7 @@ type: slurm # required - either 'slurm' or 'local'
 
 scaling:
   min_workers: 1
-  max_workers: 20
+  max_workers: 40 # Max number of dask workers to run concurrently
   dashboard_port: 8787 # optional, default 8787
 
 container:
@@ -194,13 +194,15 @@ container:
   type: singularity # either 'singularity' or 'apptainer'
   binds:
     - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts - this one is highly recommended
+    - /scratch/pawsey0008/ksmith1/needle_data:/scratch/pawsey0008/ksmith1/needle_data # This should be mounted automatically but just in case
 
 slurm:
+  # Each of the slurm directives are applied to each dask worker
   account: "pawsey0008"
   queue: "work"
-  cores: 1 # Must be 1 for thread safety
+  cores: 1 # Some tools are not thread safe, so it's recommended to keep cores and processes = 1
+  processes: 1
   memory: "64GB"
-  processes: 2
   walltime: "02:00:00"
 
   # A directory for Dask operational files
