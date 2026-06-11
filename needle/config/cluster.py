@@ -15,19 +15,21 @@ from needle.lib.cluster_local import SifLocalCluster
 logger = logging.getLogger(__name__)
 
 
-class ClusterScalingConfig(NeedleModel):
+class ScalingConfig(NeedleModel):
     """Worker scaling configuration"""
 
     min_workers: int = 0
     "Minimum number of workers"
     max_workers: int = 1
     "Maximum number of workers"
-    dashboard_port: int = 8787
-    "Port for the Dask dashboard"
-    interval: str = "10s"
+    interval: str = "5s"
     "The interval between checking for scaling updates e.g. '10s', '1m'"
     wait_count: int = 60
     "The number of scaling intervals to wait for a worker before cancelling"
+    dashboard_port: int = 8787
+    "Port for the Dask dashboard"
+    worker_ttl: str = "5m"
+    "Time to keep idle workers alive"
 
     @field_validator("interval")
     @classmethod
@@ -38,7 +40,22 @@ class ClusterScalingConfig(NeedleModel):
             )
         return v
 
-    def to_adapt_kwargs(self) -> dict:
+    @field_validator("worker_ttl")
+    @classmethod
+    def _valid_worker_ttl(cls, v: str | None) -> str | None:
+        if v and not re.match(r"^\d+(\.\d+)?(ms|s|m|h)$", v):
+            raise ValueError(
+                f"Invalid worker_ttl '{v}'. Must be a number followed by a unit: ms, s, m, or h. E.g. '5m', '1h'."
+            )
+        return v
+
+    @property
+    def scheduler_options(self) -> dict:
+        """Returns the scheduler_options dictionary for DaskTaskRunner"""
+        return {"dashboard_address": f":{self.scaling.dashboard_port}", "worker_ttl": self.worker_ttl}
+
+    @property
+    def adapt_kwargs(self) -> dict:
         """Returns the adapt_kwargs dictionary for DaskTaskRunner"""
         return {
             "minimum": self.min_workers,
@@ -87,7 +104,7 @@ class ClusterConfig(NeedleModel):
 
     type: Literal["local", "slurm"]
     "Cluster type - 'local' for local container workers, 'slurm' for SLURM cluster"
-    scaling: ClusterScalingConfig = ClusterScalingConfig()
+    scaling: ScalingConfig = ScalingConfig()
     "Worker scaling configuration"
     container: Optional[ContainerConfig] = None
     "Container configuration for worker execution"
@@ -115,10 +132,7 @@ class ClusterConfig(NeedleModel):
             logger.info(f"Adding additional binds to task runner container: {extra_binds}")
             self.container.binds = (self.container.binds or []) + extra_binds
 
-        cluster_kwargs = {
-            "container_cfg": self.container,
-            "scheduler_options": {"dashboard_address": f":{self.scaling.dashboard_port}"},
-        }
+        cluster_kwargs = {"container_cfg": self.container, "scheduler_options": self.scaling.scheduler_options}
         if self.type == "slurm" and self.slurm:
             cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
         elif self.type == "local" and self.local:
@@ -126,7 +140,7 @@ class ClusterConfig(NeedleModel):
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         return DaskTaskRunner(
-            cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.to_adapt_kwargs()
+            cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.adapt_kwargs
         )
 
     @classmethod
