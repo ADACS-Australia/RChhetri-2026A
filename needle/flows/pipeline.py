@@ -8,9 +8,11 @@ from prefect.runtime import flow_run
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import NeedleConfig
+from needle.config.cluster import ClusterConfig
 from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import calibrate_pair_task
+from needle.tasks.casa_data import update_casa_data
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.diagnostics import diagnostics_task, diagnostics_cal_output_task
@@ -140,6 +142,9 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
     defaults = _unmapped_defaults(cfg)
+
+    # Update the casa measures dataset before doing anything
+    update_casa_data(data_path=cfg.data.staging_dir / "casadata", runtime=ClusterConfig.get_config().container)
 
     # Get the beam pairs to work with
     beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
