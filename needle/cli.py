@@ -26,10 +26,12 @@ def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRu
 
     if mode == "cluster":
         cluster_cfg = ClusterConfig.get_config()
-        print(f"Using {cluster_cfg.type} cluster")
-        return cluster_cfg.to_task_runner()
+        logging.info(f"Using {cluster_cfg.type} cluster")
+        # Always add the staging directory to the bind mounts as it's always required.
+        extra_binds = [f"{cfg.data.staging_dir}:{cfg.data.staging_dir}"]
+        return cluster_cfg.to_task_runner(extra_binds=extra_binds)
 
-    print("Using local environment for task runs")
+    logging.info("Using local environment for task runs")
     return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
 
 
@@ -91,7 +93,7 @@ def needle_serve():
     # Start watcher in background thread
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
-    print(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
+    logging.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
     # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
     # Serve courier in background thread
@@ -114,7 +116,7 @@ def needle_serve():
         daemon=True,
     )
     courier_thread.start()
-    print("Courier deployment started")
+    logging.info("Courier deployment started")
 
     # Serve pipeline on main thread (blocks)
     needle_pipeline.with_options(
@@ -155,7 +157,7 @@ def validate_config():
     args = parser.parse_args()
     path = Path(args.cfg)
     if not path.exists():
-        print(f"ERROR: File not found: {path}")
+        logging.error(f"ERROR: File not found: {path}")
         sys.exit(1)
 
     valid = NeedleConfig.validate(path=path)

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Literal, Optional
 import yaml
@@ -9,6 +10,8 @@ from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
 from needle.lib.cluster_slurm import SifSLURMCluster
 from needle.lib.cluster_local import SifLocalCluster
+
+logger = logging.getLogger(__name__)
 
 
 class ClusterScalingConfig(NeedleModel):
@@ -77,7 +80,18 @@ class ClusterConfig(NeedleModel):
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
 
-    def to_task_runner(self) -> DaskTaskRunner:
+    def to_task_runner(self, extra_binds: Optional[list[str]]) -> DaskTaskRunner:
+        """Creates the task runner object
+
+        :param extra_binds: Any additional path bindings to add to the container execution command if using a container.
+            Will be ignored if not using a container.
+        :return: The DaskTaskRunner object
+        """
+
+        if extra_binds and self.container:
+            logging.debug(f"Adding additional binds to task runner container: {extra_binds}")
+            self.container.binds = (self.container.binds or []) + extra_binds
+
         cluster_kwargs = {
             "container_cfg": self.container,
             "scheduler_options": {"dashboard_address": f":{self.scaling.dashboard_port}"},

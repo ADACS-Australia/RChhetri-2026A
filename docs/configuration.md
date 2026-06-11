@@ -156,6 +156,8 @@ If using a Dask cluster, either locally or via Slurm, an additional `.yaml` conf
 
 For the full picture, please see the [config api reference][needle.config.cluster.ClusterConfig].
 
+> Note that when using the command line interface, a bind mount to the needle config's staging directory is automatically added at runtime to the container arguments during creation of the cluster object. This is to ensure that the working directory is available in the runtime execution environment.
+
 ### Local Cluster
 
 ```yaml
@@ -179,6 +181,8 @@ local:
 
 For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few Dask-specific additions.
 
+> The bind mount used as an example may be required depending on the setup. **The prefect server and the workers must have the same timezone.**
+
 ```yaml
 type: slurm # required - either 'slurm' or 'local'
 
@@ -191,7 +195,7 @@ container:
   image: /path/to/image/needle.sif
   type: singularity # either 'singularity' or 'apptainer'
   binds:
-    - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts
+    - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts - this one is highly recommended
 
 slurm:
   account: "pawsey0008"
