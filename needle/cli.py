@@ -13,6 +13,7 @@ from needle.config.pipeline import NeedleConfig
 from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
+from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,14 @@ def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
         const="local",
         help="Run locally without any cluster or container",
     )
+    parser.add_argument(
+        "--log-level",
+        "--log_level",
+        dest="log_level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Logging level",
+    )
     return parser.parse_args()
 
 
@@ -65,6 +74,7 @@ def run():
         required=True,
     )
     args = _parse_pipeline(parser)
+    setup_logging(args.log_level)
     cfg = NeedleConfig.get_config()
 
     if not Path(args.work_dir).exists():
@@ -87,8 +97,9 @@ def needle_serve():
     desc = """Starts the Watcher, which polls the source directory for observations.
     Serves the Courier and Needle Pipeline to the Prefect Server.
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
-    cfg = NeedleConfig.get_config()
     args = _parse_pipeline(argparse.ArgumentParser(description=desc))
+    setup_logging(args.log_level)
+    cfg = NeedleConfig.get_config()
 
     # Start watcher in background thread
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
