@@ -89,7 +89,7 @@ class ClusterConfig(NeedleModel):
         """
 
         if extra_binds and self.container:
-            logging.info(f"Adding additional binds to task runner container: {extra_binds}")
+            logger.info(f"Adding additional binds to task runner container: {extra_binds}")
             self.container.binds = (self.container.binds or []) + extra_binds
 
         cluster_kwargs = {

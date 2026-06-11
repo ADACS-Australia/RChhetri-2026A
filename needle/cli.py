@@ -13,6 +13,7 @@ from needle.config.pipeline import NeedleConfig
 from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
+from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
 logger = logging.getLogger("needle-cli")
@@ -20,6 +21,7 @@ logger = logging.getLogger("needle-cli")
 
 def _setup_cli_logging(level: str = "INFO"):
     logger.setLevel(level)
+    logger.propagate = False
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(
@@ -84,6 +86,7 @@ def run():
     )
     args = _parse_pipeline(parser)
     _setup_cli_logging(args.log_level)
+    setup_logging(args.log_level)
     cfg = NeedleConfig.get_config()
 
     if not Path(args.work_dir).exists():
@@ -108,6 +111,7 @@ def needle_serve():
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
     args = _parse_pipeline(argparse.ArgumentParser(description=desc))
     _setup_cli_logging(args.log_level)
+    setup_logging(args.log_level)
     cfg = NeedleConfig.get_config()
 
     # Start watcher in background thread
