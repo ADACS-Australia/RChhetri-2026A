@@ -31,9 +31,6 @@ The pipeline itself requires very minimal manually set options to function. Howe
 ```yaml
 flow:
   log_level: DEBUG
-  runtime:
-    image: /path/to/image/needle.sif
-    type: singularity
 
 watcher:
   log_level: INFO
@@ -62,9 +59,6 @@ flow:
   shm_size: "4gb"
   log_level: DEBUG
   max_workers: 4
-  runtime:
-    image: /path/to/images/needle.sif
-    type: apptainer
   interval_tasks: 2
 
 data:
@@ -158,41 +152,72 @@ interval_clean:
 
 ## Cluster
 
-If using a SLURM cluster, an additional (.yaml) config file is required to configure the Dask worker.
+If using a Dask cluster, either locally or via Slurm, an additional `.yaml` config file is required at `~/.needle_cluster.yaml`.
 
-This is a Prefect/Dask construct, so is not codified in Needle.
-For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few dask-specific additions
+For the full picture, please see the [config api reference][needle.config.cluster.ClusterConfig].
 
-Use the below example as a reference.
+### Local Cluster
 
 ```yaml
-account: "pawsey0008"
-queue: "work"
-# N-Cores tasks will run concurrently in a single dask worker (slurm job)
-# Keep this in mind when choosing cores and memory
-cores: 2
-memory: "64GB"
-processes: 1
-# Max time per dask worker
-walltime: "02:00:00"
+type: local # required - either 'slurm' or 'local'
 
-# Number of simultaneous dask workers
-min_workers: 1
-max_workers: 20
+scaling:
+  min_workers: 1
+  max_workers: 2
+  dashboard_port: 8787 # optional, default 8787
 
-# A directory for dask operational stuff
-local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
-# A directory for dask to output its logs
-log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+container:
+  image: /path/to/image/needle.sif
+  type: apptainer # either 'singularity' or 'apptainer'
 
-# Anything to execute per-job before running the task
-job_script_prologue:
-  - "module load singularity/4.1.0-slurm"
-  - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
-  - "export PREFECT_API_URL=http://localhost:4200/api"
-  - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
-  - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
-  - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
+local:
+  cores: 1 # number of cores per worker
+  memory: "8GB" # memory per worker
+```
 
-job_extra_directives: []
+### SLURM Cluster
+
+For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few Dask-specific additions.
+
+> The bind mount used as an example may be required depending on the setup. **The prefect server and the workers must have the same timezone.**
+
+```yaml
+type: slurm # required - either 'slurm' or 'local'
+
+scaling:
+  min_workers: 1
+  max_workers: 40 # Max number of dask workers to run concurrently
+  dashboard_port: 8787 # optional, default 8787
+
+container:
+  image: /path/to/image/needle.sif
+  type: singularity # either 'singularity' or 'apptainer'
+  binds:
+    - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts - this one is highly recommended
+    - /scratch/pawsey0008/ksmith1/needle_data:/scratch/pawsey0008/ksmith1/needle_data # This should be mounted automatically but just in case
+
+slurm:
+  # Each of the slurm directives are applied to each dask worker
+  account: "pawsey0008"
+  queue: "work"
+  cores: 1 # Some tools are not thread safe, so it's recommended to keep cores and processes = 1
+  processes: 1
+  memory: "64GB"
+  walltime: "02:00:00"
+
+  # A directory for Dask operational files
+  local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
+  # A directory for Dask to output its logs
+  log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+
+  # Commands to execute per-job before running the task
+  job_script_prologue:
+    - "module load singularity/4.1.0-slurm"
+    - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
+    - "export PREFECT_API_URL=http://localhost:4200/api"
+    - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
+    - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
+    - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
+
+  job_extra_directives: []
 ```

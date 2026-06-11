@@ -8,9 +8,11 @@ from prefect.runtime import flow_run
 
 from needle.lib.logging import setup_logging
 from needle.config.pipeline import NeedleConfig
-from needle.modules.inspect_ms import MSInfo
+from needle.config.cluster import ClusterConfig
+from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import calibrate_pair_task
+from needle.tasks.casa_data import update_casa_data
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.diagnostics import diagnostics_task, diagnostics_cal_output_task
@@ -44,7 +46,7 @@ def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[t
 
 
 def _unmapped_defaults(cfg: NeedleConfig) -> dict:
-    return {"runtime": unmapped(cfg.flow.runtime), "log_level": unmapped(cfg.flow.log_level)}
+    return {"log_level": unmapped(cfg.flow.log_level)}
 
 
 def _flag_and_calibrate(cfg: NeedleConfig, f_ms_pairs: FutureList) -> Tuple[FutureList, FutureList, FutureList]:
@@ -62,7 +64,7 @@ def _inspect_and_diagnose(
 ) -> Tuple[FutureList, FutureList, FutureList]:
     """Inspects the data and runs diagnostics on it"""
     defaults = _unmapped_defaults(cfg)
-    f_inspect_pair = inspect_pair_task.map(f_ms_pairs, **defaults)  # (cal, tgt)
+    f_inspect_pair = inspect_pair_task.map(f_ms_pairs, unmapped(cfg.flow.log_level))  # (cal, tgt)
     # Run diagnostics on the calibrator MS
     f_cal_diagnostics = diagnostics_task.map(beam_pair_extract_cal_task.map(f_ms_pairs), **defaults)
     # Run diagnostics on calibrated target and calibrator solution tables
@@ -89,7 +91,7 @@ def _create_and_subtract_model(
     """Creates a sky model and subtracts it from the data"""
     defaults = _unmapped_defaults(cfg)
     # Create Model - updates the ms in place with the MODEL_DATA columnn
-    f_model_create = predict_task.map(f_tgt, cfg=unmapped(cfg.deep_clean), wait_for_=f_deep_image, **defaults)
+    f_model_create = predict_task.map(f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults)
     # Model subtract - removes the MODEL_DATA from the DATA visibilities
     return clean_task.with_options(name="model_subtract").map(
         f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
@@ -141,9 +143,13 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
     logger.debug(f"Config: {cfg}")
     defaults = _unmapped_defaults(cfg)
 
+    # Update the casa measures dataset before doing anything
+    update_casa_data(data_path=cfg.data.staging_dir / "casadata", runtime=ClusterConfig.get_config().container)
+
     # Get the beam pairs to work with
-    f_beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
-    f_beam_pairs = setup_beam_dir_task.map(f_beam_pairs, log_level=unmapped(cfg.flow.log_level))
+    beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
+    logger.info(f"Found beam pairs: {beam_pairs}")
+    f_beam_pairs = setup_beam_dir_task.map(beam_pairs, log_level=unmapped(cfg.flow.log_level))
 
     # Convert pairs to measurement sets and set up working directories
     f_ms_pairs = convert_beam_pair_task.map(f_beam_pairs, **defaults)
@@ -175,7 +181,7 @@ def needle_pipeline(cfg: NeedleConfig, work_dir: Path | str) -> Flow:
         cfg=unmapped(cfg.interval_clean),
         mask=all_masks,
         interval=all_intervals,  # each task gets its own slice
-        wait_for_=all_model_subtracts,
+        dependencies=all_model_subtracts,
         **defaults,
     )
 

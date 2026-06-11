@@ -35,7 +35,8 @@ RUN apt-get update && apt-get install -y \
     casacore-dev \
     casacore-tools \
     lua5.3 \
-    liblua5.3-dev && \
+    liblua5.3-dev \
+    tzdata && \
     pip install pybind11 && \
     rm -rf /var/lib/apt/lists/*
 

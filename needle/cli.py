@@ -4,86 +4,70 @@ from pathlib import Path
 import sys
 import threading
 import time
-from typing import Literal
-import yaml
 
-from dask_jobqueue import SLURMCluster
 from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
+from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
-from needle.config.base import NeedleModel
 from needle.flows.pipeline import needle_pipeline
 from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
 from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
-from needle.lib.flow import CONTAINER_DATA_DIR
+from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("needle-cli")
 
 
-class Env(NeedleModel):
-    """Helper for environment variables to pass to set for flow runtime"""
-
-    PREFECT_API_URL: str = "http://localhost:4200/api"
-    "The URL of the prefect API"
-    PREFECT_LOGGING_EXTRA_LOGGERS: str = "needle"
-    "Required for needle logging in prefect UI"
-    PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    "Log level for needle logging"
-    PREFECT_RESULTS_PERSIST_BY_DEFAULT: Literal["true", "false"] = "false"
-    "Whether to cache results by default"
-    PREFECT_LOCAL_STORAGE_PATH: str = f"{CONTAINER_DATA_DIR}/prefect_cache"
-    "Location to store the cache if caching is enabled"
+def _setup_cli_logging(level: str = "INFO"):
+    logger.setLevel(level)
+    logger.propagate = False
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter(fmt="%(asctime)s | %(levelname)-8s | %(name)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        )
+        logger.addHandler(handler)
 
 
-def _load_slurm_task_runner(cluster_cfg_path: Path) -> DaskTaskRunner:
-    """
-    Parse a cluster.yaml file into a DaskTaskRunner backed by a SLURMCluster.
+def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRunner:
+    mode = args.mode
 
-    Keys min_workers and max_workers control adaptive scaling and are not
-    passed to SLURMCluster directly — all other keys are forwarded as-is.
-    """
-    if not cluster_cfg_path.exists():
-        raise FileNotFoundError(f"Cluster config not found: {cluster_cfg_path}")
+    if mode is None:
+        mode = "cluster" if (Path.home() / ".needle_cluster.yaml").exists() else "local"
 
-    with open(cluster_cfg_path) as f:
-        cfg = yaml.safe_load(f)
+    if mode == "cluster":
+        cluster_cfg = ClusterConfig.get_config()
+        logger.info(f"Using {cluster_cfg.type} cluster")
+        return cluster_cfg.to_task_runner()
 
-    # Pull out scaling params — these are not SLURMCluster constructor args
-    min_workers: int = cfg.pop("min_workers", 1)
-    max_workers: int = cfg.pop("max_workers", 4)
-    dashboard_port: int = cfg.pop("dashboard_port", 8787)
-
-    # Inject dashboard address into scheduler options
-    cfg["scheduler_options"] = {"dashboard_address": f":{dashboard_port}"}
-
-    logger.info(
-        f"Building SLURMCluster from {cluster_cfg_path} " f"(min_workers={min_workers}, max_workers={max_workers})"
-    )
-    return DaskTaskRunner(
-        cluster_class=SLURMCluster,
-        cluster_kwargs=cfg,
-        adapt_kwargs={"minimum": min_workers, "maximum": max_workers},
-    )
-
-
-def _load_local_task_runner(max_workers: int) -> DaskTaskRunner:
-    """Original local Dask cluster task runner (Docker mode)."""
-    return DaskTaskRunner(cluster_kwargs={"n_workers": max_workers, "threads_per_worker": 1})
+    logger.info("Using local environment for task runs")
+    return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
 
 
 def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--cluster",
+        dest="mode",
+        action="store_const",
+        const="cluster",
+        help="Run using a cluster configured with ~/.needle_cluster.yaml",
+    )
+    group.add_argument(
+        "--local",
+        dest="mode",
+        action="store_const",
+        const="local",
+        help="Run locally without any cluster or container",
+    )
     parser.add_argument(
-        "--cluster-cfg",
-        "--cluster_cfg",
-        dest="cluster_cfg",
-        default=None,
-        help=(
-            "Path to a cluster.yaml file. When provided, tasks run on a SLURM cluster via dask-jobqueue."
-            "When omitted, a local Dask cluster is created and used."
-        ),
-        required=False,
+        "--log-level",
+        "--log_level",
+        dest="log_level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Logging level",
     )
     return parser.parse_args()
 
@@ -91,21 +75,22 @@ def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
 def run():
     desc = """Runs the Needle Pipeline now.
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
-    args = _parse_pipeline(argparse.ArgumentParser(description=desc))
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument(
+        "--work-dir",
+        help="The location of the calibration and target observation pairs. Should be an existing directory",
+        type=str,
+        required=True,
+    )
+    args = _parse_pipeline(parser)
+    _setup_cli_logging(args.log_level)
+    setup_logging(args.log_level)
     cfg = NeedleConfig.get_config()
 
-    if args.cluster_cfg:
-        cluster_cfg_path = Path(args.cluster_cfg)
-        task_runner = _load_slurm_task_runner(cluster_cfg_path)
-        print(f"Using SLURM task runner from {cluster_cfg_path}")
-    else:
-        print("Using local environment for task runs")
-        task_runner = _load_local_task_runner(cfg.flow.max_workers)
+    if not Path(args.work_dir).exists():
+        raise NotADirectoryError(f"Could not find work directory: {args.work_dir}")
 
-    needle_pipeline.with_options(
-        task_runner=task_runner,
-        result_storage=cfg.flow.data_dir / Path("prefect_cache", persist_result=False),
-    )(cfg=cfg)
+    needle_pipeline.with_options(task_runner=_load_task_runner(args, cfg))(cfg=cfg, work_dir=args.work_dir)
 
 
 def _watch_and_restart(watcher_cfg, data_cfg):
@@ -123,19 +108,14 @@ def needle_serve():
     Serves the Courier and Needle Pipeline to the Prefect Server.
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
     args = _parse_pipeline(argparse.ArgumentParser(description=desc))
-
+    _setup_cli_logging(args.log_level)
+    setup_logging(args.log_level)
     cfg = NeedleConfig.get_config()
-    if args.cluster_cfg:
-        task_runner = _load_slurm_task_runner(Path(args.cluster_cfg))
-        print(f"Using SLURM task runner from {args.cluster_cfg}")
-    else:
-        task_runner = _load_local_task_runner(cfg.flow.max_workers)
-        print("Using local environment for task runs")
 
     # Start watcher in background thread
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
-    print(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
+    logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
     # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
     # Serve courier in background thread
@@ -158,11 +138,11 @@ def needle_serve():
         daemon=True,
     )
     courier_thread.start()
-    print("Courier deployment started")
+    logger.info("Courier deployment started")
 
     # Serve pipeline on main thread (blocks)
     needle_pipeline.with_options(
-        task_runner=task_runner,
+        task_runner=_load_task_runner(args, cfg),
         result_storage=cfg.data.staging_dir / Path("prefect_cache"),
         persist_result=False,
     ).serve(
@@ -199,7 +179,7 @@ def validate_config():
     args = parser.parse_args()
     path = Path(args.cfg)
     if not path.exists():
-        print(f"ERROR: File not found: {path}")
+        logger.error(f"ERROR: File not found: {path}")
         sys.exit(1)
 
     valid = NeedleConfig.validate(path=path)

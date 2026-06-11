@@ -6,7 +6,6 @@ import yaml
 from pydantic import ValidationError
 
 from needle.config.base import NeedleModel
-from needle.config.container import ContainerConfig
 from needle.config.calibrate import CalibrateConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.data import DataConfig
@@ -32,9 +31,6 @@ class PipelineFlowConfig(NeedleModel):
 
     max_workers: Optional[int] = None
     "Maximum number of worker processes for concurrent task execution"
-
-    runtime: Optional[ContainerConfig] = None
-    "Runtime information. An optional ContainerConfig. None is interpreted as the local runtime."
 
     interval_tasks: int = 1
     "The number of tasks to split the interval cleaning into per beam"

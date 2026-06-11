@@ -16,7 +16,6 @@ from pydantic import field_validator
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms, validate_path_fits
 from needle.config.base import NeedleModel
-from needle.config.container import ContainerConfig
 from needle.config.clean import WSCleanConfig, ShallowCleanConfig, DeepCleanConfig, ModelSubtractCleanConfig
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -203,10 +202,6 @@ def _parse(parser: ArgumentParser) -> Namespace:
     required_group.add_argument(
         "--mask", type=Path, required=False, help="The path to the fits mask to use for masked clean"
     )
-
-    container_group = parser.add_argument_group("Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
-
     parser.add_argument(
         "--log_level",
         type=str,
@@ -252,9 +247,6 @@ subtract :: Use configuration for subtracting the model from the data
 
     args = parser.parse_args()
     setup_logging(args.log_level)
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
 
     configs = {
         "run": WSCleanConfig,
@@ -263,7 +255,7 @@ subtract :: Use configuration for subtracting the model from the data
         "subtract": ModelSubtractCleanConfig,
     }
     cfg = configs[args.preset].from_namespace(args)
-    ctx = WSCleanContext(cfg=cfg, ms=args.ms, fits_mask=args.mask, runtime=runtime)
+    ctx = WSCleanContext(cfg=cfg, ms=args.ms, fits_mask=args.mask)
     run_clean(ctx)
 
 

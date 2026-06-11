@@ -3,7 +3,7 @@ name = "needle"
 version = "0.1.0"
 description = "Pipeline for ASKAP data imaging and point-source detection" 
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = "==3.12"
 dependencies = [
     "aegeantools>=2.3.5",
     "astropy>=7.2.0",
@@ -34,7 +34,7 @@ docs = [
 needle-serve = "needle.cli:needle_serve"
 needle-run= "needle.cli:run"
 needle-validate= "needle.cli:validate_config"
-needle-inspect-ms = "needle.modules.inspect_ms:main"
+needle-inspect= "needle.modules.inspect:main"
 needle-diagnostics= "needle.modules.diagnostics:main"
 needle-convert= "needle.modules.convert:main"
 needle-flag = "needle.modules.flag:main"
@@ -42,6 +42,7 @@ needle-calibrate= "needle.modules.calibrate:main"
 needle-source-find= "needle.modules.source_find:main"
 needle-mask= "needle.modules.mask:main"
 needle-clean= "needle.modules.clean:main"
+needle-casadata= "needle.modules.casa_data:main"
 
 [build-system]
 requires = ["hatchling"]

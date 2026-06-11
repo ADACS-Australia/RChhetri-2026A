@@ -16,45 +16,12 @@ matplotlib.use("Agg")  # non-interactive backend, safe for scripting
 import matplotlib.pyplot as plt
 from pydantic import BaseModel, field_validator
 
-from needle.config.container import ContainerConfig
 from needle.lib.casa import open_table, open_msmetadata
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
-from needle.modules.needle_context import SubprocessExecContext
+from needle.modules.needle_context import NeedleContext
 
 logger = logging.getLogger(__name__)
-
-
-class DiagnosticsContext(SubprocessExecContext):
-    """Wraps execution of MS Diagnostics"""
-
-    ms: Path
-    "Path to the measurement set to perform diagnostics for"
-    gcal: Path | None = None
-    "Path to the gain cal solution table"
-    bpcal: Path | None = None
-    "Path to the gain bpcal solution table"
-    output_dir: Path | None = None
-    "Location to output the diagnostics to"
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-    "Log level. Only relevant if runtime is set"
-
-    @field_validator("ms")
-    @classmethod
-    def _valid_ms(cls, ms: Path) -> Path:
-        validate_path_ms(ms)
-        return ms
-
-    @property
-    def cmd(self) -> list[list[str]]:
-        cmds = ["needle-diagnostics", str(self.ms), "--log-level", self.log_level]
-        if self.output_dir:
-            cmds += ["--output_dir", str(self.output_dir)]
-        if self.gcal:
-            cmds += ["--gcal", str(self.gcal)]
-        if self.bpcal:
-            cmds += ["--bpcal", str(self.gcal)]
-        return [cmds]
 
 
 class DiagnosticsOutput(BaseModel):
@@ -70,7 +37,7 @@ class DiagnosticsOutput(BaseModel):
 
     @property
     def all_files(self) -> list[Path]:
-        return [p for p in self.model_fields_set if p is not None]
+        return [getattr(self, p) for p in self.model_fields_set if getattr(self, p) is not None]
 
 
 class MSDiagnostics(BaseModel):
@@ -573,28 +540,37 @@ class MSDiagnostics(BaseModel):
             self.bandpass_caltable()
 
 
-def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
-    """If runtime is provided, rerun self inside the provided container.
-    Otherwise, run in the current environment.
+class DiagnosticsContext(NeedleContext):
+    """Wraps execution of MS Diagnostics"""
 
-    This setup allows us to run CASA functions without needing CASA libraries installed locally.
+    ms: Path
+    "Path to the measurement set to perform diagnostics for"
+    gcal: Path | None = None
+    "Path to the gain cal solution table"
+    bpcal: Path | None = None
+    "Path to the gain bpcal solution table"
+    output_dir: Path | None = None
+    "Location to output the diagnostics to"
+
+    @field_validator("ms")
+    @classmethod
+    def _valid_ms(cls, ms: Path) -> Path:
+        validate_path_ms(ms)
+        return ms
+
+    def execute(self) -> MSDiagnostics:
+        msd = MSDiagnostics(ms=self.ms, gcal=self.gcal, bpcal=self.bpcal, output_dir=self.output_dir)
+        msd.run_all_diagnostics()
+        return msd
+
+
+def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
+    """Runs all diagnostics and returns the output object
 
     :param ctx: The DiagnosticsContext object
     :return: The DiagnosticsOutput object - contains paths of output files.
     """
-    msd = MSDiagnostics(ms=ctx.ms, gcal=ctx.gcal, bpcal=ctx.bpcal, output_dir=ctx.output_dir)
-    if ctx.runtime:
-        logger.info(f"Loading container: {ctx.runtime.image}")
-        ctx.log_cmd()
-        procs = ctx.execute()
-        for p in procs:
-            if p.stderr:
-                logger.warning(p.stderr)
-            if p.stdout:
-                print(p.stdout)
-    else:
-        msd.run_all_diagnostics()
-
+    msd = ctx.execute()
     return msd.to_output()
 
 
@@ -618,23 +594,14 @@ def main():
         help="logger level",
     )
 
-    container_group = parser.add_argument_group(title="Container Arguments")
-    ContainerConfig.add_to_parser(container_group)
-
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    runtime = None
-    if args.image:
-        runtime = ContainerConfig.from_namespace(args)
-
     ctx = DiagnosticsContext(
-        runtime=runtime,
         ms=args.ms,
         gcal=args.gcal,
         bpcal=args.bpcal,
         output_dir=args.output_dir,
-        log_level=args.log_level,
     )
     diagnostics(ctx)
 
