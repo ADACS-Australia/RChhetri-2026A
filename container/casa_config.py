@@ -21,12 +21,12 @@ try:
         data_dir = _CFG["data"]["staging_dir"]
     except KeyError:
         raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.staging_dir'")
-    logs_dir = f"{data_dir}/logs"
+    logs_dir = f"{data_dir}/casalogs"
 
     ## CASA Configuration for Needle ##
     logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
     rundata = f"{data_dir}/.casa"
-    measurespath = f"{data_dir}/data"
+    measurespath = f"{data_dir}/casadata"
     nologfile = False
     log2term = True  # Print the log output directly to the terminal (so it shows up in SLURM .log)
     nologger = True
