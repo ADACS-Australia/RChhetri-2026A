@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from needle.lib.logging import setup_logging
-from needle.config.cluster import ClusterConfig
+from needle.config.container import ContainerConfig
 from needle.config.pipeline import NeedleConfig
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -57,15 +57,14 @@ def main():
         required=False,
         help="The minimum threshold logging level",
     )
+    parser.add_argument("data_path", type=str, help="The path to the casa data directory")
 
-    cluster_config = ClusterConfig.get_config()
-    container = cluster_config.container
-    casa_data_path = NeedleConfig.get_config().data.staging_dir / "casadata"
+    ContainerConfig.add_to_parser(parser)
 
     args = parser.parse_args()
     setup_logging(args.log_level)
 
-    ctx = CasaDataUpdateContext(runtime=container, casa_data_path=casa_data_path)
+    ctx = CasaDataUpdateContext(runtime=ContainerConfig.from_namespace(args), casa_data_path=args.data_path)
     download_casa_rundata(ctx)
 
 

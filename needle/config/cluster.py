@@ -24,12 +24,10 @@ class ScalingConfig(NeedleModel):
     "Maximum number of workers"
     interval: str = "5s"
     "The interval between checking for scaling updates e.g. '10s', '1m'"
-    wait_count: int = 60
+    wait_count: int = 120
     "The number of scaling intervals to wait for a worker before cancelling"
     dashboard_port: int = 8787
     "Port for the Dask dashboard"
-    worker_ttl: str = "5m"
-    "Time to keep idle workers alive"
 
     @field_validator("interval")
     @classmethod
@@ -40,19 +38,10 @@ class ScalingConfig(NeedleModel):
             )
         return v
 
-    @field_validator("worker_ttl")
-    @classmethod
-    def _valid_worker_ttl(cls, v: str | None) -> str | None:
-        if v and not re.match(r"^\d+(\.\d+)?(ms|s|m|h)$", v):
-            raise ValueError(
-                f"Invalid worker_ttl '{v}'. Must be a number followed by a unit: ms, s, m, or h. E.g. '5m', '1h'."
-            )
-        return v
-
     @property
     def scheduler_options(self) -> dict:
         """Returns the scheduler_options dictionary for DaskTaskRunner"""
-        return {"dashboard_address": f":{self.dashboard_port}", "worker_ttl": self.worker_ttl}
+        return {"dashboard_address": f":{self.dashboard_port}"}
 
     @property
     def adapt_kwargs(self) -> dict:
