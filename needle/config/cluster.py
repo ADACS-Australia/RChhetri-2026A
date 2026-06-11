@@ -52,7 +52,7 @@ class ScalingConfig(NeedleModel):
     @property
     def scheduler_options(self) -> dict:
         """Returns the scheduler_options dictionary for DaskTaskRunner"""
-        return {"dashboard_address": f":{self.scaling.dashboard_port}", "worker_ttl": self.worker_ttl}
+        return {"dashboard_address": f":{self.dashboard_port}", "worker_ttl": self.worker_ttl}
 
     @property
     def adapt_kwargs(self) -> dict:
