@@ -1,10 +1,11 @@
 import logging
 from pathlib import Path
+import re
 from typing import Literal, Optional
 import yaml
 
 from prefect_dask import DaskTaskRunner
-from pydantic import ValidationError
+from pydantic import ValidationError, field_validator
 
 from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
@@ -17,12 +18,34 @@ logger = logging.getLogger(__name__)
 class ClusterScalingConfig(NeedleModel):
     """Worker scaling configuration"""
 
-    min_workers: int = 1
+    min_workers: int = 0
     "Minimum number of workers"
     max_workers: int = 1
     "Maximum number of workers"
     dashboard_port: int = 8787
     "Port for the Dask dashboard"
+    interval: str = "10s"
+    "The interval between checking for scaling updates e.g. '10s', '1m'"
+    wait_count: int = 60
+    "The number of scaling intervals to wait for a worker before cancelling"
+
+    @field_validator("interval")
+    @classmethod
+    def _valid_interval(cls, v: str) -> str:
+        if not re.match(r"^\d+(\.\d+)?(ms|s|m|h)$", v):
+            raise ValueError(
+                f"Invalid interval '{v}'. Must be a number followed by a unit: ms, s, m, or h. E.g. '10s', '1m'."
+            )
+        return v
+
+    def to_adapt_kwargs(self) -> dict:
+        """Returns the adapt_kwargs dictionary for DaskTaskRunner"""
+        return {
+            "minimum": self.min_workers,
+            "maximum": self.max_workers,
+            "wait_count": self.wait_count,
+            "interval": self.interval,
+        }
 
 
 class SlurmConfig(NeedleModel):
@@ -103,9 +126,7 @@ class ClusterConfig(NeedleModel):
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         return DaskTaskRunner(
-            cluster_class=cluster_class,
-            cluster_kwargs=cluster_kwargs,
-            adapt_kwargs={"minimum": self.scaling.min_workers, "maximum": self.scaling.max_workers},
+            cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.to_adapt_kwargs()
         )
 
     @classmethod

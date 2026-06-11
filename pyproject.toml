@@ -42,6 +42,7 @@ needle-calibrate= "needle.modules.calibrate:main"
 needle-source-find= "needle.modules.source_find:main"
 needle-mask= "needle.modules.mask:main"
 needle-clean= "needle.modules.clean:main"
+needle-casadata= "needle.modules.casa_data:main"
 
 [build-system]
 requires = ["hatchling"]
