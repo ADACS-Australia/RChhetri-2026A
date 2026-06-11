@@ -32,8 +32,8 @@ class SlurmConfig(NeedleModel):
     "SLURM account to charge"
     queue: Optional[str] = None
     "SLURM queue/partition to submit to"
-    cores: Optional[int] = None
-    "Number of cores per job"
+    cores: Literal[1] = 1
+    "Number of cores per job. Must be 1 as CASA is not threadsafe."
     memory: Optional[str] = None
     "Memory per job e.g. '64GB'"
     processes: Optional[int] = None

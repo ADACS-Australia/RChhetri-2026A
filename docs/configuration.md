@@ -156,8 +156,6 @@ If using a Dask cluster, either locally or via Slurm, an additional `.yaml` conf
 
 For the full picture, please see the [config api reference][needle.config.cluster.ClusterConfig].
 
-> Note that when using the command line interface, a bind mount to the needle config's staging directory is automatically added at runtime to the container arguments during creation of the cluster object. This is to ensure that the working directory is available in the runtime execution environment.
-
 ### Local Cluster
 
 ```yaml
@@ -173,7 +171,7 @@ container:
   type: apptainer # either 'singularity' or 'apptainer'
 
 local:
-  cores: 2 # number of cores per worker
+  cores: 1 # number of cores per worker
   memory: "8GB" # memory per worker
 ```
 
@@ -200,9 +198,9 @@ container:
 slurm:
   account: "pawsey0008"
   queue: "work"
-  cores: 2
+  cores: 1 # Must be 1 for thread safety
   memory: "64GB"
-  processes: 1
+  processes: 2
   walltime: "02:00:00"
 
   # A directory for Dask operational files

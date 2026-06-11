@@ -40,8 +40,7 @@ def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRu
         cluster_cfg = ClusterConfig.get_config()
         logger.info(f"Using {cluster_cfg.type} cluster")
         # Always add the staging directory to the bind mounts as it's always required.
-        extra_binds = [f"{cfg.data.staging_dir}:{cfg.data.staging_dir}"]
-        return cluster_cfg.to_task_runner(extra_binds=extra_binds)
+        return cluster_cfg.to_task_runner()
 
     logger.info("Using local environment for task runs")
     return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
