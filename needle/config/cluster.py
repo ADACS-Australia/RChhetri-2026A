@@ -32,7 +32,7 @@ class SlurmConfig(NeedleModel):
     "SLURM account to charge"
     queue: Optional[str] = None
     "SLURM queue/partition to submit to"
-    cores: Literal[1] = 1
+    cores: Optional[int] = None
     "Number of cores per job. Must be 1 as CASA is not threadsafe."
     memory: Optional[str] = None
     "Memory per job e.g. '64GB'"
@@ -80,7 +80,7 @@ class ClusterConfig(NeedleModel):
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
 
-    def to_task_runner(self, extra_binds: Optional[list[str]]) -> DaskTaskRunner:
+    def to_task_runner(self, extra_binds: Optional[list[str]] = None) -> DaskTaskRunner:
         """Creates the task runner object
 
         :param extra_binds: Any additional path bindings to add to the container execution command if using a container.

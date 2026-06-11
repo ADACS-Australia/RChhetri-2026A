@@ -39,7 +39,6 @@ def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRu
     if mode == "cluster":
         cluster_cfg = ClusterConfig.get_config()
         logger.info(f"Using {cluster_cfg.type} cluster")
-        # Always add the staging directory to the bind mounts as it's always required.
         return cluster_cfg.to_task_runner()
 
     logger.info("Using local environment for task runs")
