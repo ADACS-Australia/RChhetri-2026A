@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+import traceback
 from typing import Optional, Literal
 import yaml
 
@@ -152,9 +153,9 @@ class NeedleConfig(NeedleModel):
         else:
             emit("\nAll sections validated OK.")
             try:
-                cls.from_config(raw)
+                cls.load(raw)
                 emit("  ✓ Full config loaded successfully")
-            except Exception as e:
-                emit(f"  ✗ Full config FAILED: {e}")
+            except Exception as _:
+                emit(f"  ✗ Full config FAILED: {traceback.format_exc()}")
 
         return not errors
