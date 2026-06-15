@@ -182,7 +182,7 @@ def validate_config():
         logger.error(f"ERROR: File not found: {path}")
         sys.exit(1)
 
-    valid = NeedleConfig.validate(path=path)
+    valid = NeedleConfig.validate(source=path)
     if not valid:
         return
     if args.pretty_print:
