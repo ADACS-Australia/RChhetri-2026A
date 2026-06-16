@@ -1,9 +1,9 @@
 import pytest
 import yaml
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pydantic import ValidationError
-from needle.config.cluster import ScalingConfig, SlurmConfig, LocalConfig, ClusterConfig
+from needle.config.cluster import ScalingConfig, LocalConfig, ClusterConfig
 
 def test_scaling_config_valid_interval():
     cfg = ScalingConfig(interval="10s")
@@ -56,7 +56,7 @@ def test_cluster_config_get_config_no_file():
 @patch("needle.config.cluster.DaskTaskRunner")
 def test_cluster_config_to_task_runner_local(mock_runner, mock_cluster):
     cfg = ClusterConfig(type="local", local=LocalConfig(cores=2))
-    runner = cfg.to_task_runner()
+    cfg.to_task_runner()
     mock_runner.assert_called_once()
     kwargs = mock_runner.call_args.kwargs
     assert kwargs["cluster_class"] == mock_cluster

@@ -1,7 +1,6 @@
 import pytest
 import json
 import numpy as np
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from needle.modules.inspect import (
@@ -14,7 +13,6 @@ from needle.modules.inspect import (
     InspectMSContext,
     inspect_ms,
 )
-from needle.config.container import ContainerConfig
 
 
 @pytest.fixture

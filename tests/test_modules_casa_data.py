@@ -1,7 +1,7 @@
 import pytest
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from needle.modules.casa_data import CasaDataUpdateContext, download_casa_rundata
 
 def test_casa_data_update_context_cmd():

@@ -1,9 +1,7 @@
 from pathlib import Path
-from typing import Optional
 
 from prefect import task
 
-from needle.config.container import ContainerConfig
 from needle.config.beam import MSBeamPair
 from needle.lib.logging import setup_logging
 from needle.config.flag import FlagConfig

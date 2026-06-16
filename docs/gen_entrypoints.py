@@ -48,7 +48,7 @@ with mkdocs_gen_files.open("cli_entrypoints.md", "w") as f:
                         pass
 
             description = captured.get("description", "")
-        except Exception as e:
+        except Exception:
             description = ""
 
         f.write(f"### {name}\n\n")

@@ -1,6 +1,5 @@
 import logging
 import sys
-from pathlib import Path
 from needle.lib.logging import setup_logging, setup_watcher_logger
 
 def test_setup_logging():
