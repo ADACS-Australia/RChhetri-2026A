@@ -1,8 +1,9 @@
-from argparse import ArgumentParser
 import logging
 from pathlib import Path
 
-from needle.lib.logging import setup_logging
+import click
+
+from needle.config.base import needle_module_args
 from needle.config.container import ContainerConfig
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -40,27 +41,18 @@ def download_casa_rundata(ctx: CasaDataUpdateContext) -> None:
         logger.warning("data_update completed but readme.txt still not found.")
 
 
-def main():
-    desc = """A module for updating the casa run data appropriately"""
-    parser = ArgumentParser(description=desc)
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-    parser.add_argument("data_path", type=str, help="The path to the casa data directory")
-
-    ContainerConfig.add_to_parser(parser)
-
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    ctx = CasaDataUpdateContext(runtime=ContainerConfig.from_namespace(args), casa_data_path=args.data_path)
+@needle_module_args(ContainerConfig, name="casadata", help="A module for updating the casa data")
+@click.option(
+    "--data_path",
+    "-d",
+    type=click.Path(file_okay=False, exists=True, path_type=Path),
+    required=True,
+    help="The path to the casa data directory",
+)
+def entrypoint(cfg: ContainerConfig, data_path: Path):
+    ctx = CasaDataUpdateContext(runtime=cfg, casa_data_path=data_path)
     download_casa_rundata(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

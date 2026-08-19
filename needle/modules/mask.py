@@ -3,18 +3,18 @@
 Takes the .json output from source_find to create a .fits mask around the sources
 """
 
-from argparse import ArgumentParser
 import logging
 from pathlib import Path
 
 from astropy.io import fits
 from astropy.wcs import WCS
+import click
 import numpy as np
 from pydantic import field_validator
 
+from needle.config.base import needle_module_args
 from needle.config.mask import CreateMaskOutput, CreateMaskConfig
 from needle.lib.aegean import AegeanSourceList
-from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_fits
 from needle.modules.needle_context import NeedleContext
 
@@ -170,29 +170,29 @@ def create_mask(ctx: CreateMaskContext) -> CreateMaskOutput:
     return output
 
 
-def main():
-    desc = """Takes the JSON output from source-find to create a .fits mask around the sources. Masks can be used for cleaning with WSClean."""
-    parser = CreateMaskConfig.add_to_parser(ArgumentParser(description=desc))
-    parser.add_argument("--image", type=Path, required=True, help="The path to the .fits image. Used as a refernce")
-    parser.add_argument(
-        "--sources",
-        type=Path,
-        required=True,
-        help="The path to the .json file containing a list of source locations in the image",
-    )
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    create_mask(CreateMaskContext(cfg=CreateMaskConfig.from_namespace(args), image=args.image, sources=args.sources))
+@needle_module_args(
+    CreateMaskConfig,
+    name="mask",
+    help="Takes the JSON output from source-find to create a .fits mask around the sources. Masks can be used for cleaning with WSClean.",
+)
+@click.option(
+    "--image",
+    "-i",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="The path to the .fits image. Used as a reference",
+)
+@click.option(
+    "--sources",
+    "-s",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="The path to the .json file containing a list of source locations in the image",
+)
+def entrypoint(image: Path, sources: Path):
+    ctx = CreateMaskContext(image=image, sources=sources)
+    create_mask(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

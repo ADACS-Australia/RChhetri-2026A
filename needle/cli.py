@@ -1,10 +1,10 @@
-import argparse
 import logging
-from pathlib import Path
 import sys
 import threading
 import time
+from pathlib import Path
 
+import click
 from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
@@ -16,7 +16,23 @@ from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.logging import setup_logging
 from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
 
+# Each of these modules exposes a module-level `command` — a click.Command built with
+# @pydantic_command. See flag.py for the pattern.
+from needle.modules import (
+    calibrate,
+    casa_data,
+    clean,
+    convert,
+    diagnostics,
+    flag,
+    inspect,
+    mask,
+    source_find,
+)
+
 logger = logging.getLogger("needle-cli")
+
+LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def _setup_cli_logging(level: str = "INFO"):
@@ -30,9 +46,7 @@ def _setup_cli_logging(level: str = "INFO"):
         logger.addHandler(handler)
 
 
-def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRunner:
-    mode = args.mode
-
+def _load_task_runner(mode: str | None, cfg: NeedleConfig) -> DaskTaskRunner:
     if mode is None:
         mode = "cluster" if (Path.home() / ".needle_cluster.yaml").exists() else "local"
 
@@ -45,52 +59,56 @@ def _load_task_runner(args: argparse.Namespace, cfg: NeedleConfig) -> DaskTaskRu
     return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
 
 
-def _parse_pipeline(parser: argparse.ArgumentParser) -> argparse.Namespace:
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
+def _mode_and_log_level_options(f):
+    f = click.option(
         "--cluster",
-        dest="mode",
-        action="store_const",
-        const="cluster",
+        "mode",
+        flag_value="cluster",
+        default=None,
         help="Run using a cluster configured with ~/.needle_cluster.yaml",
-    )
-    group.add_argument(
+    )(f)
+    f = click.option(
         "--local",
-        dest="mode",
-        action="store_const",
-        const="local",
+        "mode",
+        flag_value="local",
+        default=None,
         help="Run locally without any cluster or container",
-    )
-    parser.add_argument(
+    )(f)
+    f = click.option(
         "--log-level",
         "--log_level",
-        dest="log_level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        "log_level",
+        type=click.Choice(LOG_LEVEL_CHOICES),
         default="INFO",
         help="Logging level",
-    )
-    return parser.parse_args()
+    )(f)
+    return f
 
 
-def run():
-    desc = """Runs the Needle Pipeline now.
-    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument(
-        "--work-dir",
-        help="The location of the calibration and target observation pairs. Should be an existing directory",
-        type=str,
-        required=True,
-    )
-    args = _parse_pipeline(parser)
-    _setup_cli_logging(args.log_level)
-    setup_logging(args.log_level)
+@click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
+def cli():
+    pass
+
+
+@cli.command()
+@click.option(
+    "--work-dir",
+    "work_dir",
+    required=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Location of the calibration and target observation pairs.",
+)
+@_mode_and_log_level_options
+def run(work_dir, mode, log_level):
+    """Runs the Needle Pipeline now.
+
+    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+    """
+    _setup_cli_logging(log_level)
+    setup_logging(log_level)
     cfg = NeedleConfig.get_config()
 
-    if not Path(args.work_dir).exists():
-        raise NotADirectoryError(f"Could not find work directory: {args.work_dir}")
-
-    needle_pipeline.with_options(task_runner=_load_task_runner(args, cfg))(cfg=cfg, work_dir=args.work_dir)
+    needle_pipeline.with_options(task_runner=_load_task_runner(mode, cfg))(cfg=cfg, work_dir=str(work_dir))
 
 
 def _watch_and_restart(watcher_cfg, data_cfg):
@@ -103,22 +121,22 @@ def _watch_and_restart(watcher_cfg, data_cfg):
             time.sleep(30)
 
 
-def needle_serve():
-    desc = """Starts the Watcher, which polls the source directory for observations.
-    Serves the Courier and Needle Pipeline to the Prefect Server.
-    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help."""
-    args = _parse_pipeline(argparse.ArgumentParser(description=desc))
-    _setup_cli_logging(args.log_level)
-    setup_logging(args.log_level)
+@cli.command()
+@_mode_and_log_level_options
+def serve(mode, log_level):
+    """Starts the Watcher, Courier, and Needle Pipeline, served to the Prefect Server.
+
+    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+    """
+    _setup_cli_logging(log_level)
+    setup_logging(log_level)
     cfg = NeedleConfig.get_config()
 
-    # Start watcher in background thread
     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
     watcher_thread.start()
     logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
     # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
-    # Serve courier in background thread
     courier_thread = threading.Thread(
         target=courier_flow.serve,
         kwargs={
@@ -140,9 +158,8 @@ def needle_serve():
     courier_thread.start()
     logger.info("Courier deployment started")
 
-    # Serve pipeline on main thread (blocks)
     needle_pipeline.with_options(
-        task_runner=_load_task_runner(args, cfg),
+        task_runner=_load_task_runner(mode, cfg),
         result_storage=cfg.data.staging_dir / Path("prefect_cache"),
         persist_result=False,
     ).serve(
@@ -160,31 +177,36 @@ def needle_serve():
     )
 
 
-def validate_config():
-    desc = """Validates a needle pipeline YAML config file. Optionally pretty-prints to stdout."""
-    parser = argparse.ArgumentParser(description=desc)
-    cfg_default = Path.home() / Path(".needle.yaml")
-    parser.add_argument(
-        "-c",
-        "--cfg",
-        default=cfg_default,
-        help=f"Path to the config YAML file (default: {cfg_default})",
-    )
-    parser.add_argument(
-        "-p",
-        "--pretty_print",
-        action="store_true",
-        help="Whether to pretty print the config",
-    )
-    args = parser.parse_args()
-    path = Path(args.cfg)
-    if not path.exists():
-        logger.error(f"ERROR: File not found: {path}")
-        sys.exit(1)
-
-    valid = NeedleConfig.validate(source=path)
+@cli.command()
+@click.option(
+    "-c",
+    "--cfg",
+    "cfg_path",
+    default=Path.home() / ".needle.yaml",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to the config YAML file.",
+)
+@click.option("-p", "--pretty-print", "pretty_print", is_flag=True, help="Whether to pretty print the config")
+def validate(cfg_path, pretty_print):
+    """Validates a needle pipeline YAML config file. Optionally pretty-prints to stdout."""
+    valid = NeedleConfig.validate(source=cfg_path)
     if not valid:
         return
-    if args.pretty_print:
-        print()
-        NeedleConfig.load(path=path).pretty_print()
+    if pretty_print:
+        click.echo()
+        NeedleConfig.load(path=cfg_path).pretty_print()
+
+
+@click.group(help="Run an individual pipeline module directly, bypassing the full pipeline.")
+def module():
+    pass
+
+
+for mod in (calibrate, casa_data, clean, convert, diagnostics, flag, inspect, mask, source_find):
+    module.add_command(mod.entrypoint)
+
+cli.add_command(module, name="module")
+
+
+if __name__ == "__main__":
+    cli()

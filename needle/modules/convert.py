@@ -2,10 +2,11 @@
 Converts a .uvfits or .mir file to a measurement set (.ms)
 """
 
-import argparse
 import logging
 from pathlib import Path
 from typing import Optional
+
+import click
 
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -78,25 +79,22 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
     return ctx.output
 
 
-def main():
-    desc = """Converts a file to a .ms file. Accepts .uvfits and .mir file types.
-    Will do nothing if already a measurement set."""
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument("--input", type=Path, required=True, help="The path to the file to convert")
-    parser.add_argument(
-        "--output-dir",
-        "--output_dir",
-        dest="output_dir",
-        type=Path,
-        default=None,
-        help="Directory to write the output MS to",
-    )
-
-    args = parser.parse_args()
-
-    ctx = ConvertContext(input=args.input, output_dir=args.output_dir)
+@click.command(name="convert", help="Converts a .uvfits or .mir file to a measurement set (.ms)")
+@click.argument(
+    "input",
+    type=click.Path(dir_okay=True, file_okay=True, exists=True, path_type=Path),
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+    help="Directory to write the output MS to",
+)
+def entrypoint(input: Path, output_dir: Optional[Path] = None):
+    ctx = ConvertContext(input=input, output_dir=output_dir)
     convert_to_ms(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

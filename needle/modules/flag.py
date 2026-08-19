@@ -2,16 +2,18 @@
 Flags a measurement set.
 Effectively wraps the flagging utility in CASA.
 Allows for multi-step flags. Order of flags is chosen by flag.py
+
+Typer version, kept for comparison against the real (Click) flag.py.
 """
 
-from argparse import ArgumentParser
 import logging
 from pathlib import Path
 
+import click
 from pydantic import field_validator
 
+from needle.config.base import needle_module_args
 from needle.config.flag import FlagConfig, FlagStepConfig
-from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -74,26 +76,17 @@ def flag_observation(ctx: FlagContext) -> None:
     logger.info("Flagging complete")
 
 
-def main():
-    desc = """Flag a measurement set using CASA's flagging utilities."""
-    parser = FlagConfig.add_to_parser(ArgumentParser(description=desc))
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-
-    required = parser.add_argument_group(title="Required Arguments")
-    required.add_argument("--ms", type=Path, required=True, help="The path to the measurement set")
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    ctx = FlagContext(cfg=FlagConfig.from_namespace(args), ms=args.ms)
+@needle_module_args(FlagConfig, name="flag", help="Flag a measurement set using CASA's flagging utilities.")
+@click.option(
+    "--ms",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    required=True,
+    help="The path to the measurement set",
+)
+def entrypoint(cfg: FlagConfig, ms: Path):
+    ctx = FlagContext(cfg=cfg, ms=ms)
     flag_observation(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()
