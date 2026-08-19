@@ -6,16 +6,16 @@ Supports different cleaning modes:
     - Model subtraction
 """
 
-from argparse import ArgumentParser, Namespace, RawDescriptionHelpFormatter
 from glob import glob
 import logging
 from pathlib import Path
+from typing import Optional
 
+import click
 from pydantic import field_validator
 
-from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms, validate_path_fits
-from needle.config.base import NeedleModel
+from needle.config.base import NeedleModel, needle_module_args
 from needle.config.clean import WSCleanConfig, ShallowCleanConfig, DeepCleanConfig, ModelSubtractCleanConfig
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -196,68 +196,49 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
     return ctx.output
 
 
-def _parse(parser: ArgumentParser) -> Namespace:
-    required_group = parser.add_argument_group("Required Arguments")
-    required_group.add_argument("--ms", type=Path, required=True, help="The path to the measurement set to clean")
-    required_group.add_argument(
-        "--mask", type=Path, required=False, help="The path to the fits mask to use for masked clean"
-    )
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-
-
-def main():
-    desc = """Run WSClean on a measurement set. 
-
-Runs with one of several configuration presets:
-
-run :: Use the generic configuration  
-shallow :: Use configration for shallow cleaning  
-deep :: Use configuration for deep cleaning  
-subtract :: Use configuration for subtracting the model from the data  
-    """
-    parser = ArgumentParser(description=desc, formatter_class=RawDescriptionHelpFormatter)
-    subparsers = parser.add_subparsers(dest="preset", required=True)
-
-    # Generic
-    generic = subparsers.add_parser("run", description="Run WSClean with generic configuration")
-    WSCleanConfig.add_to_parser(generic)
-    _parse(generic)
-
-    # Shallow
-    shallow = subparsers.add_parser("shallow", description="Run WSClean with shallow-clean presets")
-    ShallowCleanConfig.add_to_parser(shallow)
-    _parse(shallow)
-
-    # Deep
-    deep = subparsers.add_parser("deep", description="Run WSClean with deep-clean presets")
-    DeepCleanConfig.add_to_parser(deep)
-    _parse(deep)
-
-    # Model subtract
-    subtract = subparsers.add_parser("subtract", description="Run WSClean with model-subtract presets")
-    ModelSubtractCleanConfig.add_to_parser(subtract)
-    _parse(subtract)
-
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    configs = {
-        "run": WSCleanConfig,
-        "shallow": ShallowCleanConfig,
-        "deep": DeepCleanConfig,
-        "subtract": ModelSubtractCleanConfig,
-    }
-    cfg = configs[args.preset].from_namespace(args)
-    ctx = WSCleanContext(cfg=cfg, ms=args.ms, fits_mask=args.mask)
+# Shared business logic + shared options for every preset.
+@click.option(
+    "--ms",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="The path to the measurement set to clean",
+)
+@click.option(
+    "--mask",
+    "-m",
+    type=click.Path(exists=True, path_type=Path),
+    required=False,
+    help="The path to the fits mask to use for masked clean",
+)
+def _clean(cfg: WSCleanConfig, ms: Path, mask: Optional[Path]):
+    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
     run_clean(ctx)
 
 
+_run_cmd = needle_module_args(WSCleanConfig, name="run", help="Run WSClean with generic configuration")(_clean)
+_shallow_cmd = needle_module_args(ShallowCleanConfig, name="shallow", help="Run WSClean with shallow-clean presets")(
+    _clean
+)
+_deep_cmd = needle_module_args(DeepCleanConfig, name="deep", help="Run WSClean with deep-clean presets")(_clean)
+_subtract_cmd = needle_module_args(
+    ModelSubtractCleanConfig, name="subtract", help="Run WSClean with model-subtract presets"
+)(_clean)
+
+entrypoint = click.Group(
+    name="clean",
+    help="""Run WSClean on a measurement set.
+
+    Runs with one of several configuration presets:
+
+    run :: Use the generic configuration
+    shallow :: Use configuration for shallow cleaning
+    deep :: Use configuration for deep cleaning
+    subtract :: Use configuration for subtracting the model from the data
+    """,
+)
+for _cmd in (_run_cmd, _shallow_cmd, _deep_cmd, _subtract_cmd):
+    entrypoint.add_command(_cmd)
+
+
 if __name__ == "__main__":
-    main()
+    entrypoint()

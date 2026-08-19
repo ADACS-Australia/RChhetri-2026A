@@ -3,16 +3,15 @@ Determines calibration solutions and applies them to a target source.
 Effectively wraps CASA calibration tasks: setjy, bandpass, gaincal, applycal, split.
 """
 
-from argparse import ArgumentParser
 import logging
 from pathlib import Path
 import shutil
 
 from pydantic import field_validator
+import click
 
-from needle.config.base import NeedleModel
+from needle.config.base import NeedleModel, needle_module_args
 from needle.config.calibrate import CalibrateConfig
-from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
 from needle.modules.needle_context import SubprocessExecContext
 
@@ -150,26 +149,29 @@ def calibrate_observation(ctx: CalibrateContext) -> CalibrateOutput:
     return CalibrateOutput(tgt=ctx._calibrated_tgt_path, gcal=ctx._gcal_path, bpcal=ctx._bpcal_path)
 
 
-def main():
-    desc = """Determine and apply calibation solutons to a target measurement set using a calibrator measurement set."""
-    parser = CalibrateConfig.add_to_parser(ArgumentParser(desc))
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-    required = parser.add_argument_group(title="Required Arguments")
-    required.add_argument("--cal", type=Path, required=True, help="The path to the calibrator measurement set")
-    required.add_argument("--tgt", type=Path, required=True, help="The path to the target measurement set")
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    ctx = CalibrateContext(cfg=CalibrateConfig.from_namespace(args), cal=args.cal, tgt=args.tgt)
+@needle_module_args(
+    CalibrateConfig,
+    name="calibrate",
+    help="Determine and apply calibation solutons to a target measurement set using a calibrator measurement set.",
+)
+@click.option(
+    "--cal",
+    "-c",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    required=True,
+    help="The path to the calibrator measurement set",
+)
+@click.option(
+    "--tgt",
+    "-t",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, path_type=Path),
+    required=True,
+    help="The path to the target measurement set",
+)
+def entrypoint(cfg: CalibrateConfig, cal: Path, tgt: Path):
+    ctx = CalibrateContext(cfg=cfg, cal=cal, tgt=tgt)
     calibrate_observation(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

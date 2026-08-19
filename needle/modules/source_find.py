@@ -4,7 +4,6 @@ Run BANE and Aegean on a FITS image to detect radio sources.
 Outputs the sources to a .json file
 """
 
-import argparse
 from astropy.io import fits
 import numpy as np
 import logging
@@ -13,15 +12,14 @@ from typing import Tuple
 
 from AegeanTools.BANE import filter_image
 from AegeanTools.source_finder import SourceFinder
+import click
 from pydantic import field_validator, computed_field
 
-from needle.config.base import NeedleModel
+from needle.config.base import NeedleModel, needle_module_args
 from needle.config.source_find import SourceFindConfig
 from needle.lib.aegean import AegeanSourceList
-from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_fits
 from needle.modules.needle_context import SubprocessExecContext
-
 
 logger = logging.getLogger(__name__)
 
@@ -204,28 +202,22 @@ def source_find(ctx: SourceFindContext) -> SourceFindOutput:
     return ctx.output
 
 
-def main():
-    desc = """Finds sources in a .fits image. Uses BANE for noise mapping and Aegean for source finding."""
-    parser = SourceFindConfig.add_to_parser(argparse.ArgumentParser(description=desc))
-
-    required_group = parser.add_argument_group("Required Arguments")
-    required_group.add_argument(
-        "--image", type=Path, required=True, help="The path to the fits image to use for source finding"
-    )
-
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        required=False,
-        help="The minimum threshold logging level",
-    )
-
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-    source_find(SourceFindContext(cfg=SourceFindConfig.from_namespace(args), image=args.image))
+@needle_module_args(
+    SourceFindConfig,
+    name="mask",
+    help="Finds sources in a .fits image. Uses BANE for noise mapping and Aegean for source finding.",
+)
+@click.option(
+    "--image",
+    "-i",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="The path to the fits image to use for source finding",
+)
+def entrypoint(image: Path, sources: Path):
+    ctx = SourceFindContext(image=image, sources=sources)
+    source_find(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

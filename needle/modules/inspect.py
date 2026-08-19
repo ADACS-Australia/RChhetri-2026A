@@ -2,7 +2,6 @@
 Inspects a measurement set's basic details. Writes results to JSON
 """
 
-import argparse
 from dataclasses import dataclass, asdict
 from functools import cached_property
 import json
@@ -10,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import click
 import numpy as np
 from pydantic import BaseModel, field_validator
 
@@ -399,28 +399,38 @@ def inspect_ms(ctx: InspectMSContext) -> MSInfo:
     return ctx.execute()
 
 
-def main():
-    desc = """Inspect a Measurement Set (.ms), providing basic details on the data/observation. Writes to JSON."""
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument("ms", type=Path, help="Path to the .ms file")
-    parser.add_argument("--print", action="store_true", help="Print the info to stdout.")
-    parser.add_argument(
-        "--log-level",
-        "--log_level",
-        dest="log_level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Logging level",
-    )
-
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
-    msinfo = inspect_ms(InspectMSContext(ms=args.ms))
-    if args.print:
+@click.command(
+    name="inspect",
+    help="Inspect a Measurement Set (.ms), providing basic details on the data/observation. Writes to JSON.",
+)
+@click.option(
+    "--ms",
+    type=click.Path(dir_okay=True, file_okay=False, exists=True, path_type=Path),
+    required=True,
+    help="The measurement set to inspect",
+)
+@click.option(
+    "--display",
+    "-d",
+    is_flag=True,
+    default=False,
+    help="Whether to print the inspection to stdout.",
+)
+@click.option(
+    "--log-level",
+    "--log_level",
+    "-l",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="INFO",
+    help="The minimum threshold logging level",
+)
+def entrypoint(ms: Path, display: bool, log_level: str):
+    setup_logging(log_level)
+    msinfo = inspect_ms(InspectMSContext(ms=ms))
+    if display:
         msinfo.pretty_print()
     msinfo.to_json()
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

@@ -2,13 +2,13 @@
 Runs diagnostics on a measurement set and generates plots and JSON data
 """
 
-import argparse
 from functools import cached_property
 import json
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
+import click
 import numpy as np
 import matplotlib
 
@@ -574,37 +574,55 @@ def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
     return msd.to_output()
 
 
-def main():
-    desc = """Run diagnostics on a measurement set. Optionally supply bandpass/gain calibrators. Plots and data are written to files."""
-    parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument("ms", type=Path, help="Path to the .ms file")
-    parser.add_argument(
-        "--output_dir",
-        type=Path,
-        help="Directory to write outputs to. Will be created if it doesn't exist. If not supplied, uses MS directory.",
-    )
-    parser.add_argument("--gcal", type=Path, help="Path to the gain caltable")
-    parser.add_argument("--bpcal", type=Path, help="Path to the bandpass caltable")
-    parser.add_argument(
-        "--log-level",
-        "--log_level",
-        dest="log_level",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="logger level",
-    )
-
-    args = parser.parse_args()
-    setup_logging(args.log_level)
-
+@click.command(
+    name="diagnostics",
+    help="Run diagnostics on a measurement set. Optionally supply bandpass/gain calibrators. Plots and data are written to files.",
+)
+@click.option(
+    "--ms",
+    type=click.Path(dir_okay=True, file_okay=False, exists=True, path_type=Path),
+    required=True,
+    help="The path to measurement set",
+)
+@click.option(
+    "--gcal",
+    "-g",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+    help="The path to the gain cal solution. Optional.",
+)
+@click.option(
+    "--bpcal",
+    "-b",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+    help="The path to the bandpass cal solution. Optional.",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+    help="Directory to write the output diagnostics to. If not supplied, will use the parent of the MS",
+)
+@click.option(
+    "--log-level",
+    "--log_level",
+    "-l",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="INFO",
+    help="The minimum threshold logging level",
+)
+def entrypoint(ms: Path, gcal: Path, bpcal: Path, output_dir: Optional[Path], log_level: str):
+    setup_logging(log_level)
     ctx = DiagnosticsContext(
-        ms=args.ms,
-        gcal=args.gcal,
-        bpcal=args.bpcal,
-        output_dir=args.output_dir,
+        ms=ms,
+        gcal=gcal,
+        bpcal=bpcal,
+        output_dir=output_dir,
     )
     diagnostics(ctx)
 
 
 if __name__ == "__main__":
-    main()
+    entrypoint()

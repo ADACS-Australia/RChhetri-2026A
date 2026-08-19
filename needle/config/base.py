@@ -1,11 +1,19 @@
-from argparse import ArgumentParser, Namespace, _ArgumentGroup
 from pathlib import Path
 import types
 from typing import Literal, Union, get_args, get_origin
 import yaml
 
+import click
 from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticUndefinedType
+
+from needle.lib.logging import setup_logging
+
+
+def _kv_pair(value: str) -> tuple[str, str]:
+    """Parses a 'KEY=VALUE' string into a (key, value) tuple, for dict-typed fields."""
+    key, _, val = value.partition("=")
+    return key, val
 
 
 class NeedleModel(BaseModel):
@@ -51,79 +59,24 @@ class NeedleModel(BaseModel):
                 print(f"{pad}{connector}{field_name}: {field_val}")
 
     @classmethod
-    def add_to_parser(cls, parser: ArgumentParser | _ArgumentGroup, prefix: str = ""):
-        "Add this model's fields to an argument parser, with dot-notation for nested models"
+    def to_click_params(cls, prefix: str = "") -> list[click.Parameter]:
+        """Build click.Option objects for this model's fields, with dot-notation names for
+        nested models — the click analog of add_to_parser.
+
+        Click only requires the *flag text* users type (e.g. --quack.interval) to be a string;
+        it separately tries to auto-derive an internal `name` from that text by stripping "--"
+        and replacing "-" with "_", then checking .isidentifier() on the result. A dot in the
+        field path fails that check, so we pass an explicit identifier-safe name (dots -> "__")
+        as a second, dash-free decl — Click uses that directly instead of trying to derive one.
+        """
+        params: list[click.Parameter] = []
         for field_name, field_info in cls.model_fields.items():
-            arg_name = f"--{field_name}" if not prefix else f"--{prefix}.{field_name}"
+            opt_name = field_name if not prefix else f"{prefix}.{field_name}"
+            py_name = opt_name.replace(".", "__")
+            flag = f"--{opt_name}"
             annotation = field_info.annotation
             help_text = field_info.description or ""
             default = None if isinstance(field_info.default, PydanticUndefinedType) else field_info.default
-
-            # Unwrap Optional[X] → X, handling both Union[X, None] and X | None
-            origin = get_origin(annotation)
-            if origin is Union or isinstance(annotation, types.UnionType):
-                non_none = [a for a in get_args(annotation) if a is not type(None)]
-                annotation = non_none[0] if non_none else annotation
-
-            # Recurse into nested NeedleModel subclasses
-            if isinstance(annotation, type) and issubclass(annotation, NeedleModel):
-                annotation.add_to_parser(parser, prefix=f"{field_name}" if not prefix else f"{prefix}.{field_name}")
-                continue
-
-            # Handle list types e.g. list[Path], list[str]
-            origin = get_origin(annotation)
-            if origin is list:
-                inner_type = get_args(annotation)[0]
-                parser.add_argument(
-                    arg_name,
-                    type=inner_type,
-                    action="append",
-                    default=[],
-                    help=f"{help_text} (default: {default})",
-                )
-            elif origin is dict:
-                parser.add_argument(
-                    arg_name,
-                    type=lambda s: s.split("=", 1),
-                    action="append",
-                    default=[],
-                    metavar="KEY=VALUE",
-                    help=f"{help_text} (default: {default})",
-                )
-            elif annotation is bool:
-                parser.add_argument(
-                    arg_name,
-                    type=lambda x: x.lower() not in ("false", "0", "no"),
-                    default=default,
-                    metavar="BOOL",
-                    help=f"{help_text} (default: {default})",
-                )
-            elif get_origin(annotation) is Literal:
-                choices = get_args(annotation)
-                parser.add_argument(
-                    arg_name,
-                    type=str,
-                    choices=choices,
-                    default=default,
-                    help=f"{help_text} (default: {default})",
-                )
-            else:
-                parser.add_argument(
-                    arg_name,
-                    type=annotation,
-                    default=default,
-                    help=f"{help_text} (default: {default})",
-                )
-        return parser
-
-    @classmethod
-    def from_namespace(cls, namespace: Namespace) -> "NeedleModel":
-        "Construct this model from an argparse Namespace, handling nested dot-notation fields"
-        kwargs = {}
-        flat = vars(namespace)
-
-        for field_name, field_info in cls.model_fields.items():
-            annotation = field_info.annotation
 
             # Unwrap Optional[X] → X
             origin = get_origin(annotation)
@@ -131,19 +84,145 @@ class NeedleModel(BaseModel):
                 non_none = [a for a in get_args(annotation) if a is not type(None)]
                 annotation = non_none[0] if non_none else annotation
 
-            # Coerce argparse append-style list into dict
+            # Recurse into nested NeedleModel subclasses
+            if isinstance(annotation, type) and issubclass(annotation, NeedleModel):
+                params.extend(annotation.to_click_params(prefix=opt_name))
+                continue
+
+            origin = get_origin(annotation)
+            if origin is list:
+                inner_type = get_args(annotation)[0]
+                params.append(
+                    click.Option(
+                        [flag, py_name],
+                        type=inner_type,
+                        multiple=True,
+                        default=(),
+                        help=f"{help_text} (repeatable)",
+                    )
+                )
+            elif origin is dict:
+                params.append(
+                    click.Option(
+                        [flag, py_name],
+                        type=_kv_pair,
+                        multiple=True,
+                        metavar="KEY=VALUE",
+                        help=f"{help_text} (repeatable, KEY=VALUE)",
+                    )
+                )
+            elif annotation is bool:
+                # A single decl with "/" is Click's native flag-pair syntax: --field/--no-field.
+                params.append(
+                    click.Option(
+                        [f"--{opt_name}/--no-{opt_name}", py_name],
+                        default=default,
+                        help=help_text,
+                    )
+                )
+            elif get_origin(annotation) is Literal:
+                choices = get_args(annotation)
+                params.append(
+                    click.Option(
+                        [flag, py_name],
+                        type=click.Choice([str(c) for c in choices]),
+                        default=default,
+                        help=help_text,
+                    )
+                )
+            else:
+                params.append(
+                    click.Option(
+                        [flag, py_name],
+                        type=annotation,
+                        default=default,
+                        help=help_text,
+                    )
+                )
+        return params
+
+    @classmethod
+    def from_kwargs(cls, flat: dict) -> "NeedleModel":
+        """Construct this model from a flat dict keyed by the '__'-joined names produced by
+        to_click_params() (dots -> "__", to keep them valid Click/Python identifiers) — the
+        click analog of from_namespace."""
+        kwargs = {}
+        for field_name, field_info in cls.model_fields.items():
+            annotation = field_info.annotation
+
+            origin = get_origin(annotation)
+            if origin is Union or isinstance(annotation, types.UnionType):
+                non_none = [a for a in get_args(annotation) if a is not type(None)]
+                annotation = non_none[0] if non_none else annotation
+
             if get_origin(annotation) is dict:
-                raw = flat.get(field_name, [])
-                kwargs[field_name] = dict(item for item in raw) if raw else None
+                raw = flat.get(field_name, ())
+                kwargs[field_name] = dict(raw) if raw else {}
+                continue
+
+            if get_origin(annotation) is list:
+                raw = flat.get(field_name, ())
+                kwargs[field_name] = list(raw) if raw else []
                 continue
 
             # Recurse into nested NeedleModel subclasses
             if isinstance(annotation, type) and issubclass(annotation, NeedleModel):
-                prefix = f"{field_name}."
-                sub_namespace = Namespace(**{k[len(prefix) :]: v for k, v in flat.items() if k.startswith(prefix)})
-                kwargs[field_name] = annotation.from_namespace(sub_namespace)
-            else:
-                if field_name in flat:
-                    kwargs[field_name] = flat[field_name]
+                prefix = f"{field_name}__"
+                sub_flat = {k[len(prefix) :]: v for k, v in flat.items() if k.startswith(prefix)}
+                kwargs[field_name] = annotation.from_kwargs(sub_flat)
+                continue
+
+            if field_name in flat:
+                kwargs[field_name] = flat[field_name]
 
         return cls(**kwargs)
+
+
+_log_level_option = click.Option(
+    ["--log-level", "--log_level", "-l"],
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="INFO",
+    help="The minimum threshold logging level",
+)
+
+
+def needle_module_args(model_cls: type[NeedleModel], *, name: str, help: str):
+    """Decorator. Wraps a function `fn(cfg: model_cls, **extras)` into a click.Command.
+
+    Options for model_cls's pydantic fields are generated automatically (via
+    NeedleModel.to_click_params). Anything else the command needs — stack ordinary
+    @click.option()/@click.argument() decorators directly on the function, same as you would
+    for any plain Click command; this decorator picks them up via Click's own
+    __click_params__ mechanism (the same one @click.command() itself uses).
+
+    Usage:
+
+        @pydantic_command(FlagConfig, name="flag", help="Flag a measurement set...")
+        @click.option("--ms", type=click.Path(exists=True, path_type=Path), required=True,
+                      help="The path to the measurement set")
+        def command(cfg: FlagConfig, ms: Path):
+            ...
+    """
+    model_params = model_cls.to_click_params()
+
+    def decorator(fn):
+        # Click appends params from stacked decorators here, in reverse (closest-to-function-
+        # first) order — reverse it back so options display in the order they were declared.
+        extra_params = list(reversed(getattr(fn, "__click_params__", [])))
+        extra_names = {p.name for p in extra_params}
+
+        def callback(**kwargs):
+            setup_logging(kwargs.pop("log_level"))
+            extra_kwargs = {k: v for k, v in kwargs.items() if k in extra_names}
+            model_kwargs = {k: v for k, v in kwargs.items() if k not in extra_names}
+            cfg = model_cls.from_kwargs(model_kwargs)
+            return fn(cfg=cfg, **extra_kwargs)
+
+        return click.Command(
+            name=name,
+            help=help,
+            params=[*model_params, *extra_params, _log_level_option],
+            callback=callback,
+        )
+
+    return decorator
