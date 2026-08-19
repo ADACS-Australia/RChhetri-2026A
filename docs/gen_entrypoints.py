@@ -42,8 +42,12 @@ def _write_command(f, path: str, cmd: click.Command, depth: int):
     if params:
         f.write("| Parameter | Description |\n|---|---|\n")
         for p in params:
-            label = p.human_readable_name if isinstance(p, click.Argument) else ", ".join(p.opts)
-            desc = (p.help or "").strip().replace("|", "\\|")
+            if isinstance(p, click.Argument):
+                label = p.human_readable_name
+                desc = ""  # click.Argument has no .help attribute by design
+            else:
+                label = ", ".join(p.opts)
+                desc = (p.help or "").strip().replace("|", "\\|")
             f.write(f"| `{label}` | {desc} |\n")
         f.write("\n")
 
