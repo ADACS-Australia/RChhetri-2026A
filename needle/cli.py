@@ -4,6 +4,7 @@ Many of the imports are lazy-loaded so that the CLI is more responsive.
 """
 
 import logging
+import importlib
 import sys
 import threading
 import time
@@ -17,6 +18,46 @@ from needle.config.pipeline import NeedleConfig
 from needle.lib.logging import setup_logging
 
 logger = logging.getLogger("needle-cli")
+
+
+class LazyGroup(click.Group):
+    """A click.Group whose subcommands are imported only when actually invoked list their names or one-line
+    descriptions in --help, which uses a manually supplied short_help string instead of importing the command
+    """
+
+    def __init__(self, *args, lazy_subcommands: dict[str, tuple[str, str]] | None = None, **kwargs):
+        # lazy_subcommands: {name: (import_target "module.path:attr", short_help)}
+        super().__init__(*args, **kwargs)
+        self.lazy_subcommands = lazy_subcommands or {}
+
+    def list_commands(self, _):
+        return sorted(set(self.lazy_subcommands) | set(self.commands))
+
+    def get_command(self, ctx, name):
+        if name in self.lazy_subcommands:
+            target, _ = self.lazy_subcommands[name]
+            module_path, attr = target.split(":")
+            module = importlib.import_module(module_path)
+            cmd = getattr(module, attr)
+            if not isinstance(cmd, click.Command):
+                raise ValueError(f"Lazy loading of {target!r} failed by returning a non-command object: {cmd!r}")
+            return cmd
+        return super().get_command(ctx, name)
+
+    def format_commands(self, ctx, formatter):
+        # Overridden because Click's default implementation calls get_command() on every listed name to read its help
+        # text — which would import every module
+        rows = []
+        for name in self.list_commands(ctx):
+            if name in self.lazy_subcommands:
+                _, short_help = self.lazy_subcommands[name]
+            else:
+                cmd = self.get_command(ctx, name)
+                short_help = cmd.get_short_help_str() if cmd else ""
+            rows.append((name, short_help))
+        if rows:
+            with formatter.section("Commands"):
+                formatter.write_dl(rows)
 
 
 def _setup_cli_logging(level: str = "INFO"):
@@ -191,25 +232,22 @@ def validate(cfg_path, pretty_print):
         NeedleConfig.load(path=cfg_path).pretty_print()
 
 
-@click.group(help="Run an individual pipeline module directly, bypassing the full pipeline.")
-def module():
-    from needle.modules import (
-        calibrate,
-        casa_data,
-        clean,
-        convert,
-        diagnostics,
-        flag,
-        inspect,
-        mask,
-        source_find,
-    )
-
-    for mod in (calibrate, casa_data, clean, convert, diagnostics, flag, inspect, mask, source_find):
-        module.add_command(mod.entrypoint)
-
-
-cli.add_command(module, name="module")
+module = LazyGroup(
+    name="module",
+    help="Run an individual pipeline module directly, bypassing the full pipeline.",
+    lazy_subcommands={
+        "calibrate": ("needle.modules.calibrate:entrypoint", "Determine and apply calibration solutions"),
+        "casadata": ("needle.modules.casa_data:entrypoint", "Update the casa run data"),
+        "clean": ("needle.modules.clean:entrypoint", "Run WSClean on a measurement set"),
+        "convert": ("needle.modules.convert:entrypoint", "Convert a .uvfits/.mir file to a measurement set"),
+        "diagnostics": ("needle.modules.diagnostics:entrypoint", "Run diagnostics on a measurement set"),
+        "flag": ("needle.modules.flag:entrypoint", "Flag a measurement set"),
+        "inspect": ("needle.modules.inspect:entrypoint", "Inspect a measurement set"),
+        "mask": ("needle.modules.mask:entrypoint", "Find sources in a .fits image"),
+        "source-find": ("needle.modules.source_find:entrypoint", "Find sources in a .fits image"),
+    },
+)
+cli.add_command(module)
 
 
 if __name__ == "__main__":
