@@ -1,5 +1,5 @@
 ARG BASE_VERSION="latest"
-FROM needle-base:${BASE_VERSION}
+FROM ksmith21/needle-base:${BASE_VERSION}
 
 WORKDIR /opt/needle
 COPY pyproject.toml .

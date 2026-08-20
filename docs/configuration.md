@@ -1,5 +1,24 @@
 # Configuration
 
+## Environment Variables (.env)
+
+Prefect requires a few things set in .env to work properly:
+
+```bash
+# IMPORTANT - must be set to the relevant host api endpoint
+export PREFECT_API_URL="http://localhost:4200/api"
+# If the Prefect server has auth enabled, set the string
+export PREFECT_API_AUTH_STRING="admin:password"
+# Set needle as an extra logger so that needle logs appear in the prefect logger UI
+export PREFECT_LOGGING_EXTRA_LOGGERS="needle"
+# Set the needle log level for prefect
+export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL="INFO"
+# Automatically saves task and flow results
+export PREFECT_RESULTS_PERSIST_BY_DEFAULT="true"
+```
+
+It is good practice to `chmod 600` the .env file to prevent prying eyes.
+
 ## Needle Pipeline
 
 Needle revolves around its main pipeline. The order and structure of the pipeline's processing steps is largely fixed by design.
@@ -213,11 +232,11 @@ slurm:
   # Commands to execute per-job before running the task
   job_script_prologue:
     - "module load singularity/4.1.0-slurm"
+    # Make sure you've set up the .env file
+    - "source /software/projects/pawsey0008/$USER/needle/.env"
+    # If running a local server, you need to port-forward to the host machine
+    # DO NOT DO THIS if you are not running a local server. It's a hacky workaround for development and testing.
     - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
-    - "export PREFECT_API_URL=http://localhost:4200/api"
-    - "export PREFECT_LOGGING_EXTRA_LOGGERS=needle"
-    - "export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL=DEBUG"
-    - "export PREFECT_RESULTS_PERSIST_BY_DEFAULT=true"
 
   job_extra_directives: []
 ```

@@ -1,7 +1,7 @@
 include .env
 
-BASE_IMAGE = $(DOCKER_USER)/needle-base:latest
-NEEDLE_IMAGE = $(DOCKER_USER)/needle:latest
+BASE_IMAGE = ksmith21/needle-base:latest
+NEEDLE_IMAGE = ksmith21/needle:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
 APPTAINER_IMAGE = container/needle.sif
