@@ -1,3 +1,8 @@
+"""
+The CLI for needle.
+Many of the imports are lazy-loaded so that the CLI is more responsive.
+"""
+
 import logging
 import sys
 import threading
@@ -5,34 +10,13 @@ import time
 from pathlib import Path
 
 import click
-from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
 from prefect_dask import DaskTaskRunner
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
-from needle.flows.pipeline import needle_pipeline
-from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
-from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
 from needle.lib.logging import setup_logging
-from needle.modules.watcher import watch, WATCHER_RESOURCE_ID
-
-# Each of these modules exposes a module-level `command` — a click.Command built with
-# @pydantic_command. See flag.py for the pattern.
-from needle.modules import (
-    calibrate,
-    casa_data,
-    clean,
-    convert,
-    diagnostics,
-    flag,
-    inspect,
-    mask,
-    source_find,
-)
 
 logger = logging.getLogger("needle-cli")
-
-LOG_LEVEL_CHOICES = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 
 def _setup_cli_logging(level: str = "INFO"):
@@ -78,7 +62,7 @@ def _mode_and_log_level_options(f):
         "--log-level",
         "--log_level",
         "log_level",
-        type=click.Choice(LOG_LEVEL_CHOICES),
+        type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
         default="INFO",
         help="Logging level",
     )(f)
@@ -104,6 +88,8 @@ def run(work_dir, mode, log_level):
 
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
     """
+    from needle.flows.pipeline import needle_pipeline
+
     _setup_cli_logging(log_level)
     setup_logging(log_level)
     cfg = NeedleConfig.get_config()
@@ -113,6 +99,8 @@ def run(work_dir, mode, log_level):
 
 def _watch_and_restart(watcher_cfg, data_cfg):
     """Run watch(), restarting on failure after restart_delay seconds."""
+    from needle.modules.watcher import watch
+
     while True:
         try:
             watch(watcher_cfg, data_cfg)
@@ -128,6 +116,12 @@ def serve(mode, log_level):
 
     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
     """
+    from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+    from needle.flows.pipeline import needle_pipeline
+    from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
+    from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
+    from needle.modules.watcher import WATCHER_RESOURCE_ID
+
     _setup_cli_logging(log_level)
     setup_logging(log_level)
     cfg = NeedleConfig.get_config()
@@ -199,11 +193,21 @@ def validate(cfg_path, pretty_print):
 
 @click.group(help="Run an individual pipeline module directly, bypassing the full pipeline.")
 def module():
-    pass
+    from needle.modules import (
+        calibrate,
+        casa_data,
+        clean,
+        convert,
+        diagnostics,
+        flag,
+        inspect,
+        mask,
+        source_find,
+    )
 
+    for mod in (calibrate, casa_data, clean, convert, diagnostics, flag, inspect, mask, source_find):
+        module.add_command(mod.entrypoint)
 
-for mod in (calibrate, casa_data, clean, convert, diagnostics, flag, inspect, mask, source_find):
-    module.add_command(mod.entrypoint)
 
 cli.add_command(module, name="module")
 
