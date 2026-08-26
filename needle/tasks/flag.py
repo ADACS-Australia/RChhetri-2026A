@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from prefect import task
+from prefect.cache_policies import NO_CACHE
+from distributed import Client
 
 from needle.config.beam import MSBeamPair
 from needle.lib.logging import setup_logging
@@ -26,18 +28,17 @@ def flag_ms_task(ms: Path, cfg: FlagConfig, log_level: str = "INFO") -> Path:
     return ms
 
 
-@task()
-def flag_ms_pair_task(ms_pair: MSBeamPair, cfg: FlagConfig, log_level: str = "INFO") -> MSBeamPair:
+@task(cache_policy=NO_CACHE)
+def flag_ms_pair_task(client: Client, ms_pair: MSBeamPair, cfg: FlagConfig, log_level: str = "INFO") -> MSBeamPair:
     """Flags a pair of measurement sets. Returns the same measurement set pair"""
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     try:
         tgt_ctx = FlagContext(cfg=cfg, ms=ms_pair.tgt)
         cal_ctx = FlagContext(cfg=cfg, ms=ms_pair.cal)
-        flag_observation(tgt_ctx)
-        flag_observation(cal_ctx)
+        client.gather(client.map(flag_observation, (tgt_ctx, cal_ctx)))
     except ValueError as e:
         logger.warning(str(e))
         logger.warning("Attempting to continue anyway...")

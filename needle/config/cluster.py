@@ -109,12 +109,36 @@ class ClusterConfig(NeedleModel):
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
 
-    def to_task_runner(self, extra_binds: Optional[list[str]] = None) -> DaskTaskRunner:
-        """Creates the task runner object
+    # TODO: Remove this
+    # def to_task_runner(self, extra_binds: Optional[list[str]] = None) -> DaskTaskRunner:
+    #     """Creates the task runner object
+    #
+    #     :param extra_binds: Any additional path bindings to add to the container execution command if using a container.
+    #         Will be ignored if not using a container.
+    #     :return: The DaskTaskRunner object
+    #     """
+    #
+    #     if extra_binds and self.container:
+    #         logger.info(f"Adding additional binds to task runner container: {extra_binds}")
+    #         self.container.binds = (self.container.binds or []) + extra_binds
+    #
+    #     cluster_kwargs = {"container_cfg": self.container, "scheduler_options": self.scaling.scheduler_options}
+    #     if self.type == "slurm" and self.slurm:
+    #         cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
+    #     elif self.type == "local" and self.local:
+    #         cluster_kwargs.update(self.local.model_dump(exclude_none=True))
+    #
+    #     cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
+    #     return DaskTaskRunner(
+    #         cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.adapt_kwargs
+    #     )
+
+    def to_cluster(self, extra_binds: Optional[list[str]] = None) -> SifLocalCluster | SifSLURMCluster:
+        """Creates the raw Dask cluster object (SifSLURMCluster or SifLocalCluster)
 
         :param extra_binds: Any additional path bindings to add to the container execution command if using a container.
             Will be ignored if not using a container.
-        :return: The DaskTaskRunner object
+        :return: The cluster object
         """
 
         if extra_binds and self.container:
@@ -128,9 +152,12 @@ class ClusterConfig(NeedleModel):
             cluster_kwargs.update(self.local.model_dump(exclude_none=True))
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
-        return DaskTaskRunner(
-            cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.adapt_kwargs
-        )
+        cluster = cluster_class(**cluster_kwargs)
+
+        if self.scaling.adapt_kwargs:
+            cluster.adapt(**self.scaling.adapt_kwargs)
+
+        return cluster
 
     @classmethod
     def load(cls, source: Path | str | dict) -> "ClusterConfig":

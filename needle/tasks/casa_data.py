@@ -21,4 +21,3 @@ def update_casa_data(data_path: Path, runtime: Optional[ContainerConfig] = None,
 
     ctx = CasaDataUpdateContext(runtime=runtime, casa_data_path=data_path)
     download_casa_rundata(ctx)
-    return
