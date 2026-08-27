@@ -32,7 +32,7 @@ class CasaDataUpdateContext(SubprocessExecContext):
                 f"{self.casa_data_path} is non-empty but has no readme.txt — "
                 "cannot safely determine whether to pull or update CASA data."
             )
-        return [["mkdir", "-p", self.casa_data_path, "python", "-c", f"import casaconfig; {func_call}"]]
+        return [["mkdir", "-p", self.casa_data_path, "&&", "python", "-c", f"import casaconfig; {func_call}"]]
 
 
 def download_casa_rundata(ctx: CasaDataUpdateContext) -> None:
