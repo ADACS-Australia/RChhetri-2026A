@@ -122,6 +122,7 @@ def cli():
 )
 @_mode_and_log_level_options
 def run(work_dir, log_level):
+    """Runs the pipeline on a directory now."""
     from needle.flows.pipeline import needle_pipeline
     from prefect.task_runners import ThreadPoolTaskRunner
 
