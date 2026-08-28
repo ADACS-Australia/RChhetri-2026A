@@ -11,12 +11,12 @@ import time
 from pathlib import Path
 
 import click
-from distributed import Client
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.cluster_local import SifLocalCluster
 from needle.lib.logging import setup_logging
+from needle.lib.dask import build_dask_client
 
 logger = logging.getLogger("needle-cli")
 
@@ -85,16 +85,6 @@ def _setup_cli_logging(level: str = "INFO"):
 #     return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
 
 
-def _build_dask_client() -> Client:
-    """Builds a Dask client using the cluster configuration."""
-
-    cluster_cfg = ClusterConfig.get_config()
-    logger.info(f"Using {cluster_cfg.type} cluster")
-    cluster = cluster_cfg.to_cluster()
-
-    return Client(cluster)
-
-
 def _mode_and_log_level_options(f):
     f = click.option(
         "--log-level",
@@ -129,13 +119,10 @@ def run(work_dir, log_level):
     _setup_cli_logging(log_level)
     setup_logging(log_level)
     cfg = NeedleConfig.get_config()
-    client = _build_dask_client()
-    try:
-        needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_workers))(
+    with build_dask_client() as (client, _):
+        needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
             cfg=cfg, work_dir=str(work_dir), client=client
         )
-    finally:
-        client.close()
 
 
 # def run(work_dir, mode, log_level):
@@ -224,6 +211,67 @@ def _watch_and_restart(watcher_cfg, data_cfg):
 #             )
 #         ],
 #     )
+
+
+@cli.command(name="test-cluster")
+@_mode_and_log_level_options
+@click.option(
+    "--mem",
+    "memory",
+    default="2GB",
+    show_default=True,
+    type=str,
+    help="The amount of memory to allocate to the test worker",
+)
+@click.option(
+    "--cores",
+    "cores",
+    default=1,
+    show_default=True,
+    type=int,
+    help="The number of cores to allocate to the test worker",
+)
+@click.option(
+    "--procs",
+    "processes",
+    default=1,
+    show_default=True,
+    type=int,
+    help="The number of processes to allocate to the test worker",
+)
+@click.option(
+    "--time",
+    "walltime",
+    default="00:05:00",
+    show_default=True,
+    type=str,
+    help="The amount of walltime to allow the worker to run for",
+)
+def test_cluster(log_level, memory, cores, processes, walltime):
+    """Runs a diagnostic flow that spins up the configured cluster and confirms a job can execute on it.
+    Exits non-zero on failure and provides logging information.
+    """
+    from needle.flows.test_cluster import test_cluster_flow
+
+    _setup_cli_logging(log_level)
+    setup_logging(log_level)
+
+    cluster_cfg = ClusterConfig.get_config()
+    if cluster_cfg.type != "slurm":
+        logger.error(f"Cluster config must be of type 'slurm' to run test. Found type '{cluster_cfg.type}'")
+        raise SystemExit(1)
+    # Lower the settings for the test
+    cluster_cfg.slurm.memory = memory
+    cluster_cfg.slurm.cores = cores
+    cluster_cfg.slurm.processes = processes
+    cluster_cfg.slurm.walltime = walltime
+    with build_dask_client(cluster_cfg) as (client, cluster):
+        try:
+            test_cluster_flow(client, cluster, cluster_cfg)
+        except Exception as exc:
+            logger.error(f"Cluster test failed: {exc}")
+            raise SystemExit(1)
+        raise SystemExit(0)
 
 
 @cli.command()

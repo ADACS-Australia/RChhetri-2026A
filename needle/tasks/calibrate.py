@@ -10,15 +10,17 @@ from needle.modules.calibrate import calibrate_observation, CalibrateContext, Ca
 from needle.lib.logging import setup_logging
 
 
-@task()
-def calibrate_task(cal: Path, tgt: Path, cfg: CalibrateConfig, log_level: str = "INFO") -> CalibrateOutput:
+@task(cache_policy=NO_CACHE)
+def calibrate_task(
+    client: Client, cal: Path, tgt: Path, cfg: CalibrateConfig, log_level: str = "INFO"
+) -> CalibrateOutput:
     """Calibrates a target using a calibrator source. Returns the calibrated measurement set"""
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = CalibrateContext(cfg=cfg, cal=cal, tgt=tgt)
-    return calibrate_observation(ctx)
+    return client.submit(calibrate_observation, ctx).result()
 
 
 @task(cache_policy=NO_CACHE)
@@ -31,4 +33,4 @@ def calibrate_pair_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = CalibrateContext(cfg=cfg, cal=ms_pair.cal, tgt=ms_pair.tgt)
-    return client.submit(calibrate_observation(ctx)).result()
+    return client.submit(calibrate_observation, ctx).result()

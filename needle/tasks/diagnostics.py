@@ -28,14 +28,14 @@ def diagnostics_task(
     return client.submit(diagnostics, ctx).result()
 
 
-@task()
+@task(cache_policy=NO_CACHE)
 def diagnostics_cal_output_task(
     client: Client,
     cal_output: CalibrateOutput,
     log_level: str = "INFO",
 ) -> DiagnosticsOutput:
     """Runs diagnostics on a calibration output object."""
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 

@@ -28,6 +28,8 @@ class ScalingConfig(NeedleModel):
     "The number of scaling intervals to wait for a worker before cancelling"
     dashboard_port: int = 8787
     "Port for the Dask dashboard"
+    interface: Optional[str] = "ib0"
+    "Network interface to bind the scheduler to. Leave unset to auto-detect."
 
     @field_validator("interval")
     @classmethod
@@ -41,7 +43,12 @@ class ScalingConfig(NeedleModel):
     @property
     def scheduler_options(self) -> dict:
         """Returns the scheduler_options dictionary for DaskTaskRunner"""
-        return {"dashboard_address": f":{self.dashboard_port}"}
+        opts = {
+            "dashboard_address": f":{self.dashboard_port}",
+        }
+        if self.interface:
+            opts["interface"] = self.interface
+        return opts
 
     @property
     def adapt_kwargs(self) -> dict:
@@ -71,7 +78,7 @@ class SlurmConfig(NeedleModel):
     "Maximum walltime per job e.g. '02:00:00'"
     local_directory: Optional[str] = None
     "Local directory for workers to use for scratch space"
-    log_directory: Optional[str] = None
+    log_directory: str = "./"
     "Directory to write worker logs to"
     job_script_prologue: Optional[list[str]] = None
     "Lines to prepend to the job script e.g. module loads"
@@ -153,9 +160,7 @@ class ClusterConfig(NeedleModel):
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         cluster = cluster_class(**cluster_kwargs)
-
-        if self.scaling.adapt_kwargs:
-            cluster.adapt(**self.scaling.adapt_kwargs)
+        cluster.adapt(**self.scaling.adapt_kwargs)
 
         return cluster
 
