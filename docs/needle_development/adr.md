@@ -6,6 +6,24 @@ This record serves to clarify what may otherwise be obscure choices.
 
 Records may be deleted should they no longer be relevant.
 
+## In-house Dask Cluster Setup
+
+**Context**
+Prefect does not have a native Slurm task runner, but it does have a DaskTaskRunner plugin. This spins up a local Dask cluster and connects it to Slurm. When a job is submitted, it is pickled in the regular way and turned into a script to be run on the compute node. However, some code must be inserted somewhere, as the script attempts to communicate with the Prefect server. This is an issue because some HPC clusters have locked down compute nodes that do not allow internet connections to be made.
+
+**Decision**
+We can bypass the network connection entirely by setting up the Dask cluster ourselves and using it for task submissions.
+
+**Pros**
+Much more portable - this requires little to no config change between HPC systems.
+The only connection requirement is back to the Dask client - presumably running on the login node.
+Gives us more control over the Dask cluster.
+
+**Cons**
+Requires managing the cluster ourselves.
+Requires two _submissions_ in the code - one where the task is submitted from the flow and one to submit the function call to the Dask cluster.
+If a job fails on setup (ie. from an incorrect configuration) Dask won't know that it died. This causes the job to hang indefinitely.
+
 ## Event Driven Triggering System
 
 **Context**
