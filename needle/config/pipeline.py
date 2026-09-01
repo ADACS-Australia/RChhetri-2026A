@@ -30,8 +30,8 @@ class PipelineFlowConfig(NeedleModel):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     "Logging level"
 
-    max_workers: Optional[int] = None
-    "Maximum number of worker processes for concurrent task execution"
+    max_threads: Optional[int] = None
+    "Maximum number of thread worker processes for concurrent task execution"
 
     interval_tasks: int = 1
     "The number of tasks to split the interval cleaning into per beam"

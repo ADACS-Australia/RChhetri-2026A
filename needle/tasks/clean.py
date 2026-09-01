@@ -2,15 +2,19 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from distributed import Client
 from prefect import task
+from prefect.cache_policies import NO_CACHE
+
 
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
 from needle.modules.clean import run_clean, WSCleanContext
 
 
-@task()
+@task(cache_policy=NO_CACHE)
 def interval_clean_task(
+    client: Client,
     ms: Path,
     cfg: WSCleanConfig,
     mask: Optional[Path],
@@ -22,7 +26,7 @@ def interval_clean_task(
 
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
     """
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = dependencies
@@ -31,14 +35,16 @@ def interval_clean_task(
     os.makedirs(output_dir, exist_ok=True)
 
     logger.info(f"Cleaning interval {interval} of {ms}")
-    ctx = WSCleanContext(
-        cfg=cfg,
-        ms=ms,
-        fits_mask=mask,
-        interval=interval,
-        output_dir=output_dir,
-    )
-    wsclean_output = run_clean(ctx)
+    wsclean_output = client.submit(
+        run_clean,
+        ctx=WSCleanContext(
+            cfg=cfg,
+            ms=ms,
+            fits_mask=mask,
+            interval=interval,
+            output_dir=output_dir,
+        ),
+    ).result()
     n_expected = interval[1] - interval[0]
     if not len(wsclean_output.image) == n_expected:
         raise FileNotFoundError(
@@ -52,8 +58,9 @@ def interval_clean_task(
     return wsclean_output.remap_interval_images(interval_start=interval[0])
 
 
-@task()
+@task(cache_policy=NO_CACHE)
 def clean_task(
+    client: Client,
     ms: Path,
     cfg: WSCleanConfig,
     mask: Optional[Path] = None,
@@ -63,12 +70,11 @@ def clean_task(
     Expects only one image output.
 
     :raises RuntimeError: Raised if there is not exactly one image output"""
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
-    wsclean_output = run_clean(ctx)
+    wsclean_output = client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)).result()
 
     if len(wsclean_output.image) != 1:
         raise RuntimeError(f"Unexpected number of wsclean image outputs: {wsclean_output.image}")
@@ -76,8 +82,9 @@ def clean_task(
     return wsclean_output.image[0]
 
 
-@task()
+@task(cache_policy=NO_CACHE)
 def predict_task(
+    client: Client,
     ms: Path,
     cfg: WSCleanConfig,
     log_level: str = "INFO",
@@ -87,11 +94,10 @@ def predict_task(
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
     Mostly the same as clean_task but doesn't return the wsclean output.
     """
-    fn_inputs = locals().items()
+    fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = dependencies
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
-    run_clean(ctx)
+    client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, predict=True)).result()
     return ms

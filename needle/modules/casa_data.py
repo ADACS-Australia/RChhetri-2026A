@@ -18,7 +18,21 @@ class CasaDataUpdateContext(SubprocessExecContext):
 
     @property
     def cmd(self) -> list[list[str]]:
-        return [["python", "-c", f"import casaconfig; casaconfig.data_update(path='{self.casa_data_path}')"]]
+        """Checks if the casa data directory is initiated, if not, will run pull_data. If it is, it'll run update.
+        If the directory exists but doesn't have a readme, this is unexpected so we don't know what to do."""
+        readme_path = self.casa_data_path / "readme.txt"
+        is_empty = not self.casa_data_path.exists() or not any(self.casa_data_path.iterdir())
+
+        if readme_path.exists():
+            func_call = f"casaconfig.data_update(path='{self.casa_data_path}')"
+        elif is_empty:
+            func_call = f"casaconfig.pull_data(path='{self.casa_data_path}')"
+        else:
+            raise RuntimeError(
+                f"{self.casa_data_path} is non-empty but has no readme.txt — "
+                "cannot safely determine whether to pull or update CASA data."
+            )
+        return [["mkdir", "-p", self.casa_data_path], ["python", "-c", f"import casaconfig; {func_call}"]]
 
 
 def download_casa_rundata(ctx: CasaDataUpdateContext) -> None:

@@ -14,9 +14,9 @@ USAGE
     $(basename "$0") -n <needle_cfg> -a <casa_cfg> [-c <cluster_cfg>]
 
 OPTIONS
-    -n, --needle   Path to the needle config file   (required)
+    -n, --needle   Path to the needle config file   (optional)
     -c, --cluster  Path to the cluster config file  (optional)
-    -a, --casa     Path to the CASA config file     (required)
+    -a, --casa     Path to the CASA config file     (optional)
     -h, --help     Show this help screen and exit
 
 DESCRIPTION
@@ -33,7 +33,6 @@ DESCRIPTION
     without prompting. The ~/.casa directory is created if it does not exist.
 
 EXAMPLES
-    $(basename "$0") -n /etc/needle/needle.conf
     $(basename "$0") -n /etc/needle/needle.conf -c /etc/cluster/cluster.conf
     $(basename "$0") -n /etc/needle/needle.conf -a /opt/casa/config.py
     $(basename "$0") -n /etc/needle/needle.conf -c /etc/cluster/cluster.conf -a /opt/casa/config.py
@@ -123,16 +122,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n "$needle_cfg" ]] || error "needle_cfg (-n) is required.  Run with -h for help."
-[[ -n "$casa_cfg" ]] || error "casa_cfg (-a) is required.  Run with -h for help."
-
-link_config "$needle_cfg" "needle_cfg" "$HOME/.needle.yaml"
+if [[ -n "$needle_cfg" ]]; then
+    link_config "$needle_cfg" "needle_cfg" "$HOME/.needle.yaml"
+fi
 
 if [[ -n "$cluster_cfg" ]]; then
     link_config "$cluster_cfg" "cluster_cfg" "$HOME/.needle_cluster.yaml"
 fi
 
-link_config "$casa_cfg" "casa_cfg" "$HOME/.casa/config.py"
+if [[ -n "$casa_cfg" ]]; then
+    link_config "$casa_cfg" "casa_cfg" "$HOME/.casa/config.py"
+fi
 
 echo ""
 echo "Done."

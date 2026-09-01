@@ -11,11 +11,12 @@ import time
 from pathlib import Path
 
 import click
-from prefect_dask import DaskTaskRunner
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
+from needle.lib.cluster_local import SifLocalCluster
 from needle.lib.logging import setup_logging
+from needle.lib.dask_runner import build_dask_client
 
 logger = logging.getLogger("needle-cli")
 
@@ -71,34 +72,20 @@ def _setup_cli_logging(level: str = "INFO"):
         logger.addHandler(handler)
 
 
-def _load_task_runner(mode: str | None, cfg: NeedleConfig) -> DaskTaskRunner:
-    if mode is None:
-        mode = "cluster" if (Path.home() / ".needle_cluster.yaml").exists() else "local"
-
-    if mode == "cluster":
-        cluster_cfg = ClusterConfig.get_config()
-        logger.info(f"Using {cluster_cfg.type} cluster")
-        return cluster_cfg.to_task_runner()
-
-    logger.info("Using local environment for task runs")
-    return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
+# def _load_task_runner(mode: str | None, cfg: NeedleConfig) -> DaskTaskRunner:
+#     if mode is None:
+#         mode = "cluster" if (Path.home() / ".needle_cluster.yaml").exists() else "local"
+#
+#     if mode == "cluster":
+#         cluster_cfg = ClusterConfig.get_config()
+#         logger.info(f"Using {cluster_cfg.type} cluster")
+#         return cluster_cfg.to_task_runner()
+#
+#     logger.info("Using local environment for task runs")
+#     return DaskTaskRunner(cluster_kwargs={"n_workers": cfg.flow.max_workers, "threads_per_worker": 1})
 
 
 def _mode_and_log_level_options(f):
-    f = click.option(
-        "--cluster",
-        "mode",
-        flag_value="cluster",
-        default=None,
-        help="Run using a cluster configured with ~/.needle_cluster.yaml",
-    )(f)
-    f = click.option(
-        "--local",
-        "mode",
-        flag_value="local",
-        default=None,
-        help="Run locally without any cluster or container",
-    )(f)
     f = click.option(
         "--log-level",
         "--log_level",
@@ -124,18 +111,32 @@ def cli():
     help="Location of the calibration and target observation pairs.",
 )
 @_mode_and_log_level_options
-def run(work_dir, mode, log_level):
-    """Runs the Needle Pipeline now.
-
-    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
-    """
+def run(work_dir, log_level):
+    """Runs the pipeline on a directory now."""
     from needle.flows.pipeline import needle_pipeline
+    from prefect.task_runners import ThreadPoolTaskRunner
 
     _setup_cli_logging(log_level)
     setup_logging(log_level)
     cfg = NeedleConfig.get_config()
+    with build_dask_client() as (client, _):
+        needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
+            cfg=cfg, work_dir=str(work_dir), client=client
+        )
 
-    needle_pipeline.with_options(task_runner=_load_task_runner(mode, cfg))(cfg=cfg, work_dir=str(work_dir))
+
+# def run(work_dir, mode, log_level):
+#     """Runs the Needle Pipeline now.
+#
+#     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+#     """
+#     from needle.flows.pipeline import needle_pipeline
+#
+#     _setup_cli_logging(log_level)
+#     setup_logging(log_level)
+#     cfg = NeedleConfig.get_config()
+#
+#     needle_pipeline.with_options(task_runner=_load_task_runner(mode, cfg))(cfg=cfg, work_dir=str(work_dir))
 
 
 def _watch_and_restart(watcher_cfg, data_cfg):
@@ -150,66 +151,127 @@ def _watch_and_restart(watcher_cfg, data_cfg):
             time.sleep(30)
 
 
-@cli.command()
-@_mode_and_log_level_options
-def serve(mode, log_level):
-    """Starts the Watcher, Courier, and Needle Pipeline, served to the Prefect Server.
+# @cli.command()
+# @_mode_and_log_level_options
+# def serve(mode, log_level):
+#     """Starts the Watcher, Courier, and Needle Pipeline, served to the Prefect Server.
+#
+#     Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+#     """
+#     from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
+#     from needle.flows.pipeline import needle_pipeline
+#     from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
+#     from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
+#     from needle.modules.watcher import WATCHER_RESOURCE_ID
+#
+#     _setup_cli_logging(log_level)
+#     setup_logging(log_level)
+#     cfg = NeedleConfig.get_config()
+#
+#     watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
+#     watcher_thread.start()
+#     logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
+#
+#     # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
+#     courier_thread = threading.Thread(
+#         target=courier_flow.serve,
+#         kwargs={
+#             "name": "needle-courier",
+#             "parameters": {"data_cfg": cfg.data.to_kwargs()},
+#             "triggers": [
+#                 DeploymentEventTrigger(
+#                     name="observation-ready-trigger",
+#                     enabled=True,
+#                     expect={OBSERVATION_READY_EVENT},
+#                     match={"prefect.resource.id": WATCHER_RESOURCE_ID},
+#                     parameters={"entry_name": "{{ event.payload.entry_name }}"},
+#                     flow_run_name="courier-{{ event.payload.entry_name }}",
+#                 )
+#             ],
+#         },
+#         daemon=True,
+#     )
+#     courier_thread.start()
+#     logger.info("Courier deployment started")
+#
+#     needle_pipeline.with_options(
+#         task_runner=_load_task_runner(mode, cfg),
+#         result_storage=cfg.data.staging_dir / Path("prefect_cache"),
+#         persist_result=False,
+#     ).serve(
+#         name="needle-pipeline",
+#         parameters={"cfg": cfg.to_kwargs()},
+#         triggers=[
+#             DeploymentEventTrigger(
+#                 name="observation-staged-trigger",
+#                 enabled=True,
+#                 expect={OBSERVATION_STAGED_EVENT},
+#                 match={"prefect.resource.id": COURIER_RESOURCE_ID},
+#                 parameters={"work_dir": "{{ event.payload.staged_dir }}"},
+#             )
+#         ],
+#     )
 
-    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+
+@cli.command(name="test-cluster")
+@_mode_and_log_level_options
+@click.option(
+    "--mem",
+    "memory",
+    default="2GB",
+    show_default=True,
+    type=str,
+    help="The amount of memory to allocate to the test worker",
+)
+@click.option(
+    "--cores",
+    "cores",
+    default=1,
+    show_default=True,
+    type=int,
+    help="The number of cores to allocate to the test worker",
+)
+@click.option(
+    "--procs",
+    "processes",
+    default=1,
+    show_default=True,
+    type=int,
+    help="The number of processes to allocate to the test worker",
+)
+@click.option(
+    "--time",
+    "walltime",
+    default="00:05:00",
+    show_default=True,
+    type=str,
+    help="The amount of walltime to allow the worker to run for",
+)
+def test_cluster(log_level, memory, cores, processes, walltime):
+    """Runs a diagnostic flow that spins up the configured cluster and confirms a job can execute on it.
+    Exits non-zero on failure and provides logging information.
     """
-    from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
-    from needle.flows.pipeline import needle_pipeline
-    from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
-    from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
-    from needle.modules.watcher import WATCHER_RESOURCE_ID
+    from needle.flows.test_cluster import test_cluster_flow
 
     _setup_cli_logging(log_level)
     setup_logging(log_level)
-    cfg = NeedleConfig.get_config()
 
-    watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
-    watcher_thread.start()
-    logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
-
-    # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
-    courier_thread = threading.Thread(
-        target=courier_flow.serve,
-        kwargs={
-            "name": "needle-courier",
-            "parameters": {"data_cfg": cfg.data.to_kwargs()},
-            "triggers": [
-                DeploymentEventTrigger(
-                    name="observation-ready-trigger",
-                    enabled=True,
-                    expect={OBSERVATION_READY_EVENT},
-                    match={"prefect.resource.id": WATCHER_RESOURCE_ID},
-                    parameters={"entry_name": "{{ event.payload.entry_name }}"},
-                    flow_run_name="courier-{{ event.payload.entry_name }}",
-                )
-            ],
-        },
-        daemon=True,
-    )
-    courier_thread.start()
-    logger.info("Courier deployment started")
-
-    needle_pipeline.with_options(
-        task_runner=_load_task_runner(mode, cfg),
-        result_storage=cfg.data.staging_dir / Path("prefect_cache"),
-        persist_result=False,
-    ).serve(
-        name="needle-pipeline",
-        parameters={"cfg": cfg.to_kwargs()},
-        triggers=[
-            DeploymentEventTrigger(
-                name="observation-staged-trigger",
-                enabled=True,
-                expect={OBSERVATION_STAGED_EVENT},
-                match={"prefect.resource.id": COURIER_RESOURCE_ID},
-                parameters={"work_dir": "{{ event.payload.staged_dir }}"},
-            )
-        ],
-    )
+    cluster_cfg = ClusterConfig.get_config()
+    if cluster_cfg.type != "slurm":
+        logger.error(f"Cluster config must be of type 'slurm' to run test. Found type '{cluster_cfg.type}'")
+        raise SystemExit(1)
+    # Lower the settings for the test
+    cluster_cfg.slurm.memory = memory
+    cluster_cfg.slurm.cores = cores
+    cluster_cfg.slurm.processes = processes
+    cluster_cfg.slurm.walltime = walltime
+    with build_dask_client(cluster_cfg) as (client, cluster):
+        try:
+            test_cluster_flow(client, cluster, cluster_cfg)
+        except Exception as exc:
+            logger.error(f"Cluster test failed: {exc}")
+            raise SystemExit(1)
+        raise SystemExit(0)
 
 
 @cli.command()

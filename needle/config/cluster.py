@@ -4,7 +4,6 @@ import re
 from typing import Literal, Optional
 import yaml
 
-from prefect_dask import DaskTaskRunner
 from pydantic import ValidationError, field_validator
 
 from needle.config.base import NeedleModel
@@ -28,6 +27,8 @@ class ScalingConfig(NeedleModel):
     "The number of scaling intervals to wait for a worker before cancelling"
     dashboard_port: int = 8787
     "Port for the Dask dashboard"
+    interface: Optional[str] = "ib0"
+    "Network interface to bind the scheduler to. Leave unset to auto-detect."
 
     @field_validator("interval")
     @classmethod
@@ -41,7 +42,12 @@ class ScalingConfig(NeedleModel):
     @property
     def scheduler_options(self) -> dict:
         """Returns the scheduler_options dictionary for DaskTaskRunner"""
-        return {"dashboard_address": f":{self.dashboard_port}"}
+        opts = {
+            "dashboard_address": f":{self.dashboard_port}",
+        }
+        if self.interface:
+            opts["interface"] = self.interface
+        return opts
 
     @property
     def adapt_kwargs(self) -> dict:
@@ -71,7 +77,7 @@ class SlurmConfig(NeedleModel):
     "Maximum walltime per job e.g. '02:00:00'"
     local_directory: Optional[str] = None
     "Local directory for workers to use for scratch space"
-    log_directory: Optional[str] = None
+    log_directory: str = "./"
     "Directory to write worker logs to"
     job_script_prologue: Optional[list[str]] = None
     "Lines to prepend to the job script e.g. module loads"
@@ -109,12 +115,36 @@ class ClusterConfig(NeedleModel):
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
 
-    def to_task_runner(self, extra_binds: Optional[list[str]] = None) -> DaskTaskRunner:
-        """Creates the task runner object
+    # TODO: Remove this
+    # def to_task_runner(self, extra_binds: Optional[list[str]] = None) -> DaskTaskRunner:
+    #     """Creates the task runner object
+    #
+    #     :param extra_binds: Any additional path bindings to add to the container execution command if using a container.
+    #         Will be ignored if not using a container.
+    #     :return: The DaskTaskRunner object
+    #     """
+    #
+    #     if extra_binds and self.container:
+    #         logger.info(f"Adding additional binds to task runner container: {extra_binds}")
+    #         self.container.binds = (self.container.binds or []) + extra_binds
+    #
+    #     cluster_kwargs = {"container_cfg": self.container, "scheduler_options": self.scaling.scheduler_options}
+    #     if self.type == "slurm" and self.slurm:
+    #         cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
+    #     elif self.type == "local" and self.local:
+    #         cluster_kwargs.update(self.local.model_dump(exclude_none=True))
+    #
+    #     cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
+    #     return DaskTaskRunner(
+    #         cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.adapt_kwargs
+    #     )
+
+    def to_cluster(self, extra_binds: Optional[list[str]] = None) -> SifLocalCluster | SifSLURMCluster:
+        """Creates the raw Dask cluster object (SifSLURMCluster or SifLocalCluster)
 
         :param extra_binds: Any additional path bindings to add to the container execution command if using a container.
             Will be ignored if not using a container.
-        :return: The DaskTaskRunner object
+        :return: The cluster object
         """
 
         if extra_binds and self.container:
@@ -128,9 +158,10 @@ class ClusterConfig(NeedleModel):
             cluster_kwargs.update(self.local.model_dump(exclude_none=True))
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
-        return DaskTaskRunner(
-            cluster_class=cluster_class, cluster_kwargs=cluster_kwargs, adapt_kwargs=self.scaling.adapt_kwargs
-        )
+        cluster = cluster_class(**cluster_kwargs)
+        cluster.adapt(**self.scaling.adapt_kwargs)
+
+        return cluster
 
     @classmethod
     def load(cls, source: Path | str | dict) -> "ClusterConfig":
@@ -142,10 +173,27 @@ class ClusterConfig(NeedleModel):
         try:
             return cls.model_validate(data)
         except ValidationError as e:
-            missing = [err["loc"][0] for err in e.errors() if err["type"] == "missing"]
-            if missing:
-                fields = ", ".join(f"'{f}'" for f in missing)
-                raise ValueError(f"Cluster config is missing required section(s): {fields}") from e
+            missing_sections = []
+            missing_fields = []
+            for err in e.errors():
+                if err["type"] != "missing":
+                    continue
+                loc = err["loc"]
+                if len(loc) == 1:
+                    missing_sections.append(loc[0])
+                else:
+                    missing_fields.append(".".join(str(p) for p in loc))
+
+            messages = []
+            if missing_sections:
+                fields = ", ".join(f"'{f}'" for f in missing_sections)
+                messages.append(f"missing required section(s): {fields}")
+            if missing_fields:
+                fields = ", ".join(f"'{f}'" for f in missing_fields)
+                messages.append(f"missing required field(s): {fields}")
+
+            if messages:
+                raise ValueError("Cluster config is " + "; ".join(messages)) from e
             raise
 
     @classmethod
