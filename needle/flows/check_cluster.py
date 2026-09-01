@@ -13,9 +13,9 @@ from needle.tasks.test_cluster import wait_for_worker_task, run_test_job_task
 
 
 @flow(task_runner=ThreadPoolTaskRunner(max_workers=1))
-def test_cluster_flow(client: Client, cluster: SLURMCluster, cluster_cfg: ClusterConfig) -> None:
-    """Raises on any failure, so the flow run's state in Prefect accurately
-    reflects whether the cluster is actually usable right now.
+def check_cluster_flow(client: Client, cluster: SLURMCluster, cluster_cfg: ClusterConfig) -> None:
+    """Raises on any failure, so the flow run's state in Prefect accurately reflects whether the cluster is usable
+    right with the current configuration.
     """
     logger = setup_logging("INFO")
     logger.info(f"Dask dashboard: {client.dashboard_link}")

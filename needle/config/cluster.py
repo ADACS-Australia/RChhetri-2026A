@@ -4,7 +4,6 @@ import re
 from typing import Literal, Optional
 import yaml
 
-from prefect_dask import DaskTaskRunner
 from pydantic import ValidationError, field_validator
 
 from needle.config.base import NeedleModel
@@ -174,10 +173,27 @@ class ClusterConfig(NeedleModel):
         try:
             return cls.model_validate(data)
         except ValidationError as e:
-            missing = [err["loc"][0] for err in e.errors() if err["type"] == "missing"]
-            if missing:
-                fields = ", ".join(f"'{f}'" for f in missing)
-                raise ValueError(f"Cluster config is missing required section(s): {fields}") from e
+            missing_sections = []
+            missing_fields = []
+            for err in e.errors():
+                if err["type"] != "missing":
+                    continue
+                loc = err["loc"]
+                if len(loc) == 1:
+                    missing_sections.append(loc[0])
+                else:
+                    missing_fields.append(".".join(str(p) for p in loc))
+
+            messages = []
+            if missing_sections:
+                fields = ", ".join(f"'{f}'" for f in missing_sections)
+                messages.append(f"missing required section(s): {fields}")
+            if missing_fields:
+                fields = ", ".join(f"'{f}'" for f in missing_fields)
+                messages.append(f"missing required field(s): {fields}")
+
+            if messages:
+                raise ValueError("Cluster config is " + "; ".join(messages)) from e
             raise
 
     @classmethod
