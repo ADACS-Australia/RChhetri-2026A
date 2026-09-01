@@ -16,7 +16,7 @@ from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.cluster_local import SifLocalCluster
 from needle.lib.logging import setup_logging
-from needle.lib.dask import build_dask_client
+from needle.lib.dask_runner import build_dask_client
 
 logger = logging.getLogger("needle-cli")
 
