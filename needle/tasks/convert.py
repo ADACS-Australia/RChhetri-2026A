@@ -12,6 +12,7 @@ from needle.lib.logging import setup_logging
 def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INFO") -> MSBeamPair:
     """Convert a raw beam pair to measurement sets.
     Uses existing .ms files if already present, otherwise converts.
+    Will not attempt to operate on calibration solutions.
     Also creates the beam directory and puts the measurements sets in there.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
@@ -25,6 +26,6 @@ def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INF
     ctx = ConvertContext(input=pair.cal)
     logger.info(f"Creating measurement set from {pair.cal}")
     f_cal_ms = client.submit(convert_to_ms, ctx)
-    tgt_ms, cal_ms = client.gather([f_tgt_ms, f_cal_ms])
+    tgt_ms, cal = client.gather([f_tgt_ms, f_cal_ms])
 
-    return MSBeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal_ms)
+    return BeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal)

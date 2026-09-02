@@ -8,13 +8,14 @@ from typing import Optional
 
 import click
 
+from needle.config.calibrate import CalibrationSolution
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
 
 
 class ConvertContext(SubprocessExecContext):
-    input: Path
+    input: Path | CalibrationSolution
     "The path to the file to convert to a measurement set"
 
     output_dir: Optional[Path] = None
@@ -34,26 +35,26 @@ class ConvertContext(SubprocessExecContext):
 
         :raises Exception: Raised if the input file type is not supported
         """
+        if isinstance(self.input, CalibrationSolution):
+            if self.output_dir and not self.input.parent == self.output_dir:
+                return [["mv", self.input.bpcal, self.output_dir], ["mv", self.input.gcal, self.output_dir]]
+            else:  # Nothing to do
+                return [[]]
         match self.input.suffix:
             case ".uvfits":
                 expr = f"from casatasks import importuvfits; importuvfits(fitsfile='{self.input}', vis='{self.output}')"
             case ".mir":
                 expr = f"from casatasks import importmiriad; importmiriad(mirfile='{self.input}', vis='{self.output}')"
             case ".ms":
-                if self.output_dir:  # Copy to the provided output directory
-                    if not self.output.exists():
-                        logger.info(f"Copying {self.input} -> {self.output}")
-                        expr = f"from casatools import table; tb=table(); tb.open('{self.input}'); tb.copy(newtablename='{self.output}', deep=True)"
-                    else:
-                        logger.info(f"MS already exists at {self.output}, skipping copy")
-                        return [[]]
+                if self.output_dir and not self.input.parent == self.output_dir:
+                    # Copy to the provided output directory
+                    return [["mv", self.input, self.output_dir]]
                 else:
-                    logger.info(f"Input {self.input} is already an MS and no output_dir provided, skipping")
                     return [[]]
             case _:
                 raise Exception(f"Unsupported file type: {self.input.suffix}")
 
-        return [["python3", "-c", expr]]  # execute() expects a list of lists
+        return [["python3", "-c", expr]]
 
 
 def convert_to_ms(ctx: ConvertContext) -> Path:

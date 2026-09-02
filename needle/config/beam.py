@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import model_validator
 
 from needle.config.base import NeedleModel
+from needle.config.calibrate import CalInput
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,8 @@ class BeamPair(NeedleModel):
     tgt: Path
     "Path to the target input file"
 
-    cal: Path
-    "Path to the calibrator input file"
+    cal: CalInput
+    "The calibrator observation or solution"
 
     def move_files(self, new_dir):
         "Move the tgt and cal to a new directory"
@@ -37,9 +38,15 @@ class BeamPair(NeedleModel):
     def move_cal(self, new_dir: Path):
         "Moves the calibrator to a new location"
         new_dir.mkdir(parents=False, exist_ok=True)
-        new_path = new_dir / self.cal.name
-        self.cal.rename(new_path)
-        self.cal = new_path
+        if isinstance(self.cal, Path):
+            new_path = new_dir / self.cal.name
+            self.cal.rename(new_path)
+            self.cal = new_path
+        else:  # CalibrationSolution
+            new_path = new_dir / self.bpcal.name
+            self.cal.bpcal.rename(new_path)
+            new_path = new_dir / self.gcal.name
+            self.cal.gcal.rename(new_path)
 
 
 class MSBeamPair(BeamPair):

@@ -1,8 +1,29 @@
+from pathlib import Path
 import logging
+
+from pydantic import model_validator
 
 from needle.config.base import NeedleModel
 
 logger = logging.getLogger(__name__)
+
+
+class CalibrationSolution(NeedleModel):
+    gcal: Path
+    "Path to the .gcal directory"
+    bpcal: Path
+    "Path to the .bpcal directory"
+
+    @model_validator(mode="after")
+    def validate_suffixes(self):
+        if self.gcal.suffix != ".gcal":
+            raise ValueError(f"Gain calibration solution expected (.gcal), got {self.gcal}")
+        if self.bpcal.suffix != ".bpcal":
+            raise ValueError(f"Bandpass calibration solution expected (.bpcal), got {self.bpcal}")
+        return self
+
+
+CalInput = Path | CalibrationSolution
 
 
 class SetjyConfig(NeedleModel):
@@ -93,7 +114,27 @@ class SplitConfig(NeedleModel):
     "Keep flagged data in output"
 
 
+class SolveCalibrationConfig(NeedleModel):
+    setjy: SetjyConfig = SetjyConfig()
+    "Set flux density scale"
+
+    bandpass: BandpassConfig = BandpassConfig()
+    "Bandpass calibration"
+
+    gaincal: GaincalConfig = GaincalConfig()
+    "Gain calibration"
+
+
+class ApplyCalibrationConfig(NeedleModel):
+    applycal: ApplycalConfig = ApplycalConfig()
+    "Apply calibration solutions"
+
+    split: SplitConfig = SplitConfig()
+    "Split out calibrated data"
+
+
 class CalibrateConfig(NeedleModel):
+    """An amalgomation of Solve and Apply"""
 
     setjy: SetjyConfig = SetjyConfig()
     "Set flux density scale"

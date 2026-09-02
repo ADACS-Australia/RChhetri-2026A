@@ -7,7 +7,7 @@ import yaml
 from pydantic import ValidationError
 
 from needle.config.base import NeedleModel
-from needle.config.calibrate import CalibrateConfig
+from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.data import DataConfig
 from needle.config.flag import FlagConfig
@@ -52,8 +52,11 @@ class NeedleConfig(NeedleModel):
     flag: FlagConfig = FlagConfig()
     "Flagging config"
 
-    calibrate: CalibrateConfig = CalibrateConfig()
-    "Calibration config"
+    calibrate_solve: SolveCalibrationConfig = SolveCalibrationConfig()
+    "Calibration solution finding config"
+
+    calibrate_apply: ApplyCalibrationConfig = ApplyCalibrationConfig()
+    "Calibration solution application config"
 
     shallow_clean: ShallowCleanConfig = ShallowCleanConfig()
     "Shallow clean config"
