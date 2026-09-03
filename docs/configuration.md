@@ -114,7 +114,7 @@ flag:
     antenna: "ea01,ea05"
     timerange: "00:00:00~00:10:00"
 
-calibrate:
+calibrate_solve:
   setjy:
     field: "1934-638"
     standard: "Perley-Butler 2017"
@@ -127,6 +127,8 @@ calibrate:
     field: "0537-441"
     solint: "int"
     calmode: "ap"
+
+calibrate_apply:
   applycal:
     field: "target_source"
     interp: "linear"
