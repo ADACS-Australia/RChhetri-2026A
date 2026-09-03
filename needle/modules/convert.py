@@ -8,23 +8,17 @@ from typing import Optional
 
 import click
 
-from needle.config.calibrate import CalibrationSolution
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
 
 
 class ConvertContext(SubprocessExecContext):
-    input: Path | CalibrationSolution
+    input: Path
     "The path to the file to convert to a measurement set"
-
-    output_dir: Optional[Path] = None
-    "The directory to output the converted file to"
 
     @property
     def output(self) -> Path:
-        if self.output_dir:
-            return self.output_dir / self.input.with_suffix(".ms").name
         return self.input.with_suffix(".ms")
 
     @property
@@ -35,22 +29,13 @@ class ConvertContext(SubprocessExecContext):
 
         :raises Exception: Raised if the input file type is not supported
         """
-        if isinstance(self.input, CalibrationSolution):
-            if self.output_dir and not self.input.parent == self.output_dir:
-                return [["mv", self.input.bpcal, self.output_dir], ["mv", self.input.gcal, self.output_dir]]
-            else:  # Nothing to do
-                return [[]]
         match self.input.suffix:
             case ".uvfits":
                 expr = f"from casatasks import importuvfits; importuvfits(fitsfile='{self.input}', vis='{self.output}')"
             case ".mir":
                 expr = f"from casatasks import importmiriad; importmiriad(mirfile='{self.input}', vis='{self.output}')"
             case ".ms":
-                if self.output_dir and not self.input.parent == self.output_dir:
-                    # Copy to the provided output directory
-                    return [["mv", self.input, self.output_dir]]
-                else:
-                    return [[]]
+                return [[]]  # No-op
             case _:
                 raise Exception(f"Unsupported file type: {self.input.suffix}")
 
@@ -84,13 +69,6 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
 @click.argument(
     "input",
     type=click.Path(dir_okay=True, file_okay=True, exists=True, path_type=Path),
-)
-@click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(exists=False, path_type=Path),
-    default=None,
-    help="Directory to write the output MS to",
 )
 def entrypoint(input: Path, output_dir: Optional[Path] = None):
     ctx = ConvertContext(input=input, output_dir=output_dir)

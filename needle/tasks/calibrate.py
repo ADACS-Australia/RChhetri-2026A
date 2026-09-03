@@ -23,9 +23,9 @@ def solve_calibration_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    if isinstance(cal, Path):
+    if not isinstance(cal, CalibrationSolution):
         ctx = SolveCalibrationContext(cfg=cfg, cal=cal)
-        cal = client.submit(solve_calibration, ctx)
+        cal = client.submit(solve_calibration, ctx).result()
     return cal
 
 
@@ -39,4 +39,4 @@ def apply_calibration_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = ApplyCalibrationContext(cfg=cfg, cal=cal, tgt=tgt)
-    return client.submit(apply_calibration, ctx)
+    return client.submit(apply_calibration, ctx).result()

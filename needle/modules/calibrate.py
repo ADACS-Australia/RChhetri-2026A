@@ -58,7 +58,7 @@ class SolveCalibrationContext(SubprocessExecContext):
         kwargs = self.cfg.bandpass.to_kwargs()
         kwargs_str = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
         return self._python_cmd(
-            f"from casatasks import bandpass; bandpass(vis='{self.cal}', caltable='{self._bpcal_path}', {kwargs_str})"
+            f"from casatasks import bandpass; bandpass(vis='{self.cal}', caltable='{self.bpcal_path}', {kwargs_str})"
         )
 
     def _gaincal_cmd(self) -> list[str]:
@@ -66,8 +66,8 @@ class SolveCalibrationContext(SubprocessExecContext):
         kwargs = self.cfg.gaincal.to_kwargs()
         kwargs_str = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
         return self._python_cmd(
-            f"from casatasks import gaincal; gaincal(vis='{self.cal}', caltable='{self._gcal_path}', "
-            f"gaintable=['{self._bpcal_path}'], {kwargs_str})"
+            f"from casatasks import gaincal; gaincal(vis='{self.cal}', caltable='{self.gcal_path}', "
+            f"gaintable=['{self.bpcal_path}'], {kwargs_str})"
         )
 
     @property
@@ -98,7 +98,7 @@ class ApplyCalibrationContext(SubprocessExecContext):
         return tgt
 
     @property
-    def _calibrated_tgt_path(self) -> Path:
+    def calibrated_tgt_path(self) -> Path:
         "Path to the calibrated target measurement set produced by split"
         return self.tgt.parent / f"{self.tgt.stem}_calibrated.ms"
 
@@ -112,7 +112,7 @@ class ApplyCalibrationContext(SubprocessExecContext):
         kwargs_str = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
         return self._python_cmd(
             f"from casatasks import applycal; applycal(vis='{self.tgt}', "
-            f"gaintable=['{self._bpcal_path}', '{self._gcal_path}'], {kwargs_str})"
+            f"gaintable=['{self.cal.bpcal}', '{self.cal.gcal}'], {kwargs_str})"
         )
 
     def _split_cmd(self) -> list[str]:
@@ -120,7 +120,7 @@ class ApplyCalibrationContext(SubprocessExecContext):
         kwargs = self.cfg.split.to_kwargs()
         kwargs_str = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
         return self._python_cmd(
-            f"from casatasks import split; split(vis='{self.tgt}', outputvis='{self._calibrated_tgt_path}', {kwargs_str})"
+            f"from casatasks import split; split(vis='{self.tgt}', outputvis='{self.calibrated_tgt_path}', {kwargs_str})"
         )
 
     @property
@@ -142,11 +142,11 @@ def solve_calibration(ctx: SolveCalibrationContext) -> CalibrationSolution:
     :param ctx: The solve calibrate context object
     :returns: The CalibrationSolution object containing the calibration solutions
     """
-    logger.info(f"Running calibration on source {ctx.tgt} using calibrator {ctx.cal.path}")
+    logger.info(f"Solving calibration using calibrator {ctx.cal}")
     if ctx.gcal_path.exists():
         logger.info(f"Removing existing gcal soluton: {ctx.gcal_path}")
         shutil.rmtree(ctx.gcal_path)
-    if ctx.bpcal.exists():
+    if ctx.bpcal_path.exists():
         logger.info(f"Removing existing bpcal solution: {ctx.bpcal_path}")
         shutil.rmtree(ctx.bpcal_path)
 
@@ -169,10 +169,12 @@ def apply_calibration(ctx: ApplyCalibrationContext) -> Path:
     :param ctx: The apply calibrate context object
     :returns: The path to the calibrated source
     """
-    logger.info(f"Running calibration on source {ctx.tgt} using calibrator {ctx.cal.path}")
-    if ctx._calibrated_tgt_path.exists():
-        logger.info(f"Removing existing observation: {ctx._calibrated_tgt_path}")
-        shutil.rmtree(ctx._calibrated_tgt_path)
+    logger.info(
+        f"Running calibration on source {ctx.tgt} using calibration solutions: {ctx.cal.bpcal.name} and {ctx.cal.gcal.name}"
+    )
+    if ctx.calibrated_tgt_path.exists():
+        logger.info(f"Removing existing observation: {ctx.calibrated_tgt_path}")
+        shutil.rmtree(ctx.calibrated_tgt_path)
 
     ctx.log_cmd()
     procs = ctx.execute()
@@ -181,8 +183,8 @@ def apply_calibration(ctx: ApplyCalibrationContext) -> Path:
         if p.stderr:
             logger.warning(p.stderr)
         p.check_returncode()
-    logger.info(f"Calibration application complete. Written to {ctx._calibrated_tgt_path}")
-    return ctx._calibrated_tgt_path
+    logger.info(f"Calibration application complete. Written to {ctx.calibrated_tgt_path}")
+    return ctx.calibrated_tgt_path
 
 
 @click.option(

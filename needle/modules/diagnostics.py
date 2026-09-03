@@ -420,7 +420,7 @@ class MSDiagnosticsContext(NeedleContext):
         return ms
 
     def execute(self) -> MSDiagnostics:
-        msd = MSDiagnostics(ms=self.ms, gcal=self.gcal, bpcal=self.bpcal, output_dir=self.output_dir)
+        msd = MSDiagnostics(ms=self.ms, output_dir=self.output_dir)
         msd.run_all_diagnostics()
         return msd
 
@@ -474,8 +474,8 @@ class CalDiagnostics(BaseModel):
 
     @cached_property
     def _antenna_names(self) -> list[str]:
-        with open_msmetadata(self.gcal) as md:
-            all_names = md.antennanames()
+        with open_table(self.gcal / "ANTENNA") as tb:
+            all_names = tb.getcol("NAME")
         return [all_names[i] for i in self._active_antenna_indices]
 
     @cached_property

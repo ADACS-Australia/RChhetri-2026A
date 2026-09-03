@@ -1,8 +1,6 @@
 import logging
 from pathlib import Path
 
-from pydantic import model_validator
-
 from needle.config.base import NeedleModel
 from needle.config.calibrate import CalInput
 
@@ -43,26 +41,9 @@ class BeamPair(NeedleModel):
             self.cal.rename(new_path)
             self.cal = new_path
         else:  # CalibrationSolution
-            new_path = new_dir / self.bpcal.name
+            new_path = new_dir / self.cal.bpcal.name
             self.cal.bpcal.rename(new_path)
-            new_path = new_dir / self.gcal.name
+            self.cal.bpcal = new_path
+            new_path = new_dir / self.cal.gcal.name
             self.cal.gcal.rename(new_path)
-
-
-class MSBeamPair(BeamPair):
-    """A beam pair where both files are guaranteed to be measurement sets."""
-
-    @model_validator(mode="after")
-    def validate_ms_suffixes(self):
-        for field, path in [("target", self.tgt), ("calibrator", self.cal)]:
-            if path.suffix != ".ms":
-                raise ValueError(f"{field} must be a measurement set, got {path}")
-        return self
-
-    @model_validator(mode="after")
-    def validate_exists(self):
-        if not self.tgt.exists():
-            raise ValueError(f"{self.tgt} does not exist. Cannot construct model.")
-        if not self.cal.exists():
-            raise ValueError(f"{self.cal} does not exist. Cannot construct model.")
-        return self
+            self.cal.gcal = new_path

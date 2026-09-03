@@ -51,7 +51,8 @@ def test_get_config_integration(tmp_path):
         "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
         "watcher": {},
         "flag": {},
-        "calibrate": {"setjy": {}, "bandpass": {}, "gaincal": {}, "applycal": {}, "split": {}},
+        "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
+        "calibrate_apply": {"applycal": {}, "split": {}},
         "shallow_clean": {"niter": 100},
         "source_find": {},
         "create_mask": {},
@@ -73,7 +74,7 @@ def test_get_config_integration(tmp_path):
     assert config.flow.overwrite is False
     assert config.data.source == "local:///tmp/data"
     # Even though we provided {}, SetjyConfig should have its defaults
-    assert config.calibrate.setjy.standard == "Perley-Butler 2017"
+    assert config.calibrate_solve.setjy.standard == "Perley-Butler 2017"
 
 
 def test_validate_valid_dict():
@@ -83,7 +84,8 @@ def test_validate_valid_dict():
         "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
         "watcher": {},
         "flag": {},
-        "calibrate": {"setjy": {}, "bandpass": {}, "gaincal": {}, "applycal": {}, "split": {}},
+        "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
+        "calibrate_apply": {"applycal": {}, "split": {}},
         "shallow_clean": {"niter": 100},
         "source_find": {},
         "create_mask": {},
@@ -109,7 +111,8 @@ def test_validate_valid_yaml(tmp_path):
         "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
         "watcher": {},
         "flag": {},
-        "calibrate": {"setjy": {}, "bandpass": {}, "gaincal": {}, "applycal": {}, "split": {}},
+        "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
+        "calibrate_apply": {"applycal": {}, "split": {}},
         "shallow_clean": {"niter": 100},
         "source_find": {},
         "create_mask": {},
