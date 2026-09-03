@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 from distributed import Client
 from prefect import task
@@ -7,42 +6,44 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.lib.logging import setup_logging
-from needle.modules.diagnostics import DiagnosticsContext, DiagnosticsOutput, diagnostics
-from needle.modules.calibrate import CalibrateOutput
+from needle.modules.diagnostics import (
+    MSDiagnosticsContext,
+    MSDiagnosticsOutput,
+    CalDiagnosticsOutput,
+    CalDiagnosticsContext,
+    run_diagnostics,
+)
+from needle.config.calibrate import CalibrationSolution
 
 
 @task(cache_policy=NO_CACHE)
-def diagnostics_task(
+def ms_diagnostics_task(
     client: Client,
-    ms: Path,
-    gcal: Optional[Path] = None,
-    bpcal: Optional[Path] = None,
+    ms: Path | CalibrationSolution,
     log_level: str = "INFO",
-) -> DiagnosticsOutput:
-    """Runs diagnostics on a measurement set. Optionally takes calibration tables to diagnose"""
+) -> MSDiagnosticsOutput:
+    """Runs diagnostics on a measurement set"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = DiagnosticsContext(ms=ms, gcal=gcal, bpcal=bpcal, output_dir=ms.parent / "diagnostics")
-    return client.submit(diagnostics, ctx).result()
+    if isinstance(ms, CalibrationSolution):  # No-op
+        return None
+
+    ctx = MSDiagnosticsContext(ms=ms, output_dir=ms.parent / "diagnostics")
+    return client.submit(run_diagnostics, ctx).result()
 
 
 @task(cache_policy=NO_CACHE)
-def diagnostics_cal_output_task(
+def cal_diagnostics_task(
     client: Client,
-    cal_output: CalibrateOutput,
+    cal: CalibrationSolution,
     log_level: str = "INFO",
-) -> DiagnosticsOutput:
-    """Runs diagnostics on a calibration output object."""
+) -> CalDiagnosticsOutput:
+    """Runs diagnostics on a calibration solution"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = DiagnosticsContext(
-        ms=cal_output.tgt,
-        gcal=cal_output.gcal,
-        bpcal=cal_output.bpcal,
-        output_dir=cal_output.tgt.parent / "diagnostics",
-    )
-    return client.submit(diagnostics, ctx).result()
+    ctx = CalDiagnosticsContext(solution=cal, output_dir=cal.gcal.parent / "diagnostics")
+    return client.submit(run_diagnostics, ctx).result()

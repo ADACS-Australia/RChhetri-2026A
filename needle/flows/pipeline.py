@@ -7,21 +7,22 @@ from prefect.task_runners import ThreadPoolTaskRunner
 from prefect.runtime import flow_run
 from distributed import Client
 
-from needle.lib.logging import setup_logging
+from needle.tasks.utils import extract_cal_task, extract_tgt_task
+from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
+from needle.tasks.convert import convert_task
+from needle.tasks.flag import flag_ms_task
+
 from needle.config.pipeline import NeedleConfig
 from needle.config.cluster import ClusterConfig
+from needle.lib.logging import setup_logging
 from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
-from needle.tasks.calibrate import calibrate_pair_task
 from needle.tasks.casa_data import update_casa_data
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
-from needle.tasks.convert import convert_beam_pair_task
-from needle.tasks.diagnostics import diagnostics_task, diagnostics_cal_output_task
-from needle.tasks.flag import flag_ms_pair_task
-from needle.tasks.inspect import inspect_pair_task
+from needle.tasks.diagnostics import cal_diagnostics_task, ms_diagnostics_task
+from needle.tasks.inspect import inspect_ms_task
 from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
-from needle.tasks.utils import beam_pair_extract_cal_task, cal_output_extract_tgt_task
 
 FutureList = list[PrefectFuture]
 
@@ -49,29 +50,23 @@ def _unmapped_defaults(cfg: NeedleConfig) -> dict:
     return {"log_level": unmapped(cfg.flow.log_level)}
 
 
-def _flag_and_calibrate(
-    client: Client, cfg: NeedleConfig, f_ms_pairs: FutureList
-) -> Tuple[FutureList, FutureList, FutureList]:
-    """Flags the data and runs calibration"""
-    defaults = _unmapped_defaults(cfg)
-    flag_pair_futures = flag_ms_pair_task.map(unmapped(client), f_ms_pairs, cfg=unmapped(cfg.flag), **defaults)
-    f_cal_output = calibrate_pair_task.map(unmapped(client), flag_pair_futures, cfg=unmapped(cfg.calibrate), **defaults)
-    f_tgt = cal_output_extract_tgt_task.map(f_cal_output)
-    f_cal = beam_pair_extract_cal_task.map(f_ms_pairs)
-    return (f_cal_output, f_tgt, f_cal)
-
-
 def _inspect_and_diagnose(
-    client: Client, cfg: NeedleConfig, f_ms_pairs: FutureList, f_cal_output: FutureList
-) -> Tuple[FutureList, FutureList, FutureList]:
+    client: Client, cfg: NeedleConfig, f_tgt: FutureList, f_cal: FutureList, f_cal_output: FutureList
+) -> Tuple[FutureList, FutureList, FutureList, FutureList, FutureList]:
     """Inspects the data and runs diagnostics on it"""
     defaults = _unmapped_defaults(cfg)
-    f_inspect_pair = inspect_pair_task.map(unmapped(client), f_ms_pairs, unmapped(cfg.flow.log_level))  # (cal, tgt)
-    # Run diagnostics on the calibrator MS
-    f_cal_diagnostics = diagnostics_task.map(unmapped(client), beam_pair_extract_cal_task.map(f_ms_pairs), **defaults)
+
+    # Inspect the tgt and cal source
+    f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
+    f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
+
+    # Run diagnostics on the calibrator and tgt MS
+    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
+    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
+
     # Run diagnostics on calibrated target and calibrator solution tables
-    f_tgt_diagnostics = diagnostics_cal_output_task.map(unmapped(client), f_cal_output, **defaults)
-    return (f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics)
+    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
+    return (f_inspect_cal, f_inspect_tgt, f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics)
 
 
 def _source_find_and_mask(client: Client, cfg: NeedleConfig, f_shallow_image: FutureList) -> FutureList:
@@ -80,32 +75,13 @@ def _source_find_and_mask(client: Client, cfg: NeedleConfig, f_shallow_image: Fu
     f_json_sources = source_find_task.map(unmapped(client), f_shallow_image, cfg=unmapped(cfg.source_find), **defaults)
     # Create masks over the sources in preparation for deep cleaning
     return create_mask_task.map(
-        unmapped(client),
-        f_json_sources,
-        f_shallow_image,
-        cfg=unmapped(cfg.create_mask),
-        log_level=unmapped(cfg.flow.log_level),
-    )
-
-
-def _create_and_subtract_model(
-    client: Client, cfg: NeedleConfig, f_tgt: FutureList, f_deep_image: FutureList, f_mask: FutureList
-) -> FutureList:
-    """Creates a sky model and subtracts it from the data"""
-    defaults = _unmapped_defaults(cfg)
-    # Create Model - updates the ms in place with the MODEL_DATA columnn
-    f_model_create = predict_task.map(
-        unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults
-    )
-    # Model subtract - removes the MODEL_DATA from the DATA visibilities
-    return clean_task.with_options(name="model_subtract").map(
-        unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
+        unmapped(client), f_json_sources, f_shallow_image, cfg=unmapped(cfg.create_mask), **defaults
     )
 
 
 def _expand_intervals(
     f_tgt: FutureList,
-    f_inspect_pair: FutureList,
+    f_inspect_tgt: FutureList,
     f_model_subtract: FutureList,
     f_mask: FutureList,
     n_intervals: int,
@@ -116,8 +92,8 @@ def _expand_intervals(
     all_model_subtracts = []
     all_masks = []
     all_intervals = []
-    for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_pair, f_model_subtract, f_mask):
-        inspect_path = inspect.result()[1]  # resolve the path from the future - index 1 is tgt
+    for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_tgt, f_model_subtract, f_mask):
+        inspect_path = inspect.result()  # resolve the path from the future
         intervals = _split_ms_into_intervals(inspect_path, n_intervals=n_intervals)
         for interval in intervals:
             all_tgt.append(tgt)
@@ -134,8 +110,6 @@ def _pipeline_flow_name() -> str:
     return f"pipeline-{target_obs}"
 
 
-# Note that CASA and BANE are not thread-safe. Multiple instances can't run concurrently in the same process.
-# so ThreadPooolRunner will not work
 @flow(
     name="needle-pipeline",
     log_prints=True,
@@ -156,12 +130,26 @@ def needle_pipeline(client: Client, cfg: NeedleConfig, work_dir: Path | str) -> 
     logger.info(f"Found beam pairs: {beam_pairs}")
     f_beam_pairs = setup_beam_dir_task.map(beam_pairs, log_level=unmapped(cfg.flow.log_level))
 
-    # Convert pairs to measurement sets and set up working directories
-    f_ms_pairs = convert_beam_pair_task.map(unmapped(client), f_beam_pairs, **defaults)
-    f_cal_output, f_tgt, _ = _flag_and_calibrate(client=client, cfg=cfg, f_ms_pairs=f_ms_pairs)
-    f_inspect_pair, f_cal_diagnostics, f_tgt_diagnostics = _inspect_and_diagnose(
-        client, cfg=cfg, f_ms_pairs=f_ms_pairs, f_cal_output=f_cal_output
+    # Exctract the individual calibrators and targets
+    f_cal = extract_cal_task.map(pair=f_beam_pairs)
+    f_tgt = extract_tgt_task.map(pair=f_beam_pairs)
+
+    # Convert pairs to measurement sets
+    f_cal = convert_task.map(unmapped(client), f_cal, **defaults)
+    f_tgt = convert_task.map(unmapped(client), f_tgt, **defaults)
+
+    # Flag, calibrate and inspect
+    f_tgt = flag_ms_task.map(client=client, ms=f_tgt, cfg=unmapped(cfg.flag), **defaults)
+    f_cal = flag_ms_task.map(client=client, ms=f_cal, cfg=unmapped(cfg.flag), **defaults)
+    f_cal_output = solve_calibration_task.map(client=client, cal=f_cal, cfg=unmapped(cfg.calibrate_solve), **defaults)
+    f_tgt = apply_calibration_task.map(
+        client=client, cfg=unmapped(cfg.calibrate_apply), cal=f_cal_output, tgt=f_tgt, **defaults
     )
+    f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
+    f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
+    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
+    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
+    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
 
     # Clean, mask and model subtract
     f_shallow_image = clean_task.with_options(name="shallow_clean").map(
@@ -171,14 +159,18 @@ def needle_pipeline(client: Client, cfg: NeedleConfig, work_dir: Path | str) -> 
     f_deep_image = clean_task.with_options(name="deep_clean").map(
         unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
     )
-    f_model_subtract = _create_and_subtract_model(
-        client=client, cfg=cfg, f_tgt=f_tgt, f_deep_image=f_deep_image, f_mask=f_mask
+    f_model_create = predict_task.map(
+        unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults
+    )
+    # Model subtract - removes the MODEL_DATA from the DATA visibilities
+    f_model_subtract = clean_task.with_options(name="model_subtract").map(
+        unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
     )
 
     # Clean on each interval - one task per (MS, interval) combination
     all_tgt, all_model_subtracts, all_masks, all_intervals = _expand_intervals(
         f_tgt=f_tgt,
-        f_inspect_pair=f_inspect_pair,
+        f_inspect_tgt=f_inspect_tgt,
         f_model_subtract=f_model_subtract,
         f_mask=f_mask,
         n_intervals=cfg.flow.interval_tasks,
@@ -193,5 +185,5 @@ def needle_pipeline(client: Client, cfg: NeedleConfig, work_dir: Path | str) -> 
         **defaults,
     )
 
-    for f in (f_cal_diagnostics, f_tgt_diagnostics, f_interval_clean):
+    for f in (f_cal_diagnostics, f_tgt_diagnostics, f_interval_clean, f_inspect_cal, f_cal_soln_diagnostics):
         f.result()  # Wait on the last output so that the flow doesn't end

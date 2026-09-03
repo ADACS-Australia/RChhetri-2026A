@@ -60,15 +60,7 @@ class NeedleModel(BaseModel):
 
     @classmethod
     def to_click_params(cls, prefix: str = "") -> list[click.Parameter]:
-        """Build click.Option objects for this model's fields, with dot-notation names for
-        nested models — the click analog of add_to_parser.
-
-        Click only requires the *flag text* users type (e.g. --quack.interval) to be a string;
-        it separately tries to auto-derive an internal `name` from that text by stripping "--"
-        and replacing "-" with "_", then checking .isidentifier() on the result. A dot in the
-        field path fails that check, so we pass an explicit identifier-safe name (dots -> "__")
-        as a second, dash-free decl — Click uses that directly instead of trying to derive one.
-        """
+        """Build click.Option objects for this model's fields, with dot-notation names for nested models."""
         params: list[click.Parameter] = []
         for field_name, field_info in cls.model_fields.items():
             opt_name = field_name if not prefix else f"{prefix}.{field_name}"
@@ -99,6 +91,7 @@ class NeedleModel(BaseModel):
                         multiple=True,
                         default=(),
                         help=f"{help_text} (repeatable)",
+                        show_default=True,
                     )
                 )
             elif origin is dict:
@@ -109,16 +102,20 @@ class NeedleModel(BaseModel):
                         multiple=True,
                         metavar="KEY=VALUE",
                         help=f"{help_text} (repeatable, KEY=VALUE)",
+                        show_default=True,
                     )
                 )
             elif annotation is bool:
-                # A single decl with "/" is Click's native flag-pair syntax: --field/--no-field.
+                if "." in opt_name:
+                    prefix_part, leaf = opt_name.rsplit(".", 1)
+                    on_flag = f"--{opt_name}"
+                    off_flag = f"--{prefix_part}.no-{leaf}"
+                else:
+                    on_flag = f"--{opt_name}"
+                    off_flag = f"--no-{opt_name}"
+
                 params.append(
-                    click.Option(
-                        [f"--{opt_name}/--no-{opt_name}", py_name],
-                        default=default,
-                        help=help_text,
-                    )
+                    click.Option([f"{on_flag}/{off_flag}", py_name], default=default, help=help_text, show_default=True)
                 )
             elif get_origin(annotation) is Literal:
                 choices = get_args(annotation)
@@ -128,16 +125,12 @@ class NeedleModel(BaseModel):
                         type=click.Choice([str(c) for c in choices]),
                         default=default,
                         help=help_text,
+                        show_default=True,
                     )
                 )
             else:
                 params.append(
-                    click.Option(
-                        [flag, py_name],
-                        type=annotation,
-                        default=default,
-                        help=help_text,
-                    )
+                    click.Option([flag, py_name], type=annotation, default=default, help=help_text, show_default=True)
                 )
         return params
 
@@ -221,7 +214,7 @@ def needle_module_args(model_cls: type[NeedleModel], *, name: str, help: str):
         return click.Command(
             name=name,
             help=help,
-            params=[*model_params, *extra_params, _log_level_option],
+            params=[*extra_params, *model_params, _log_level_option],
             callback=callback,
         )
 

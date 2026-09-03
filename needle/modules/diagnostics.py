@@ -16,6 +16,7 @@ matplotlib.use("Agg")  # non-interactive backend, safe for scripting
 import matplotlib.pyplot as plt
 from pydantic import BaseModel, field_validator
 
+from needle.config.calibrate import CalibrationSolution
 from needle.lib.casa import open_table, open_msmetadata
 from needle.lib.logging import setup_logging
 from needle.lib.validate import validate_path_ms
@@ -24,7 +25,7 @@ from needle.modules.needle_context import NeedleContext
 logger = logging.getLogger(__name__)
 
 
-class DiagnosticsOutput(BaseModel):
+class MSDiagnosticsOutput(BaseModel):
     antenna_amp_stats_plot: Path | None = None
     antenna_amp_stats_data: Path | None = None
     amp_phase_vs_time_plot: Path | None = None
@@ -32,8 +33,6 @@ class DiagnosticsOutput(BaseModel):
     antenna_positions_plot: Path | None = None
     flag_summary_plot: Path | None = None
     flag_summary_data: Path | None = None
-    gain_caltable_plot: Path | None = None
-    bandpass_caltable_plot: Path | None = None
 
     @property
     def all_files(self) -> list[Path]:
@@ -45,16 +44,12 @@ class MSDiagnostics(BaseModel):
 
     ms: Path
     "Path to the measurement set to perform diagnostics for"
-    gcal: Path | None
-    "Path to the gain cal solution table"
-    bpcal: Path | None
-    "Path to the gain bpcal solution table"
     output_dir: Path | None
     "Location to output the diagnostics to"
     spw: int = 0
     "Spectral window index to run diagnostics on"
-    _output: DiagnosticsOutput
-    "The DiagnosticsOutput object to store output paths"
+    _output: MSDiagnosticsOutput
+    "The MSDiagnosticsOutput object to store output paths"
 
     @field_validator("ms")
     @classmethod
@@ -64,29 +59,11 @@ class MSDiagnostics(BaseModel):
             raise ValueError(f"Measurement set does not exist: {ms}")
         return ms
 
-    @field_validator("gcal")
-    @classmethod
-    def _valid_gcal(cls, gcal: Path | None) -> Path:
-        if not gcal:
-            return gcal
-        if not gcal.exists():
-            raise ValueError(f"Gaincal table does not exist: {gcal}")
-        return gcal
-
-    @field_validator("bpcal")
-    @classmethod
-    def _valid_bpcal(cls, bpcal: Path | None) -> Path:
-        if not bpcal:
-            return bpcal
-        if not bpcal.exists():
-            raise ValueError(f"Bandpass table does not exist: {bpcal}")
-        return bpcal
-
     def model_post_init(self, __context):
         if self.output_dir is None:
             self.output_dir: Path = self.ms.parent
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        object.__setattr__(self, "_output", DiagnosticsOutput())
+        object.__setattr__(self, "_output", MSDiagnosticsOutput())
 
     @property
     def tb_query(self):
@@ -100,14 +77,6 @@ class MSDiagnostics(BaseModel):
     @property
     def amp_phase_vs_channel_plot(self) -> Path:
         return self.output_dir / f"{self.ms.stem}_amp_phase_vs_channel.png"
-
-    @property
-    def gain_caltable_plot(self) -> Path:
-        return self.output_dir / f"{self.gcal.stem}_gain_caltable.png"
-
-    @property
-    def bandpass_caltable_plot(self) -> Path:
-        return self.output_dir / f"{self.bpcal.stem}_bandpass_caltable.png"
 
     @property
     def antenna_positions_plot(self) -> Path:
@@ -171,25 +140,7 @@ class MSDiagnostics(BaseModel):
             for i, n in enumerate(self._antenna_names)
         ]
 
-    def _amp_phase_fig(self, xlabel: str, title_amp: str, title_phase: str) -> tuple[plt.Figure, np.ndarray]:
-        fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
-        axes[0].set_ylabel("Amplitude")
-        axes[0].set_title(title_amp)
-        axes[0].grid(True, alpha=0.3)
-        axes[1].set_ylabel("Phase (deg)")
-        axes[1].set_xlabel(xlabel)
-        axes[1].set_title(title_phase)
-        axes[1].set_ylim(-185, 185)
-        axes[1].grid(True, alpha=0.3)
-        return fig, axes
-
-    def _save(self, fig: plt.Figure, path: Path):
-        plt.tight_layout()
-        fig.savefig(path, dpi=150, bbox_inches="tight")
-        logger.info(f"Saved plot: {path}")
-        plt.close(fig)
-
-    def to_output(self) -> DiagnosticsOutput:
+    def to_output(self) -> MSDiagnosticsOutput:
         return self._output
 
     def amp_phase_vs_time(self, corr=0, avg_channels=True):
@@ -223,7 +174,7 @@ class MSDiagnostics(BaseModel):
         t0 = np.nanmin(times)
         t_minutes = (times - t0) / 60.0
 
-        fig, axes = self._amp_phase_fig(
+        fig, axes = _amp_phase_fig(
             xlabel="Time (minutes from start)",
             title_amp=f"Amplitude vs Time  (spw={self.spw}, corr={corr})",
             title_phase=f"Phase vs Time  (spw={self.spw}, corr={corr})",
@@ -241,7 +192,7 @@ class MSDiagnostics(BaseModel):
             handles=self._antenna_legend_handles("scatter"), loc="center right", fontsize=7, bbox_to_anchor=(1.08, 0.5)
         )
 
-        self._save(fig, self.amp_phase_vs_time_plot)
+        _save_fig(fig, self.amp_phase_vs_time_plot)
         self._output.amp_phase_vs_time_plot = self.amp_phase_vs_time_plot
 
     def amp_phase_vs_channel(self, corr=0, avg_time=True):
@@ -260,7 +211,7 @@ class MSDiagnostics(BaseModel):
         nchan = d.shape[0]
 
         channels = np.arange(nchan)
-        fig, axes = self._amp_phase_fig(
+        fig, axes = _amp_phase_fig(
             xlabel="Channel",
             title_amp=f"Amplitude vs Channel  (spw={self.spw}, corr={corr})",
             title_phase=f"Phase vs Channel  (spw={self.spw}, corr={corr})",
@@ -284,87 +235,8 @@ class MSDiagnostics(BaseModel):
             handles=self._antenna_legend_handles("line"), loc="center right", fontsize=7, bbox_to_anchor=(1.08, 0.5)
         )
 
-        self._save(fig, self.amp_phase_vs_channel_plot)
+        _save_fig(fig, self.amp_phase_vs_channel_plot)
         self._output.amp_phase_vs_channel_plot = self.amp_phase_vs_channel_plot
-
-    def gain_caltable(self):
-        """Plot gain caltable amplitude and phase per antenna.
-        Works for tables produced by gaincal (TYPE='G Jones')."""
-        logger.debug("Diagnostics: gain_caltable")
-        with open_table(self.gcal) as tb:
-            gains = tb.getcol("CPARAM")  # (npol, 1, nrow)
-            flags = tb.getcol("FLAG")
-            ant_col = tb.getcol("ANTENNA1")
-
-        names, amps, phases = [], [], []
-        for idx, name in zip(self._active_antenna_indices, self._antenna_names):
-            mask = (ant_col == idx) & ~flags[0, 0, :]
-            if not np.any(mask):
-                continue
-            g = gains[0, 0, mask]
-            amps.append(float(np.abs(g).mean()))
-            phases.append(float(np.angle(g, deg=True).mean()))
-            names.append(name)
-
-        x = np.arange(len(names))
-        colors = [self._antenna_colors[self._antenna_names.index(n)] for n in names]
-        amp_array = np.array(amps)
-        phase_array = np.array(phases)
-        amp_pad = (amp_array.max() - amp_array.min()) * 0.5 or 0.01
-        phase_pad = (phase_array.max() - phase_array.min()) * 0.5 or 1.0
-
-        fig, axes = self._amp_phase_fig(
-            xlabel="Antenna",
-            title_amp="Gain Amplitude — pol 0",
-            title_phase="Gain Phase — pol 0",
-        )
-        axes[0].bar(x, amps, color=colors, edgecolor="navy", lw=0.5)
-        axes[0].set_ylim(amp_array.min() - amp_pad, amp_array.max() + amp_pad)
-
-        axes[1].bar(x, phases, color=colors, edgecolor="navy", lw=0.5)
-        axes[1].set_ylim(phase_array.min() - phase_pad, phase_array.max() + phase_pad)
-        axes[1].set_xticks(x)
-        axes[1].set_xticklabels(names, rotation=45, ha="right", fontsize=8)
-
-        self._save(fig, self.gain_caltable_plot)
-        self._output.gain_caltable_plot = self.gain_caltable_plot
-
-    def bandpass_caltable(self):
-        """Plot bandpass caltable amplitude and phase vs. channel, per antenna.
-        Works for tables produced by bandpass (TYPE='B Jones')."""
-        logger.debug("Diagnostics: bandpass_caltable")
-        with open_table(self.bpcal) as tb:
-            gains = tb.getcol("CPARAM")  # (npol, nchan, nrow)
-            flags = tb.getcol("FLAG")
-            ant_col = tb.getcol("ANTENNA1")
-
-        nchan = gains.shape[1]
-        channels = np.arange(nchan)
-
-        fig, axes = self._amp_phase_fig(
-            xlabel="Channel",
-            title_amp="Bandpass Amplitude — pol 0",
-            title_phase="Bandpass Phase — pol 0",
-        )
-        axes[1].set_xlim(channels.min(), channels.max())
-
-        for i, _ in enumerate(self._antenna_names):
-            mask = ant_col == self._active_antenna_indices[i]  # use actual MS antenna index
-            if not np.any(mask):
-                continue
-            g = gains[0, :, mask].T
-            fl = flags[0, :, mask].T
-            g = np.where(fl, np.nan + 0j, g)
-            g_mean = np.nanmean(g, axis=1)
-
-            axes[0].plot(channels, np.abs(g_mean), color=self._antenna_colors[i], lw=0.8, alpha=0.8)
-            axes[1].plot(channels, np.angle(g_mean, deg=True), color=self._antenna_colors[i], lw=0.8, alpha=0.8)
-
-        fig.legend(
-            handles=self._antenna_legend_handles("line"), loc="center right", fontsize=7, bbox_to_anchor=(1.08, 0.5)
-        )
-        self._save(fig, self.bandpass_caltable_plot)
-        self._output.bandpass_caltable_plot = self.bandpass_caltable_plot
 
     def antenna_positions(self):
         """Plot antenna positions (ENU) with names labelled."""
@@ -399,7 +271,7 @@ class MSDiagnostics(BaseModel):
         ax.set_aspect("equal")
         ax.grid(True, alpha=0.3)
 
-        self._save(fig, self.antenna_positions_plot)
+        _save_fig(fig, self.antenna_positions_plot)
         self._output.antenna_positions_plot = self.antenna_positions_plot
 
     def flag_summary(self):
@@ -453,7 +325,7 @@ class MSDiagnostics(BaseModel):
                 style="italic",
             )
 
-        self._save(fig, self.flag_summary_plot)
+        _save_fig(fig, self.flag_summary_plot)
         self._output.flag_summary_plot = self.flag_summary_plot
 
         # To JSON
@@ -505,7 +377,7 @@ class MSDiagnostics(BaseModel):
         ax.set_title(f"Per-Antenna Amplitude Statistics ({datacolumn}, spw={self.spw})")
         ax.grid(True, axis="y", alpha=0.3)
 
-        self._save(fig, self.antenna_amp_stats_plot)
+        _save_fig(fig, self.antenna_amp_stats_plot)
         self._output.antenna_amp_stats_plot = self.antenna_amp_stats_plot
 
         stats = {
@@ -532,23 +404,12 @@ class MSDiagnostics(BaseModel):
         self.amp_phase_vs_channel()
         self.antenna_amp_stats()
 
-        if self.gcal:
-            logger.debug(f"Gain table supplied. Will create diagnostics for: {self.gcal}")
-            self.gain_caltable()
-        if self.bpcal:
-            logger.debug(f"Bandpass table supplied. Will create diagnostics for: {self.bpcal}")
-            self.bandpass_caltable()
 
-
-class DiagnosticsContext(NeedleContext):
+class MSDiagnosticsContext(NeedleContext):
     """Wraps execution of MS Diagnostics"""
 
     ms: Path
     "Path to the measurement set to perform diagnostics for"
-    gcal: Path | None = None
-    "Path to the gain cal solution table"
-    bpcal: Path | None = None
-    "Path to the gain bpcal solution table"
     output_dir: Path | None = None
     "Location to output the diagnostics to"
 
@@ -559,19 +420,193 @@ class DiagnosticsContext(NeedleContext):
         return ms
 
     def execute(self) -> MSDiagnostics:
-        msd = MSDiagnostics(ms=self.ms, gcal=self.gcal, bpcal=self.bpcal, output_dir=self.output_dir)
+        msd = MSDiagnostics(ms=self.ms, output_dir=self.output_dir)
         msd.run_all_diagnostics()
         return msd
 
 
-def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
+class CalDiagnosticsOutput(BaseModel):
+    gain_caltable_plot: Path | None = None
+    bandpass_caltable_plot: Path | None = None
+
+    @property
+    def all_files(self) -> list[Path]:
+        return [getattr(self, p) for p in self.model_fields_set if getattr(self, p) is not None]
+
+
+class CalDiagnostics(BaseModel):
+    """Class to take care of Calibration Solution Diagnostics computation"""
+
+    solution: CalibrationSolution
+    "The gain/bandpass calibration solution pair to diagnose"
+    output_dir: Path | None = None
+    "Location to output the diagnostics to"
+    _output: CalDiagnosticsOutput
+
+    def model_post_init(self, __context):
+        if self.output_dir is None:
+            self.output_dir = self.solution.gcal.parent
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        object.__setattr__(self, "_output", CalDiagnosticsOutput())
+
+    @property
+    def gcal(self) -> Path:
+        return self.solution.gcal
+
+    @property
+    def bpcal(self) -> Path:
+        return self.solution.bpcal
+
+    @property
+    def gain_caltable_plot(self) -> Path:
+        return self.output_dir / f"{self.gcal.stem}_gain_caltable.png"
+
+    @property
+    def bandpass_caltable_plot(self) -> Path:
+        return self.output_dir / f"{self.bpcal.stem}_bandpass_caltable.png"
+
+    @cached_property
+    def _active_antenna_indices(self) -> list[int]:
+        """Antenna indices that actually appear in the gain solution."""
+        with open_table(self.gcal) as tb:
+            ant1 = tb.getcol("ANTENNA1")
+        return list(np.unique(ant1))
+
+    @cached_property
+    def _antenna_names(self) -> list[str]:
+        with open_table(self.gcal / "ANTENNA") as tb:
+            all_names = tb.getcol("NAME")
+        return [all_names[i] for i in self._active_antenna_indices]
+
+    @cached_property
+    def _antenna_colors(self):
+        cmap = plt.get_cmap("plasma")
+        n = len(self._antenna_names)
+        return [cmap(i / (n - 1)) for i in range(n)]
+
+    def to_output(self) -> CalDiagnosticsOutput:
+        return self._output
+
+    def gain_caltable(self):
+        """Plot gain caltable amplitude and phase per antenna."""
+        logger.debug("Diagnostics: gain_caltable")
+        with open_table(self.gcal) as tb:
+            gains = tb.getcol("CPARAM")
+            flags = tb.getcol("FLAG")
+            ant_col = tb.getcol("ANTENNA1")
+
+        names, amps, phases = [], [], []
+        for idx, name in zip(self._active_antenna_indices, self._antenna_names):
+            mask = (ant_col == idx) & ~flags[0, 0, :]
+            if not np.any(mask):
+                continue
+            g = gains[0, 0, mask]
+            amps.append(float(np.abs(g).mean()))
+            phases.append(float(np.angle(g, deg=True).mean()))
+            names.append(name)
+
+        x = np.arange(len(names))
+        colors = [self._antenna_colors[self._antenna_names.index(n)] for n in names]
+        amp_array = np.array(amps)
+        phase_array = np.array(phases)
+        amp_pad = (amp_array.max() - amp_array.min()) * 0.5 or 0.01
+        phase_pad = (phase_array.max() - phase_array.min()) * 0.5 or 1.0
+
+        fig, axes = _amp_phase_fig(
+            xlabel="Antenna",
+            title_amp="Gain Amplitude — pol 0",
+            title_phase="Gain Phase — pol 0",
+        )
+        axes[0].bar(x, amps, color=colors, edgecolor="navy", lw=0.5)
+        axes[0].set_ylim(amp_array.min() - amp_pad, amp_array.max() + amp_pad)
+
+        axes[1].bar(x, phases, color=colors, edgecolor="navy", lw=0.5)
+        axes[1].set_ylim(phase_array.min() - phase_pad, phase_array.max() + phase_pad)
+        axes[1].set_xticks(x)
+        axes[1].set_xticklabels(names, rotation=45, ha="right", fontsize=8)
+
+        _save_fig(fig, self.gain_caltable_plot)
+        self._output.gain_caltable_plot = self.gain_caltable_plot
+
+    def bandpass_caltable(self):
+        """Plot bandpass caltable amplitude and phase vs. channel, per antenna."""
+        logger.debug("Diagnostics: bandpass_caltable")
+        with open_table(self.bpcal) as tb:
+            gains = tb.getcol("CPARAM")
+            flags = tb.getcol("FLAG")
+            ant_col = tb.getcol("ANTENNA1")
+
+        nchan = gains.shape[1]
+        channels = np.arange(nchan)
+
+        fig, axes = _amp_phase_fig(
+            xlabel="Channel",
+            title_amp="Bandpass Amplitude — pol 0",
+            title_phase="Bandpass Phase — pol 0",
+        )
+        axes[1].set_xlim(channels.min(), channels.max())
+
+        for i, _ in enumerate(self._antenna_names):
+            mask = ant_col == self._active_antenna_indices[i]
+            if not np.any(mask):
+                continue
+            g = gains[0, :, mask].T
+            fl = flags[0, :, mask].T
+            g = np.where(fl, np.nan + 0j, g)
+            g_mean = np.nanmean(g, axis=1)
+
+            axes[0].plot(channels, np.abs(g_mean), color=self._antenna_colors[i], lw=0.8, alpha=0.8)
+            axes[1].plot(channels, np.angle(g_mean, deg=True), color=self._antenna_colors[i], lw=0.8, alpha=0.8)
+
+        _save_fig(fig, self.bandpass_caltable_plot)
+        self._output.bandpass_caltable_plot = self.bandpass_caltable_plot
+
+    def run_all_diagnostics(self):
+        logger.info(f"Running calibration diagnostics on: {self.gcal}, {self.bpcal}")
+        logger.debug(f"Output directory: {self.output_dir}\n")
+        self.gain_caltable()
+        self.bandpass_caltable()
+
+
+class CalDiagnosticsContext(NeedleContext):
+    """Wraps execution of Calibration Solution Diagnostics"""
+
+    solution: CalibrationSolution
+    output_dir: Path | None = None
+
+    def execute(self) -> CalDiagnostics:
+        cd = CalDiagnostics(solution=self.solution, output_dir=self.output_dir)
+        cd.run_all_diagnostics()
+        return cd
+
+
+def _amp_phase_fig(xlabel: str, title_amp: str, title_phase: str) -> tuple[plt.Figure, np.ndarray]:
+    fig, axes = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+    axes[0].set_ylabel("Amplitude")
+    axes[0].set_title(title_amp)
+    axes[0].grid(True, alpha=0.3)
+    axes[1].set_ylabel("Phase (deg)")
+    axes[1].set_xlabel(xlabel)
+    axes[1].set_title(title_phase)
+    axes[1].set_ylim(-185, 185)
+    axes[1].grid(True, alpha=0.3)
+    return fig, axes
+
+
+def _save_fig(fig: plt.Figure, path: Path):
+    plt.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    logger.info(f"Saved plot: {path}")
+    plt.close(fig)
+
+
+def run_diagnostics(ctx: MSDiagnosticsContext | CalDiagnosticsContext) -> MSDiagnosticsOutput | CalDiagnosticsOutput:
     """Runs all diagnostics and returns the output object
 
     :param ctx: The DiagnosticsContext object
     :return: The DiagnosticsOutput object - contains paths of output files.
     """
-    msd = ctx.execute()
-    return msd.to_output()
+    return ctx.execute().to_output()
 
 
 @click.command(
@@ -583,6 +618,36 @@ def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
     type=click.Path(dir_okay=True, file_okay=False, exists=True, path_type=Path),
     required=True,
     help="The path to measurement set",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+    help="Directory to write the output diagnostics to. If not supplied, will use the parent of the MS",
+)
+@click.option(
+    "--log-level",
+    "--log_level",
+    "-l",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    default="INFO",
+    help="The minimum threshold logging level",
+)
+def _ms_diagnostics(ms: Path, gcal: Path, bpcal: Path, output_dir: Optional[Path], log_level: str):
+    setup_logging(log_level)
+    ctx = MSDiagnosticsContext(
+        ms=ms,
+        gcal=gcal,
+        bpcal=bpcal,
+        output_dir=output_dir,
+    )
+    run_diagnostics(ctx)
+
+
+@click.command(
+    name="diagnostics",
+    help="Run diagnostics on a measurement set. Optionally supply bandpass/gain calibrators. Plots and data are written to files.",
 )
 @click.option(
     "--gcal",
@@ -613,16 +678,22 @@ def diagnostics(ctx: DiagnosticsContext) -> DiagnosticsOutput:
     default="INFO",
     help="The minimum threshold logging level",
 )
-def entrypoint(ms: Path, gcal: Path, bpcal: Path, output_dir: Optional[Path], log_level: str):
+def _cal_diagnostics(gcal: Path, bpcal: Path, output_dir: Optional[Path], log_level: str):
     setup_logging(log_level)
-    ctx = DiagnosticsContext(
-        ms=ms,
-        gcal=gcal,
-        bpcal=bpcal,
-        output_dir=output_dir,
-    )
-    diagnostics(ctx)
+    ctx = CalDiagnosticsContext(solution=CalibrationSolution(gcal=gcal, bpcal=bpcal), output_dir=output_dir)
+    run_diagnostics(ctx)
 
+
+entrypoint = click.Group(
+    name="calibrate",
+    help="""Calibration steps on a measurement set
+
+    ms :: Run diagnostics on a measurement set
+    cal :: Run diagnostics on a calibration solution set
+    """,
+)
+for _cmd in (_ms_diagnostics, _cal_diagnostics):
+    entrypoint.add_command(_cmd)
 
 if __name__ == "__main__":
     entrypoint()

@@ -158,8 +158,12 @@ class ClusterConfig(NeedleModel):
             cluster_kwargs.update(self.local.model_dump(exclude_none=True))
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
-        cluster = cluster_class(**cluster_kwargs)
-        cluster.adapt(**self.scaling.adapt_kwargs)
+        try:
+            cluster = cluster_class(**cluster_kwargs)
+            cluster.adapt(**self.scaling.adapt_kwargs)
+        except Exception:
+            logger.error(f"Could not crate cluster with config: f{cluster_class}")
+            raise
 
         return cluster
 

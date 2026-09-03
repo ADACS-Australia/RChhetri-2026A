@@ -3,15 +3,6 @@ from unittest.mock import MagicMock, patch
 from needle.modules.convert import ConvertContext, convert_to_ms
 
 
-def test_convert_context_output():
-    """Test output path resolution in ConvertContext."""
-    ctx = ConvertContext(input=Path("test.uvfits"))
-    assert ctx.output == Path("test.ms")
-
-    ctx2 = ConvertContext(input=Path("test.uvfits"), output_dir=Path("/tmp"))
-    assert ctx2.output == Path("/tmp/test.ms")
-
-
 def test_convert_context_cmd_uvfits():
     """Test command generation for UVFITS to MS conversion."""
     ctx = ConvertContext(input=Path("test.uvfits"))
@@ -45,9 +36,9 @@ def test_convert_to_ms(mock_execute, tmp_path):
     input_path = tmp_path / "test.uvfits"
     input_path.touch()
 
-    ctx = ConvertContext(input=input_path, output_dir=tmp_path / "out")
+    ctx = ConvertContext(input=input_path)
     assert not ctx.output.exists()  # ensure output doesn't exist so it runs
 
     result = convert_to_ms(ctx)
-    assert result == tmp_path / "out" / "test.ms"
+    assert result == tmp_path / "test.ms"
     assert mock_execute.called

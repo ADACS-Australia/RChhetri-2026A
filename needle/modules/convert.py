@@ -17,13 +17,8 @@ class ConvertContext(SubprocessExecContext):
     input: Path
     "The path to the file to convert to a measurement set"
 
-    output_dir: Optional[Path] = None
-    "The directory to output the converted file to"
-
     @property
     def output(self) -> Path:
-        if self.output_dir:
-            return self.output_dir / self.input.with_suffix(".ms").name
         return self.input.with_suffix(".ms")
 
     @property
@@ -40,20 +35,11 @@ class ConvertContext(SubprocessExecContext):
             case ".mir":
                 expr = f"from casatasks import importmiriad; importmiriad(mirfile='{self.input}', vis='{self.output}')"
             case ".ms":
-                if self.output_dir:  # Copy to the provided output directory
-                    if not self.output.exists():
-                        logger.info(f"Copying {self.input} -> {self.output}")
-                        expr = f"from casatools import table; tb=table(); tb.open('{self.input}'); tb.copy(newtablename='{self.output}', deep=True)"
-                    else:
-                        logger.info(f"MS already exists at {self.output}, skipping copy")
-                        return [[]]
-                else:
-                    logger.info(f"Input {self.input} is already an MS and no output_dir provided, skipping")
-                    return [[]]
+                return [[]]  # No-op
             case _:
                 raise Exception(f"Unsupported file type: {self.input.suffix}")
 
-        return [["python3", "-c", expr]]  # execute() expects a list of lists
+        return [["python3", "-c", expr]]
 
 
 def convert_to_ms(ctx: ConvertContext) -> Path:
@@ -83,13 +69,6 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
 @click.argument(
     "input",
     type=click.Path(dir_okay=True, file_okay=True, exists=True, path_type=Path),
-)
-@click.option(
-    "--output-dir",
-    "-o",
-    type=click.Path(exists=False, path_type=Path),
-    default=None,
-    help="Directory to write the output MS to",
 )
 def entrypoint(input: Path, output_dir: Optional[Path] = None):
     ctx = ConvertContext(input=input, output_dir=output_dir)
