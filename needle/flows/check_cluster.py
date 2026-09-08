@@ -9,7 +9,7 @@ from prefect.task_runners import ThreadPoolTaskRunner
 
 from needle.config.cluster import ClusterConfig
 from needle.lib.logging import setup_logging
-from needle.tasks.test_cluster import wait_for_worker_task, run_test_job_task
+from needle.tasks.check_cluster import wait_for_worker_task, run_test_job_task
 
 
 @flow(task_runner=ThreadPoolTaskRunner(max_workers=1))
