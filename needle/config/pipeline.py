@@ -4,7 +4,7 @@ import traceback
 from typing import Optional, Literal
 import yaml
 
-from pydantic import ValidationError
+from pydantic import ValidationError, model_validator
 
 from needle.config.base import NeedleModel
 from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig
@@ -35,6 +35,9 @@ class PipelineFlowConfig(NeedleModel):
 
     interval_tasks: int = 1
     "The number of tasks to split the interval cleaning into per beam"
+
+    skip_to_deep_clean: bool = False
+    "Skip shallow clean and source finding by using WSClean's auto-masking to determine source locations. Requires deep_clean.auto_mask to be set."
 
 
 class NeedleConfig(NeedleModel):
@@ -75,6 +78,27 @@ class NeedleConfig(NeedleModel):
 
     interval_clean: IntervalCleanConfig = IntervalCleanConfig()
     "Deep clean config"
+
+    @model_validator(mode="after")
+    def _check_skip_to_deep_clean(self) -> "NeedleConfig":
+        """If the skip_to_deep_clean flag is set or unset in the PipelineFlowConfig, it should also be set appropriately
+        in the deep_clean_config."""
+        if self.flow.skip_to_deep_clean:
+            if self.deep_clean.auto_mask is None or self.interval_clean.auto_mask is None:
+                raise ValueError(
+                    "deep_clean.auto_mask and interval_clean.auto_mask must be set for flow.skip_to_deep_clean to be set"
+                )
+            if self.deep_clean.auto_threshold is None or self.interval_clean.auto_threshold is None:
+                raise ValueError(
+                    "deep_clean.auto_threshold and interval_clean.auto_threshold must be set for flow.skip_to_deep_clean to be set"
+                )
+        elif self.deep_clean.auto_mask:
+            logging.warning("deep_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
+        elif self.interval_clean.auto_mask:
+            logging.warning(
+                "interval_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on"
+            )
+        return self
 
     @classmethod
     def load(cls, source: Path | str | dict) -> "NeedleConfig":

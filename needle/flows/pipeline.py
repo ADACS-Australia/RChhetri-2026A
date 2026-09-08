@@ -1,11 +1,10 @@
 from pathlib import Path
-from typing import Tuple
 
+from distributed import Client
 from prefect import Flow, flow, unmapped
 from prefect.futures import PrefectFuture
-from prefect.task_runners import ThreadPoolTaskRunner
 from prefect.runtime import flow_run
-from distributed import Client
+from prefect.task_runners import ThreadPoolTaskRunner
 
 from needle.tasks.utils import extract_cal_task, extract_tgt_task
 from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
@@ -25,6 +24,7 @@ from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
 
 FutureList = list[PrefectFuture]
+OptionalFutureList = list[PrefectFuture | None]
 
 
 def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[tuple[int, int]]:
@@ -50,25 +50,6 @@ def _unmapped_defaults(cfg: NeedleConfig) -> dict:
     return {"log_level": unmapped(cfg.flow.log_level)}
 
 
-def _inspect_and_diagnose(
-    client: Client, cfg: NeedleConfig, f_tgt: FutureList, f_cal: FutureList, f_cal_output: FutureList
-) -> Tuple[FutureList, FutureList, FutureList, FutureList, FutureList]:
-    """Inspects the data and runs diagnostics on it"""
-    defaults = _unmapped_defaults(cfg)
-
-    # Inspect the tgt and cal source
-    f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
-    f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
-
-    # Run diagnostics on the calibrator and tgt MS
-    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
-    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
-
-    # Run diagnostics on calibrated target and calibrator solution tables
-    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
-    return (f_inspect_cal, f_inspect_tgt, f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics)
-
-
 def _source_find_and_mask(client: Client, cfg: NeedleConfig, f_shallow_image: FutureList) -> FutureList:
     """Source find on an image and create a mask"""
     defaults = _unmapped_defaults(cfg)
@@ -83,7 +64,7 @@ def _expand_intervals(
     f_tgt: FutureList,
     f_inspect_tgt: FutureList,
     f_model_subtract: FutureList,
-    f_mask: FutureList,
+    f_mask: OptionalFutureList,
     n_intervals: int,
 ) -> tuple[FutureList, FutureList, FutureList, list[tuple[int, int]]]:
     """Compute intervals per MS and flatten everything for mapping.
@@ -117,9 +98,17 @@ def _pipeline_flow_name() -> str:
     persist_result=True,
     flow_run_name=_pipeline_flow_name,
 )
-def needle_pipeline(client: Client, cfg: NeedleConfig, work_dir: Path | str) -> Flow:
+def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str) -> Flow:
+    """The needle pipeline. Runs all operations end-to-end.
+    Note - the client must be created in-flow as the Client object cannot be json-serialized.
+
+    :param cfg: The needle config object. Contains all static configuration options for the run.
+    :param client_address: The addresss of the running Dask scheduler. Used to construct the Dask client.
+    :param work_dir: The directory containing all of the data to work with.
+    """
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
+    client = Client(client_address)
     defaults = _unmapped_defaults(cfg)
 
     # Update the casa measures dataset before doing anything
@@ -152,13 +141,20 @@ def needle_pipeline(client: Client, cfg: NeedleConfig, work_dir: Path | str) -> 
     f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
 
     # Clean, mask and model subtract
-    f_shallow_image = clean_task.with_options(name="shallow_clean").map(
-        unmapped(client), f_tgt, cfg=unmapped(cfg.shallow_clean), **defaults
-    )
-    f_mask = _source_find_and_mask(client=client, cfg=cfg, f_shallow_image=f_shallow_image)
-    f_deep_image = clean_task.with_options(name="deep_clean").map(
-        unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
-    )
+    if cfg.flow.skip_to_deep_clean:  # Auto-masking route
+        f_deep_image = clean_task.with_options(name="auto_mask_deep_clean").map(
+            unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), **defaults
+        )
+        f_mask = [None] * len(f_tgt)
+    else:  # Source-finding route
+        f_shallow_image = clean_task.with_options(name="shallow_clean").map(
+            unmapped(client), f_tgt, cfg=unmapped(cfg.shallow_clean), **defaults
+        )
+        f_mask = _source_find_and_mask(client=client, cfg=cfg, f_shallow_image=f_shallow_image)
+        f_deep_image = clean_task.with_options(name="deep_clean").map(
+            unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
+        )
+    # Model creation - generates the MODEL_DATA column
     f_model_create = predict_task.map(
         unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults
     )
