@@ -29,14 +29,15 @@ jobs:
 
       - name: Build and base Docker image
         run: |
-          docker build -t needle-base:${{ steps.version.outputs.tag }} container/base.Dockerfile
+          ls -ltrh container
+          docker build -t needle-base:${{ steps.version.outputs.tag }} -f container/base.Dockerfile .
 
       - name: Build Needle image
         run: |
           docker build \
             --build-arg BASE_IMAGE=needle-base \
             --build-arg BASE_VERSION=${{ steps.version.outputs.tag }} \
-            -t needle:${{ steps.version.outputs.tag }} container/needle.Dockerfile
+            -t needle:${{ steps.version.outputs.tag }} -f container/needle.Dockerfile .
 
       - name: Install Apptainer
         run: |
