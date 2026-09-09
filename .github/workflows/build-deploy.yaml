@@ -1,0 +1,64 @@
+name: build-and-deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+      packages: write
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+        os: [ubuntu-26.04]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version tag
+        id: version
+        run: echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Build and base Docker image
+        run: |
+          docker build -t needle-base:${{ steps.version.outputs.tag }} container/base.Dockerfile
+
+      - name: Build Needle image
+        run: |
+          docker build \
+            --build-arg BASE_IMAGE=needle-base \
+            --build-arg BASE_VERSION=${{ steps.version.outputs.tag }} \
+            -t needle:${{ steps.version.outputs.tag }} container/needle.Dockerfile
+
+      - name: Install Apptainer
+        run: |
+          wget https://github.com/apptainer/apptainer/releases/download/v1.4.2/apptainer_1.4.2_amd64.deb
+          sudo apt-get install -y ./apptainer_1.4.2_amd64.deb
+
+      - name: Convert iamge to SIF
+        run: apptainer build needle.sif docker-daemon://needle:${{ steps.version.outputs.tag }}
+
+      - name: Create release
+        run: gh release create ${{ steps.version.outputs.tag }} dist/*.whl --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Push SIF to GHCR
+        run: |
+          echo "${{ github.token }}" | apptainer remote login -u ${{ github.actor }} --password-stdin oras://ghcr.io
+          apptainer push needle.sif oras://ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
+
+      - name: Trigger Prefect flow
+        run: |
+          curl -X POST "${{ secrets.PREFECT_WEBHOOK_URL }}" \
+            -u "${{ secrets.PREFECT_AUTH_STRING }}" \
+            -H "Content-Type: application/json" \
+            -d '{"release_tag": "${{ steps.version.outputs.tag }}", "image_tag": "${{ steps.version.outputs.tag }}"}'
