@@ -72,15 +72,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Push SIF to GHCR
+      - name: Push SIF to Docker Hub
+        id: image
         run: |
-          IMAGE_PATH=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
-          echo "${{ github.token }}" | apptainer registry login -u ${{ github.actor }} --password-stdin oras://ghcr.io
-          apptainer push needle.sif oras://ghcr.io/${IMAGE_PATH}:${{ steps.version.outputs.tag }}
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | apptainer registry login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin oras://docker.io
+          apptainer push needle.sif oras://docker.io/"${{ secrets.DOCKERHUB_USERNAME }}"/needle:${{ steps.version.outputs.tag }}
+          apptainer push needle.sif oras://docker.io/"${{ secrets.DOCKERHUB_USERNAME }}"/needle:latest
+          echo "uri=oras://docker.io/${{ secrets.DOCKERHUB_USERNAME }}/needle:${{ steps.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger Prefect flow
         run: |
           curl -X POST "${{ secrets.PREFECT_WEBHOOK_URL }}" \
             -u "${{ secrets.PREFECT_AUTH_STRING }}" \
             -H "Content-Type: application/json" \
-            -d '{"release_tag": "${{ steps.version.outputs.tag }}", "image_tag": "${{ steps.version.outputs.tag }}"}'
+            -d '{"release_tag": "${{ steps.version.outputs.tag }}", "image_uri": "${{ steps.image.outputs.uri }}"}'
