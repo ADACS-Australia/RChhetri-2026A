@@ -49,15 +49,16 @@ jobs:
             --build-arg BASE_VERSION=${{ steps.version.outputs.tag }} \
             -t needle:${{ steps.version.outputs.tag }} -f container/needle.Dockerfile .
 
-      - name: Debug libfuse3
-        run: |
-          sudo apt-get update
-          apt-cache policy libfuse3-3
-          sudo apt-get install -y libfuse3-3
-
       - name: Install Apptainer
         run: |
           sudo apt-get update
+          if apt-cache show libfuse3-4 >/dev/null 2>&1; then
+            sudo apt-get install -y libfuse3-4
+            DEB_SUFFIX="-trixie+"
+          else
+            sudo apt-get install -y libfuse3-3
+            DEB_SUFFIX=""
+          fi
           wget https://github.com/apptainer/apptainer/releases/download/v1.4.2/apptainer_1.4.2_amd64.deb
           sudo apt-get install -y ./apptainer_1.4.2_amd64.deb
 
