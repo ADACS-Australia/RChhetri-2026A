@@ -27,6 +27,16 @@ jobs:
           pip install build
           python -m build --wheel
 
+      - name: Ensure gh CLI is available
+        run: |
+          type -p gh >/dev/null || (
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y gh
+          )
+
       - name: Build and base Docker image
         run: |
           ls -ltrh container
@@ -41,21 +51,25 @@ jobs:
 
       - name: Install Apptainer
         run: |
+          sudo apt-get update
           wget https://github.com/apptainer/apptainer/releases/download/v1.4.2/apptainer_1.4.2_amd64.deb
           sudo apt-get install -y ./apptainer_1.4.2_amd64.deb
 
-      - name: Convert iamge to SIF
+      - name: Convert image to SIF
         run: apptainer build needle.sif docker-daemon://needle:${{ steps.version.outputs.tag }}
 
       - name: Create release
-        run: gh release create ${{ steps.version.outputs.tag }} dist/*.whl --generate-notes
+        run: |
+          gh release delete ${{ steps.version.outputs.tag }} --yes --cleanup-tag || true
+          gh release create ${{ steps.version.outputs.tag }} dist/*.whl --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Push SIF to GHCR
         run: |
-          echo "${{ github.token }}" | apptainer remote login -u ${{ github.actor }} --password-stdin oras://ghcr.io
-          apptainer push needle.sif oras://ghcr.io/${{ github.repository }}:${{ steps.version.outputs.tag }}
+          IMAGE_PATH=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')
+          echo "${{ github.token }}" | apptainer registry login -u ${{ github.actor }} --password-stdin oras://ghcr.io
+          apptainer push needle.sif oras://ghcr.io/${IMAGE_PATH}:${{ steps.version.outputs.tag }}
 
       - name: Trigger Prefect flow
         run: |
