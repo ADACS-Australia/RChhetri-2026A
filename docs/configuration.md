@@ -1,6 +1,6 @@
 # Configuration
 
-## Environment Variables (.env)
+## Environment Variables (.env) and Setup
 
 Prefect requires a few things set in .env to work properly:
 
@@ -18,12 +18,13 @@ export PREFECT_RESULTS_PERSIST_BY_DEFAULT="true"
 ```
 
 It is good practice to `chmod 600` the .env file to prevent prying eyes.
+You could also source the `.env` in your `~/.bashrc`, which would enable you to run the workflow from anywhere.
 
 ## Needle Pipeline
 
 Needle revolves around its main pipeline. The order and structure of the pipeline's processing steps is largely fixed by design.
 
-The user may know more about their dataset or working environment than the pipeline does. Therefore, every module in the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the characteristics of a given dataset.
+The user may know more about their dataset or working environment than the pipeline assumes. Therefore, every module in the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the characteristics of a given dataset.
 
 To see which parameters are available for each module, see the module's appropriate config (example - [clean config][needle.config.clean.WSCleanConfig])
 
@@ -57,7 +58,7 @@ watcher:
   log_file: /path/to/log/output/watcher.log
 
 data:
-  # Path or local S3 bucket location of source data
+  # Local path or S3 bucket pointing to source data
   source: /path/to/data/source/directory
   # Local directory to work in
   staging_dir: /path/to/place/working/files
@@ -79,6 +80,7 @@ flow:
   log_level: DEBUG
   max_workers: 4
   interval_tasks: 2
+  skip_to_deep_clean: false
 
 data:
   # Using S3 as a source
@@ -157,8 +159,6 @@ deep_clean:
   size: 8192
   scale: "2asec"
   niter: 100000
-  auto_mask: 5.0
-  auto_threshold: 1.0
   minuv_l: 500.0
 
 model_subtract:
@@ -167,7 +167,6 @@ model_subtract:
 
 interval_clean:
   niter: 1000
-  auto_threshold: 3.0
   scale: "5asec"
 ```
 
@@ -212,30 +211,29 @@ scaling:
 
 container:
   image: /path/to/image/needle.sif
-  type: singularity # either 'singularity' or 'apptainer'
+  type: apptainer # either 'singularity' or 'apptainer'
   binds:
+    # Make sure you bind mound all of the directories the compute nodes need to work in
     - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts - this one is highly recommended
-    - /scratch/pawsey0008/ksmith1/needle_data:/scratch/pawsey0008/ksmith1/needle_data # This should be mounted automatically but just in case
+    - /fred/oz513:/fred/oz513
+    - /aphid/scratch-3month/ksmith:/aphid/scratch-3month/ksmith
 
 slurm:
   # Each of the slurm directives are applied to each dask worker
-  account: "pawsey0008"
-  queue: "work"
+  account: "oz513"
   cores: 1 # Some tools are not thread safe, so it's recommended to keep cores and processes = 1
   processes: 1
   memory: "64GB"
-  walltime: "02:00:00"
+  walltime: "01:00:00"
 
   # A directory for Dask operational files
-  local_directory: "/scratch/pawsey0008/ksmith1/needle_data/dask-scratch"
+  local_directory: /fred/oz513/needle_data/dask-scratch
   # A directory for Dask to output its logs
-  log_directory: "/scratch/pawsey0008/ksmith1/needle_data/logs"
+  log_directory: /aphid/scratch-3month/ksmith/needle_logs
 
   # Commands to execute per-job before running the task
   job_script_prologue:
-    - "module load singularity/4.1.0-slurm"
-    # Make sure you've set up the .env file
-    - "source /software/projects/pawsey0008/$USER/needle/.env"
+    - "module load apptainer"
     # If running a local server, you need to port-forward to the host machine
     # DO NOT DO THIS if you are not running a local server. It's a hacky workaround for development and testing.
     - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
