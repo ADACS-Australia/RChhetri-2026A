@@ -1,7 +1,16 @@
 name: build-and-deploy
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: "Override the version tag (leave blank for auto)"
+        required: false
+        type: string
+      tag_latest:
+        description: "Tag this image as latest"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -19,7 +28,12 @@ jobs:
 
       - name: Get version tag
         id: version
-        run: echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ -n "${{ github.event.inputs.version_override }}" ]; then
+            echo "tag=${{ github.event.inputs.version_override }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(date +%Y%m%d)-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: actions/setup-python@v5
         with: { python-version: "3.13" }
@@ -76,8 +90,10 @@ jobs:
         id: image
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | apptainer registry login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin oras://docker.io
-          apptainer push needle.sif oras://docker.io/"${{ secrets.DOCKERHUB_USERNAME }}"/needle:${{ steps.version.outputs.tag }}
-          apptainer push needle.sif oras://docker.io/"${{ secrets.DOCKERHUB_USERNAME }}"/needle:latest
+          apptainer push needle.sif "oras://docker.io/${{ secrets.DOCKERHUB_USERNAME }}/needle:${{ steps.version.outputs.tag }}"
+          if [ "${{ github.event.inputs.tag_latest }}" = "true" ]; then
+            apptainer push needle.sif "oras://docker.io/${{ secrets.DOCKERHUB_USERNAME }}/needle:latest"
+          fi
           echo "uri=oras://docker.io/${{ secrets.DOCKERHUB_USERNAME }}/needle:${{ steps.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
 
       - name: Trigger Prefect flow
@@ -85,4 +101,4 @@ jobs:
           curl -X POST "${{ secrets.PREFECT_WEBHOOK_URL }}" \
             -u "${{ secrets.PREFECT_AUTH_STRING }}" \
             -H "Content-Type: application/json" \
-            -d '{"release_tag": "${{ steps.version.outputs.tag }}", "image_uri": "${{ steps.image.outputs.uri }}"}'
+            -d '{"release_tag": "${{ steps.version.outputs.tag }}", "image_uri": "${{ steps.image.outputs.uri }}", "latest": "${{ github.event.inputs.tag_latest }}" }'
