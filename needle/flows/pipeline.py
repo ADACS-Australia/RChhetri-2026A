@@ -112,7 +112,7 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str
     defaults = _unmapped_defaults(cfg)
 
     # Update the casa measures dataset before doing anything
-    update_casa_data(data_path=cfg.data.staging_dir / "casadata", runtime=ClusterConfig.get_config().container)
+    update_casa_data(data_path=cfg.data.casa_dir / "casadata", runtime=ClusterConfig.get_config().container)
 
     # Get the beam pairs to work with
     beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)

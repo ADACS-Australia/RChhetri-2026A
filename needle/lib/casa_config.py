@@ -3,27 +3,25 @@
 try:
     import os
     from pathlib import Path
-    import pwd
     import time
     import yaml  # Not native - make sure this is installed
 
-    _USER = os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
     ## Get needle configuration - required for casa measures output
-    _NEEDLE_CONFIG = Path(f"/home/{_USER}/.needle.yaml")
-
-    if not _NEEDLE_CONFIG.exists():
-        raise FileNotFoundError(f"Expected file does not exist: {_NEEDLE_CONFIG}")
-
+    _USER = os.environ.get("USER") or os.path.pwd.getpwuid(os.getuid()).pw_name
+    _HOME = os.environ.get("HOME") or Path(f"/home/{_USER}")
+    _NEEDLE_CONFIG = os.environ.get("NEEDLE_CONFIG") or Path(f"{_HOME}/.needle.yaml")
+    if not _NEEDLE_CONFIG or not _NEEDLE_CONFIG.exists():
+        raise FileNotFoundError(f"Could not find NEEDLE_CONFIG file: {_NEEDLE_CONFIG}")
     with open(_NEEDLE_CONFIG, "r") as f:
         _CFG = yaml.load(f, Loader=yaml.SafeLoader)
 
     try:
-        data_dir = _CFG["data"]["staging_dir"]
+        data_dir = _CFG["data"]["casa_dir"]
     except KeyError:
-        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.staging_dir'")
-    logs_dir = f"{data_dir}/casalogs"
+        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.casa_dir'")
 
     ## CASA Configuration for Needle ##
+    logs_dir = f"{data_dir}/casalogs"
     logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
     rundata = f"{data_dir}/.casa"
     measurespath = f"{data_dir}/casadata"

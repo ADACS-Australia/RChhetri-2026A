@@ -62,6 +62,7 @@ data:
   source: /path/to/data/source/directory
   # Local directory to work in
   staging_dir: /path/to/place/working/files
+  casa_dir: /path/to/place/casa/data
 
 flag:
   # Flag options are DISABLED by default - absent flag steps are ignored
@@ -86,6 +87,7 @@ data:
   # Using S3 as a source
   source: s3://my-observation-bucket/raw-data/
   staging_dir: /local/scratch/needle_work
+  casa_dir: /path/to/place/casa/data
   stability_check: 120
 
 watcher:

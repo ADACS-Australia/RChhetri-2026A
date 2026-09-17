@@ -48,9 +48,22 @@ def download_casa_rundata(ctx: CasaDataUpdateContext) -> None:
             logger.warning(p.stderr)
         p.check_returncode()
 
+    # Perform some checks and log data locations
+    missing = []
+    for dirname in ("alma", "catalogs", "demo", "ephemerides", "geodetic", "gui", "nrao"):
+        dir = ctx.casa_data_path / dirname
+        if dir.exists():
+            logger.info(f"{dirname} data found at {dir}")
+        else:
+            missing.append(dirname)
+
+    for dirname in missing:
+        dir = ctx.casa_data_path / dirname
+        logger.warning(f"data_update completed but {dirname} data missing. Expected at {dir}")
+
     readme_path = ctx.casa_data_path / "readme.txt"
     if readme_path.exists():
-        logger.info("CASA measures data successfully populated.")
+        logger.info(f"CASA measures data successfully populated at {ctx.casa_data_path}")
     else:
         logger.warning("data_update completed but readme.txt still not found.")
 

@@ -14,6 +14,9 @@ class DataConfig(NeedleModel):
     staging_dir: Path = Path.home() / "needle_data"
     "Local directory where received entries are staged before processing"
 
+    casa_dir: Path = Path.home() / "casa"
+    "The location to store CASA data, including measures data and logs"
+
     stability_check: int = 60
     "How long an entry must be unchanged before it is considered ready (seconds)"
 
