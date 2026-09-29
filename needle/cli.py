@@ -5,6 +5,7 @@ Many of the imports are lazy-loaded so that the CLI is more responsive.
 
 import logging
 import importlib
+import os
 import sys
 import threading
 import time
@@ -85,7 +86,8 @@ def _log_level_options(f):
 
 @click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
 def cli():
-    pass
+    # Set the umask here to allow group access to all files and folders written by the pipeline
+    os.umask(0o002)
 
 
 @cli.command()
