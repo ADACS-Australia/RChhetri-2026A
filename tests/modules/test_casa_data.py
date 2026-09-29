@@ -9,7 +9,7 @@ def test_casa_data_update_context_cmd():
     path = Path("/tmp/casa_data")
     ctx = CasaDataUpdateContext(casa_data_path=path)
     print(ctx.cmd)
-    assert ["mkdir", "-p", path] == ctx.cmd[0]
+    assert ["mkdir", "-p", "-m", "770", path] == ctx.cmd[0]
     assert ["python", "-c", "import casaconfig; casaconfig.pull_data(path='/tmp/casa_data')"] == ctx.cmd[1]
 
 

@@ -27,7 +27,12 @@ def mock_cal_solution(tmp_path):
     return CalibrationSolution(gcal=gcal, bpcal=bpcal)
 
 
-def test_move_tgt(tmp_path, mock_tgt, mock_cal_path):
+def _assert_dir_mode(path, expected_octal="770"):
+    actual = oct(path.stat().st_mode)[-3:]
+    assert actual == expected_octal, f"{path} has mode {actual}, expected {expected_octal}"
+
+
+def test_move_tgt(tmp_path, mock_tgt, mock_cal_path, no_umask):
     pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
@@ -36,9 +41,10 @@ def test_move_tgt(tmp_path, mock_tgt, mock_cal_path):
     assert pair.tgt == new_dir / "tgt.ms"
     assert pair.tgt.exists()
     assert not mock_tgt.exists()
+    _assert_dir_mode(new_dir)
 
 
-def test_move_cal_with_path(tmp_path, mock_tgt, mock_cal_path):
+def test_move_cal_with_path(tmp_path, mock_tgt, mock_cal_path, no_umask):
     pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
@@ -47,9 +53,10 @@ def test_move_cal_with_path(tmp_path, mock_tgt, mock_cal_path):
     assert pair.cal == new_dir / "cal.ms"
     assert pair.cal.exists()
     assert not mock_cal_path.exists()
+    _assert_dir_mode(new_dir)
 
 
-def test_move_cal_with_solution(tmp_path, mock_tgt, mock_cal_solution):
+def test_move_cal_with_solution(tmp_path, mock_tgt, mock_cal_solution, no_umask):
     pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_solution)
     new_dir = tmp_path / "new_location"
     orig_gcal, orig_bpcal = mock_cal_solution.gcal, mock_cal_solution.bpcal
@@ -62,9 +69,10 @@ def test_move_cal_with_solution(tmp_path, mock_tgt, mock_cal_solution):
     assert pair.cal.bpcal.exists()
     assert not orig_gcal.exists()
     assert not orig_bpcal.exists()
+    _assert_dir_mode(new_dir)
 
 
-def test_move_files_moves_both_tgt_and_cal(tmp_path, mock_tgt, mock_cal_path):
+def test_move_files_moves_both_tgt_and_cal(tmp_path, mock_tgt, mock_cal_path, no_umask):
     pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
@@ -74,3 +82,4 @@ def test_move_files_moves_both_tgt_and_cal(tmp_path, mock_tgt, mock_cal_path):
     assert pair.cal == new_dir / "cal.ms"
     assert pair.tgt.exists()
     assert pair.cal.exists()
+    _assert_dir_mode(new_dir)
