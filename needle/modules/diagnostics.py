@@ -62,7 +62,7 @@ class MSDiagnostics(BaseModel):
     def model_post_init(self, __context):
         if self.output_dir is None:
             self.output_dir: Path = self.ms.parent
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", MSDiagnosticsOutput())
 
     @property
@@ -446,7 +446,7 @@ class CalDiagnostics(BaseModel):
     def model_post_init(self, __context):
         if self.output_dir is None:
             self.output_dir = self.solution.gcal.parent
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", CalDiagnosticsOutput())
 
     @property

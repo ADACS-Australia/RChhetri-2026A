@@ -1,3 +1,4 @@
+# This is the configuration file that is run on every casa execution/import
 # https://casadocs.readthedocs.io/en/v6.4.0/api/configuration.html
 # CASA will silence exception messages, so we print them explicitly when they occur
 try:
@@ -7,9 +8,7 @@ try:
     import yaml  # Not native - make sure this is installed
 
     ## Get needle configuration - required for casa measures output
-    _USER = os.environ.get("USER") or os.path.pwd.getpwuid(os.getuid()).pw_name
-    _HOME = os.environ.get("HOME") or Path(f"/home/{_USER}")
-    _NEEDLE_CONFIG = os.environ.get("NEEDLE_CONFIG") or Path(f"{_HOME}/.needle.yaml")
+    _NEEDLE_CONFIG = Path(os.environ.get("NEEDLE_CONFIG", Path.home() / Path(".needle.yaml")))
     if not _NEEDLE_CONFIG or not _NEEDLE_CONFIG.exists():
         raise FileNotFoundError(f"Could not find NEEDLE_CONFIG file: {_NEEDLE_CONFIG}")
     with open(_NEEDLE_CONFIG, "r") as f:
@@ -31,10 +30,11 @@ try:
     nogui = True
     pipeline = True
 
+    # Group-friendly umask so the group can read/write casa dirs
+    os.umask(0o002)
     # Create the working dirs if needed
-    for p in (rundata, measurespath, logs_dir):
-        if not os.path.exists(p):
-            os.mkdir(p)
+    for p in (Path(rundata), Path(measurespath), Path(logs_dir)):
+        p.mkdir(mode=0o770, parents=True, exist_ok=True)
 except Exception as e:
     print("----------------------------------------------")
     print(f"ERROR loading casa config file: {e}")
