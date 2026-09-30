@@ -73,3 +73,28 @@ def summarize_failure(states: dict[str, int]) -> int:
 
 def summarize_active(states: dict[str, int]) -> int:
     return sum(v for k, v in states.items() if k in ACTIVE_STATES)
+
+
+def memory_string_to_int(mem_str):
+    """Converts a memory string to its value in bytes"""
+    cleaned = mem_str.strip().upper()
+
+    # multiplier mappings
+    units = {"G": 1024**3, "M": 1024**2, "K": 1024, "B": 1}  # Gigabytes  # Megabytes  # Kilobytes  # Bytes
+
+    # Check if the string ends with 'B' (e.g., 'GB' or 'MB') and strip it down to the first unit character
+    if cleaned.endswith("B") and len(cleaned) > 1 and cleaned[-2] in units:
+        unit = cleaned[-2]
+        number_part = cleaned[:-2].strip()
+    elif cleaned[-1] in units:
+        unit = cleaned[-1]
+        number_part = cleaned[:-1].strip()
+    else:
+        unit = "B"
+        number_part = cleaned
+
+    try:
+        # Convert the numeric string to a float first to handle cases like '1.5GB'
+        return int(float(number_part) * units[unit])
+    except ValueError:
+        raise ValueError(f"Could not convert memory string: {mem_str}")

@@ -18,6 +18,7 @@ from needle.config.pipeline import NeedleConfig
 from needle.lib.constants import WORKFLOW_UMASK
 from needle.lib.dask_runner import build_dask_client
 from needle.lib.logging import setup_logging
+from needle.lib.slurm import memory_string_to_int
 
 logger = logging.getLogger("needle-cli")
 
@@ -107,10 +108,17 @@ def run(work_dir, log_level):
 
     _setup_cli_logging(log_level)
     setup_logging(log_level)
+
+    cluster_cfg_hm = ClusterConfig.to_cluster()
+    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
+        cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
     cfg = NeedleConfig.get_config()
-    with build_dask_client() as (client, _):
+    with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
         needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
-            cfg=cfg, work_dir=str(work_dir), client_address=client.scheduler.address
+            cfg=cfg,
+            work_dir=str(work_dir),
+            client_address=client.scheduler.address,
+            client_address_hm=client_hm.scheduler.address,
         )
 
 
@@ -148,7 +156,10 @@ def serve(log_level):
     watcher_thread.start()
     logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
-    with build_dask_client() as (client, _):
+    cluster_cfg_hm = ClusterConfig.to_cluster()
+    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
+        cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
+    with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
 
         # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
         courier_thread = threading.Thread(
@@ -178,7 +189,11 @@ def serve(log_level):
             persist_result=False,
         ).serve(
             name="needle-pipeline",
-            parameters={"cfg": cfg.to_kwargs(), "client_address": client.scheduler.address},
+            parameters={
+                "cfg": cfg.to_kwargs(),
+                "client_address": client.scheduler.address,
+                "client_address_hm": client_hm.scheduler.address,
+            },
             triggers=[
                 DeploymentEventTrigger(
                     name="observation-staged-trigger",
