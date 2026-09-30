@@ -18,9 +18,14 @@ try:
         data_dir = _CFG["data"]["casa_dir"]
     except KeyError:
         raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.casa_dir'")
+    try:
+        staging_dir = _CFG["data"]["staging_dir"]
+    except KeyError:
+        raise KeyError(f"Provided file {_NEEDLE_CONFIG} does not have expected field: 'data.staging_dir'")
+
 
     ## CASA Configuration for Needle ##
-    logs_dir = f"{data_dir}/casalogs"
+    logs_dir = f"{staging_dir}/casalogs"
     logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
     rundata = f"{data_dir}/.casa"
     measurespath = f"{data_dir}/casadata"

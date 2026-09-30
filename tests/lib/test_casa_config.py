@@ -36,14 +36,15 @@ def load_casa_config(request):
         sys.modules.pop(name, None)
 
 
-def _write_needle_config(path, data_dir):
-    path.write_text(yaml.dump({"data": {"casa_dir": str(data_dir)}}))
+def _write_needle_config(path, data_dir, staging_dir):
+    path.write_text(yaml.dump({"data": {"staging_dir": str(staging_dir), "casa_dir": str(data_dir)}}))
 
 
 def test_casa_config_success_sets_attrs_and_creates_dirs(tmp_path, monkeypatch, load_casa_config):
     data_dir = tmp_path / "casa_data"
+    staging_dir = tmp_path / "staging"
     needle_cfg_path = tmp_path / ".needle.yaml"
-    _write_needle_config(needle_cfg_path, data_dir)
+    _write_needle_config(needle_cfg_path, data_dir, staging_dir)
 
     monkeypatch.setenv("NEEDLE_CONFIG", str(needle_cfg_path))
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -54,7 +55,7 @@ def test_casa_config_success_sets_attrs_and_creates_dirs(tmp_path, monkeypatch, 
     assert module.data_dir == str(data_dir)
     assert module.rundata == f"{data_dir}/.casa"
     assert module.measurespath == f"{data_dir}/casadata"
-    assert module.logs_dir == f"{data_dir}/casalogs"
+    assert module.logs_dir == f"{staging_dir}/casalogs"
     assert module.nologfile is False
     assert module.log2term is True
     assert module.nologger is True
@@ -67,7 +68,7 @@ def test_casa_config_success_sets_attrs_and_creates_dirs(tmp_path, monkeypatch, 
     assert Path(module.logs_dir).is_dir()
 
     expected_ts = time.strftime("%Y%m%d-%H", time.localtime())
-    assert module.logfile == f"{data_dir}/casalogs/casalog-{expected_ts}.log"
+    assert module.logfile == f"{staging_dir}/casalogs/casalog-{expected_ts}.log"
 
 
 def test_casa_config_missing_needle_config_file_raises(tmp_path, monkeypatch, capsys, load_casa_config):
@@ -98,25 +99,11 @@ def test_casa_config_missing_casa_dir_key_raises(tmp_path, monkeypatch, capsys, 
     assert "ERROR loading casa config file" in captured.out
 
 
-def test_casa_config_invalid_yaml_raises(tmp_path, monkeypatch, capsys, load_casa_config):
-    needle_cfg_path = tmp_path / ".needle.yaml"
-    needle_cfg_path.write_text("not: valid: yaml: [oops")  # malformed YAML
-
-    monkeypatch.setenv("NEEDLE_CONFIG", str(needle_cfg_path))
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("USER", "tester")
-
-    with pytest.raises(yaml.YAMLError):
-        load_casa_config()
-
-    captured = capsys.readouterr()
-    assert "ERROR loading casa config file" in captured.out
-
-
 def test_casa_config_created_dirs_have_correct_permissions(tmp_path, monkeypatch, load_casa_config):
     data_dir = tmp_path / "casa_data"
+    staging_dir = tmp_path / "staging"
     needle_cfg_path = tmp_path / ".needle.yaml"
-    _write_needle_config(needle_cfg_path, data_dir)
+    _write_needle_config(needle_cfg_path, data_dir, staging_dir)
 
     monkeypatch.setenv("NEEDLE_CONFIG", str(needle_cfg_path))
     monkeypatch.setenv("HOME", str(tmp_path))

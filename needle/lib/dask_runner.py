@@ -1,23 +1,11 @@
 from contextlib import contextmanager
 import logging
-import os
 from typing import Generator, Optional, Tuple
 
 from dask_jobqueue.local import LocalCluster
 from distributed import Client
-from distributed.diagnostics.plugin import WorkerPlugin
 
 from needle.config.cluster import ClusterConfig
-
-
-class UmaskPlugin(WorkerPlugin):
-    """Sets a umask on every worker process."""
-
-    def __init__(self, umask: int = 0o002):
-        self.umask = umask
-
-    def setup(self, worker):
-        os.umask(self.umask)
 
 
 @contextmanager
@@ -36,7 +24,6 @@ def build_dask_client(
         cluster = cluster_cfg.to_cluster()
         logger.info(f"Cluster info: {cluster}")
         client = Client(cluster)
-        client.register_plugin(UmaskPlugin())
         yield client, cluster
     finally:
         if client:
