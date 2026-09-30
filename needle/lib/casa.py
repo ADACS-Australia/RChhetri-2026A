@@ -1,5 +1,13 @@
+import os
+from importlib.resources import files
 from contextlib import contextmanager
 from pathlib import Path
+
+
+def set_casa_config():
+    """Sets the CASASITECONFIG env variable to the location of needle's casa_config.py"""
+    casa_config_path = str(files("needle") / "lib" / "casa_config.py")
+    os.environ["CASASITECONFIG"] = casa_config_path
 
 
 def get_table():

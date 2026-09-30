@@ -5,6 +5,7 @@ Many of the imports are lazy-loaded so that the CLI is more responsive.
 
 import logging
 import importlib
+import os
 import sys
 import threading
 import time
@@ -14,8 +15,9 @@ import click
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
-from needle.lib.logging import setup_logging
+from needle.lib.constants import WORKFLOW_UMASK
 from needle.lib.dask_runner import build_dask_client
+from needle.lib.logging import setup_logging
 
 logger = logging.getLogger("needle-cli")
 
@@ -85,7 +87,8 @@ def _log_level_options(f):
 
 @click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
 def cli():
-    pass
+    # Set the umask here to allow group access to all files and folders written by the pipeline
+    os.umask(WORKFLOW_UMASK)
 
 
 @cli.command()

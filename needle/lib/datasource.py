@@ -199,7 +199,7 @@ class S3DataSource(DataSource):
 
     def receive(self, entry_name: str, destination: Path) -> Path:
         dest = destination / entry_name
-        dest.mkdir(parents=True, exist_ok=True)
+        dest.mkdir(parents=True, exist_ok=True, mode=0o770)
         prefix = f"{self.prefix}{entry_name}/"
         response = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
         for obj in response.get("Contents", []):

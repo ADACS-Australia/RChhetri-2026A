@@ -100,3 +100,64 @@ def test_to_cluster_slurm_calls_correct_class():
         kwargs = mock_slurm_cls.call_args.kwargs
         assert kwargs["account"] == "acct"
         assert kwargs["queue"] == "debug"
+
+
+def test_to_cluster_with_container_sets_casa_and_needle_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASASITECONFIG", "/opt/casa/config")
+    monkeypatch.setenv("NEEDLE_CONFIG", "/custom/needle.yaml")
+
+    fake_image = tmp_path / "some_image.sif"
+    fake_image.touch()
+
+    data = {
+        "type": "local",
+        "local": {"cores": 2, "memory": "4GB"},
+        "container": {"image": str(fake_image), "binds": [], "env": {}},
+    }
+    cfg = ClusterConfig.load(data)
+
+    with (
+        patch("needle.config.cluster.set_casa_config") as mock_set_casa,
+        patch("needle.config.cluster.SifLocalCluster") as mock_local_cls,
+    ):
+        cfg.to_cluster()
+
+        mock_set_casa.assert_called_once()
+
+        # env vars propagated onto the container config
+        assert cfg.container.env["CASASITECONFIG"] == "/opt/casa/config"
+        assert cfg.container.env["NEEDLE_CONFIG"] == "/custom/needle.yaml"
+
+        # binds added for both config files
+        assert "/opt/casa/config:/opt/casa/config" in cfg.container.binds
+        assert "/custom/needle.yaml:/custom/needle.yaml" in cfg.container.binds
+
+        # container_cfg passed through to the cluster class
+        kwargs = mock_local_cls.call_args.kwargs
+        assert kwargs["container_cfg"] is cfg.container
+
+
+def test_to_cluster_with_container_appends_extra_binds(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASASITECONFIG", "/opt/casa/config")
+    monkeypatch.setenv("NEEDLE_CONFIG", "/custom/needle.yaml")
+
+    fake_image = tmp_path / "some_image.sif"
+    fake_image.touch()
+
+    data = {
+        "type": "local",
+        "local": {"cores": 2, "memory": "4GB"},
+        "container": {"image": str(fake_image), "binds": [], "env": {}},
+    }
+    cfg = ClusterConfig.load(data)
+
+    with (
+        patch("needle.config.cluster.set_casa_config"),
+        patch("needle.config.cluster.SifLocalCluster"),
+    ):
+        cfg.to_cluster(extra_binds=["/extra:/extra"])
+
+        assert "/extra:/extra" in cfg.container.binds
+        # existing binds (casa/needle configs) should still be there too
+        assert "/opt/casa/config:/opt/casa/config" in cfg.container.binds
+        assert "/custom/needle.yaml:/custom/needle.yaml" in cfg.container.binds

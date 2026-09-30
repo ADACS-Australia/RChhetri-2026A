@@ -12,10 +12,10 @@ class ContainerConfig(NeedleModel):
     image: Path
     "Path to the image (.sif) file. Image must exist."
 
-    binds: Optional[list[Path]] = None
+    binds: list[Path] = []
     "Host paths to bind mount into the container"
 
-    env: Optional[dict[str, str]] = None
+    env: dict[str, str] = {}
     "Environment variables to set inside the container"
 
     writable: bool = False

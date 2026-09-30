@@ -22,20 +22,20 @@ class BeamPair(NeedleModel):
     def move_files(self, new_dir):
         "Move the tgt and cal to a new directory"
         # Do not make parents! This can lead to issues if multiple processes attempt to create the parent concurrently
-        new_dir.mkdir(parents=False, exist_ok=True)
+        new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
         self.move_tgt(new_dir)
         self.move_cal(new_dir)
 
     def move_tgt(self, new_dir: Path):
         "Moves the target to a new location"
-        new_dir.mkdir(parents=False, exist_ok=True)
+        new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
         new_path = new_dir / self.tgt.name
         self.tgt.rename(new_path)
         self.tgt = new_path
 
     def move_cal(self, new_dir: Path):
         "Moves the calibrator to a new location"
-        new_dir.mkdir(parents=False, exist_ok=True)
+        new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
         if isinstance(self.cal, Path):
             new_path = new_dir / self.cal.name
             self.cal.rename(new_path)

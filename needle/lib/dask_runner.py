@@ -1,9 +1,8 @@
 from contextlib import contextmanager
 import logging
 from typing import Generator, Optional, Tuple
+
 from dask_jobqueue.local import LocalCluster
-
-
 from distributed import Client
 
 from needle.config.cluster import ClusterConfig

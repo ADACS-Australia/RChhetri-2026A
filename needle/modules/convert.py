@@ -9,6 +9,7 @@ from typing import Optional
 import click
 
 from needle.modules.needle_context import SubprocessExecContext
+from needle.lib.casa import set_casa_config
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ def convert_to_ms(ctx: ConvertContext) -> Path:
     :param ctx: The CovertContext object
     :return: The written measurement set path
     """
+    set_casa_config()
     if ctx.output.exists():
         logger.warning(f"Expected output file '{ctx.output}' already exists. Will not overwrite")
         return ctx.output

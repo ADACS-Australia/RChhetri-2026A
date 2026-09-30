@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 import traceback
 from typing import Optional, Literal
@@ -130,7 +131,7 @@ class NeedleConfig(NeedleModel):
         :returns: The NeedleConfig object constructed from the .yaml file
         """
         # cfg_path cannot be overridden. It must be static since CASA's config.py relies on it for configuration.
-        cfg_path = Path.home() / Path(".needle.yaml")
+        cfg_path = Path(os.environ.get("NEEDLE_CONFIG", Path.home() / Path(".needle.yaml")))
         if not cfg_path.exists():
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist. See setup_env.sh for assistance")
         return NeedleConfig.load(cfg_path)
