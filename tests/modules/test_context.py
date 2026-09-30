@@ -24,10 +24,12 @@ def test_subprocess_exec_context_resolved_cmds():
     assert ctx._resolved_cmds == [["ls", "-l"], ["pwd"]]
 
 
-def test_subprocess_exec_context_with_runtime(tmp_path):
+@patch("needle.modules.needle_context.shutil")
+def test_subprocess_exec_context_with_runtime(shutil_mock, tmp_path):
     """Test command resolution with a container runtime."""
     image = tmp_path / "test.sif"
     image.touch()
+    shutil_mock.which.return_value = True  # Mock this otherwise the validation fails
     runtime = ContainerConfig(image=image)
     ctx = MockSubprocessContext(runtime=runtime)
 
