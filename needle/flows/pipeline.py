@@ -6,13 +6,13 @@ from prefect.futures import PrefectFuture
 from prefect.runtime import flow_run
 from prefect.task_runners import ThreadPoolTaskRunner
 
+from needle.config.cluster import ClusterConfig
+from needle.config.pipeline import NeedleConfig
 from needle.tasks.utils import extract_cal_task, extract_tgt_task
 from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
 from needle.tasks.convert import convert_task
 from needle.tasks.flag import flag_ms_task
-
-from needle.config.pipeline import NeedleConfig
-from needle.config.cluster import ClusterConfig
+from needle.lib.dask_runner import build_dask_client
 from needle.lib.logging import setup_logging
 from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
@@ -136,9 +136,18 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str
     )
     f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
     f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
-    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
-    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
-    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
+
+    cluster_cfg = ClusterConfig.to_cluster()
+    if cluster_cfg.type == "slurm" and cluster_cfg.slurm.memory is not None:
+        cluster_cfg.slurm.memory *= 2
+    with build_dask_client() as (client, _):
+        diagnostics_flow.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
+            cfg=cfg, work_dir=str(work_dir), client_address=client.scheduler.address
+        )
+
+        f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
+        f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
+        f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
 
     # Clean, mask and model subtract
     if cfg.flow.skip_to_deep_clean:  # Auto-masking route
