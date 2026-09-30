@@ -42,11 +42,28 @@ def test_subprocess_exec_context_validate_cmd():
 
     class BadCmdContext(SubprocessExecContext):
         @property
-        def cmd(self) -> list[str]:  # type: ignore
+        def cmd(self) -> list[str]:
             return ["ls", "-l"]
 
     with pytest.raises(ValueError, match="cmd must be a list of lists"):
         BadCmdContext()
+
+
+@patch("needle.modules.needle_context.shutil")
+def test_subprocess_exec_context_validate_container_env(shutil_mock, tmp_path):
+    """Test validation of container exec availability in SubprocessExecContext."""
+
+    image = tmp_path / "test.sif"
+    image.touch()
+
+    class CmdContext(SubprocessExecContext):
+        @property
+        def cmd(self) -> list[str]:
+            return [["ls", "-l"]]
+
+    shutil_mock.which.return_value = None
+    with pytest.raises(RuntimeError, match="Container runtime 'apptainer'"):
+        CmdContext(runtime=ContainerConfig(type="apptainer", image=image))
 
 
 @patch("subprocess.run")

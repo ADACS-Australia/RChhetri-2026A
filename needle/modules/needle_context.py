@@ -1,4 +1,5 @@
 import logging
+import shutil
 import subprocess
 
 from pydantic import BaseModel, model_validator
@@ -49,6 +50,19 @@ class SubprocessExecContext(NeedleContext):
         cmd = self.cmd
         if not isinstance(cmd, list) or not all(isinstance(c, list) for c in cmd):
             raise ValueError("cmd must be a list of lists")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_container_env(self) -> "NeedleContext":
+        """Ensures that the container executable (i.e. apptainer) is present
+
+        :raises RuntimeError: Raised if the executable is not avialable in PATH
+        """
+        if not self.runtime:
+            # No container runtime - don't make the check
+            return self
+        if not shutil.which(self.runtime.type):
+            raise RuntimeError(f"Container runtime '{self.runtime.type}' not available. Have you loaded the module?")
         return self
 
     def log_cmd(self) -> None:
