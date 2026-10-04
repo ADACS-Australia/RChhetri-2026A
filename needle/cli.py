@@ -109,7 +109,8 @@ def run(work_dir, log_level):
     _setup_cli_logging(log_level)
     setup_logging(log_level)
 
-    cluster_cfg_hm = ClusterConfig.to_cluster()
+    cluster_cfg_hm = ClusterConfig.get_config()
+    cluster_cfg_hm.to_cluster()
     if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
         cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
     cfg = NeedleConfig.get_config()
@@ -156,7 +157,8 @@ def serve(log_level):
     watcher_thread.start()
     logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
 
-    cluster_cfg_hm = ClusterConfig.to_cluster()
+    cluster_cfg_hm = ClusterConfig.get_config()
+    cluster_cfg_hm.to_cluster()
     if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
         cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
     with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
