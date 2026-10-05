@@ -8,20 +8,19 @@ from prefect.task_runners import ThreadPoolTaskRunner
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
-from needle.tasks.utils import extract_cal_task, extract_tgt_task
-from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
-from needle.tasks.convert import convert_task
-from needle.tasks.flag import flag_ms_task
-from needle.lib.dask_runner import build_dask_client
 from needle.lib.logging import setup_logging
 from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
+from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
 from needle.tasks.casa_data import update_casa_data
 from needle.tasks.clean import clean_task, interval_clean_task, predict_task
+from needle.tasks.convert import convert_task
 from needle.tasks.diagnostics import cal_diagnostics_task, ms_diagnostics_task
+from needle.tasks.flag import flag_ms_task
 from needle.tasks.inspect import inspect_ms_task
 from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
+from needle.tasks.utils import extract_cal_task, extract_tgt_task
 
 FutureList = list[PrefectFuture]
 OptionalFutureList = list[PrefectFuture | None]
@@ -98,17 +97,19 @@ def _pipeline_flow_name() -> str:
     persist_result=True,
     flow_run_name=_pipeline_flow_name,
 )
-def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str) -> Flow:
+def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: str, work_dir: Path | str) -> Flow:
     """The needle pipeline. Runs all operations end-to-end.
     Note - the client must be created in-flow as the Client object cannot be json-serialized.
 
     :param cfg: The needle config object. Contains all static configuration options for the run.
     :param client_address: The addresss of the running Dask scheduler. Used to construct the Dask client.
+    :param client_address_hm: The addresss of the running Dask scheduler with additional memory. Used for memory intensive jobs
     :param work_dir: The directory containing all of the data to work with.
     """
     logger = setup_logging(cfg.flow.log_level)
     logger.debug(f"Config: {cfg}")
     client = Client(client_address)
+    client_hm = Client(client_address_hm)
     defaults = _unmapped_defaults(cfg)
 
     # Update the casa measures dataset before doing anything
@@ -137,17 +138,10 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str
     f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
     f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
 
-    cluster_cfg = ClusterConfig.to_cluster()
-    if cluster_cfg.type == "slurm" and cluster_cfg.slurm.memory is not None:
-        cluster_cfg.slurm.memory *= 2
-    with build_dask_client() as (client, _):
-        diagnostics_flow.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
-            cfg=cfg, work_dir=str(work_dir), client_address=client.scheduler.address
-        )
-
-        f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client), f_cal, **defaults)
-        f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client), f_tgt, **defaults)
-        f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client), f_cal_output, **defaults)
+    # Diagnostics flow - use dask cluster with high memory
+    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_cal, **defaults)
+    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_tgt, **defaults)
+    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client_hm), f_cal_output, **defaults)
 
     # Clean, mask and model subtract
     if cfg.flow.skip_to_deep_clean:  # Auto-masking route
@@ -190,5 +184,5 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, work_dir: Path | str
         **defaults,
     )
 
-    for f in (f_cal_diagnostics, f_tgt_diagnostics, f_interval_clean, f_inspect_cal, f_cal_soln_diagnostics):
+    for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_interval_clean, f_inspect_cal):
         f.result()  # Wait on the last output so that the flow doesn't end

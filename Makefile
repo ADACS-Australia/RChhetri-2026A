@@ -1,6 +1,7 @@
 include .env
 
-BASE_IMAGE = ksmith21/needle-base:latest
+BASE_IMAGE_BARE = ksmith21/needle-base
+BASE_IMAGE = $(BASE_IMAGE_BARE):latest
 NEEDLE_IMAGE = ksmith21/needle:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
@@ -12,7 +13,7 @@ APPTAINER_IMAGE = container/needle.sif
 	touch .base_built
 
 .needle_built: $(NEEDLE_DOCKERFILE) .base_built $(shell find needle/ -type f) pyproject.toml
-	docker build --network=host -f $(NEEDLE_DOCKERFILE) -t $(NEEDLE_IMAGE) .
+	docker build --network=host --build-arg BASE_IMAGE=$(BASE_IMAGE_BARE) -f $(NEEDLE_DOCKERFILE) -t $(NEEDLE_IMAGE) .
 	touch .needle_built
 
 $(APPTAINER_IMAGE): .needle_built
