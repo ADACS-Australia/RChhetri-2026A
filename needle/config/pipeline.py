@@ -19,6 +19,10 @@ from needle.config.watcher import WatcherConfig
 logger = logging.getLogger(__name__)
 
 
+class ConfigLoadError(Exception):
+    """The config source couldn't be read into a dict of sections."""
+
+
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
@@ -137,21 +141,37 @@ class NeedleConfig(NeedleModel):
         return NeedleConfig.load(cfg_path)
 
     @classmethod
-    def validate(cls, source: str | Path | dict, quiet: bool = False) -> bool:
-        """Attempts to validate each section of the config independently, then the whole thing.
+    def validate(cls, source: str | Path | dict, quiet: bool = False, full_traceback: bool = False) -> bool:
+        BOLD = "\033[1m"
+        RED = "\033[91m"
+        GREEN = "\033[92m"
+        YELLOW = "\033[93m"
+        RESET = "\033[0m"
 
-        :param source: Path to a YAML config file, or a dictionary of config data
-        :param quiet: Whether to suppress output
-        :returns: Whether the config is valid
-        """
-
-        def emit(msg: str):
+        def emit(msg: str, fmt: str = ""):
             if not quiet:
-                print(msg)
+                print(f"{fmt}{msg}{RESET}")
 
-        raw = source if isinstance(source, dict) else yaml.safe_load(Path(source).read_text())
+        def clean_msg(msg: str) -> str:
+            # Pydantic prefixes ValueErrors raised in validators
+            return msg.removeprefix("Value error, ")
 
-        emit("\n--- Config Validation ---")
+        def emit_validation_errors(exc: ValidationError, indent: str = "  "):
+            for err in exc.errors():
+                loc = " -> ".join(str(i) for i in err["loc"])
+                prefix = f"{loc}: " if loc else ""
+                emit(f"{indent}• {BOLD}{prefix}{RESET}{RED}{clean_msg(err['msg'])}", RED)
+
+        emit("\n--- Config Validation ---", BOLD)
+        # Try to read in the config file
+        try:
+            raw = cls._read_raw(source)
+        except ConfigLoadError as e:
+            emit(f"  ✗ {e}\n", RED)
+            if full_traceback:
+                emit(traceback.format_exc(), RED)
+            return False
+
         errors = {}
         validated = {}
 
@@ -165,25 +185,68 @@ class NeedleConfig(NeedleModel):
 
         for f in cls.model_fields:
             if f in validated:
-                emit(f"  ✓ {f}: {type(validated[f]).__name__}")
+                emit(f"  ✓ {f}: {type(validated[f]).__name__}", GREEN)
             elif f in errors:
-                emit(f"  ✗ {f}: FAILED")
+                emit(f"  ✗ {f}: FAILED", RED)
 
         if errors:
-            emit(f"\n{len(errors)} section(s) failed validation:\n")
+            emit(f"\n{len(errors)} section(s) failed validation:\n", BOLD)
             for f, exc in errors.items():
-                emit(f"[{f}]")
-                for err in exc.errors():
-                    loc = " -> ".join(str(i) for i in err["loc"])
-                    prefix = f"{loc}: " if loc else ""
-                    emit(f"  {prefix}{err['msg']}")
+                emit(f"[{f}]", YELLOW)
+                emit_validation_errors(exc)
                 emit("")
-        else:
-            emit("\nAll sections validated OK.")
-            try:
-                cls.load(raw)
-                emit("  ✓ Full config loaded successfully")
-            except Exception as _:
-                emit(f"  ✗ Full config FAILED: {traceback.format_exc()}")
+            return False
 
-        return not errors
+        emit("\nAll sections validated OK. Checking cross-section rules...\n", BOLD)
+        try:
+            cls.load(raw)
+            emit("  ✓ Full config loaded successfully", GREEN)
+            return True
+        except ValidationError as e:
+            emit("  ✗ Config failed cross-section validation:\n", RED)
+            emit_validation_errors(e, indent="    ")
+            if full_traceback:
+                emit(f"\n{traceback.format_exc()}", RED)
+            emit("")
+        except Exception as e:
+            emit(f"  ✗ Unexpected error loading config: {e}", RED)
+            if full_traceback:
+                emit(f"\n{traceback.format_exc()}", RED)
+
+        return False
+
+    @staticmethod
+    def _read_raw(source: str | Path | dict) -> dict:
+        """Reads the raw config dict from a path or passes a dict straight through.
+
+        :raises ConfigLoadError: with a user-friendly message if the source can't be loaded
+        """
+        if isinstance(source, dict):
+            return source
+
+        path = Path(source)
+        try:
+            data = yaml.safe_load(path.read_text())
+        except (OSError, UnicodeDecodeError) as e:
+            reason = getattr(e, "strerror", None) or str(e)
+            raise ConfigLoadError(f"Could not read config file '{path}':\n    {reason}") from e
+        except yaml.YAMLError as e:
+            msg = f"'{path}' is not valid YAML:\n"
+            mark = getattr(e, "problem_mark", None)
+            if mark is not None:
+                # PyYAML marks are 0-indexed
+                msg += f"\n    Line {mark.line + 1}, column {mark.column + 1}: {getattr(e, 'problem', e)}"
+                if snippet := mark.get_snippet():
+                    msg += f"\n\n{snippet}"
+            else:
+                msg += f"\n    {e}"
+            raise ConfigLoadError(msg) from e
+
+        if data is None:
+            return {}  # empty file: let section validation report what's missing
+        if not isinstance(data, dict):
+            raise ConfigLoadError(
+                f"'{path}' must contain a mapping of config sections at the top level, "
+                f"but found a {type(data).__name__}."
+            )
+        return data
