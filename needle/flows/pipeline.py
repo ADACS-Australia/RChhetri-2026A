@@ -26,21 +26,21 @@ FutureList = list[PrefectFuture]
 OptionalFutureList = list[PrefectFuture | None]
 
 
-def _split_ms_into_intervals(inspect_path: Path, n_intervals: int = 1) -> list[tuple[int, int]]:
-    ms_info = MSInfo.from_json(inspect_path)
-    corrected_column = ms_info.data_columns.get("DATA")
-    if not corrected_column:
-        raise RuntimeError(f"Expected column 'DATA' is absent in measurement set: {inspect_path}")
-    assert len(corrected_column) == 2, "DATA column should have length 2"
+def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tuple[int, int]]:
+    """Generates n_intervals intervals for cleaning for a measurement set with n_integrations integrations"""
+    if not n_integrations or n_integrations < 1:
+        raise ValueError(f"Erroneous value for n_integrations: {n_integrations}")
+    if not 1 <= n_intervals <= n_integrations:
+        raise ValueError(f"n_intervals must be between 1 and {n_integrations}, got {n_intervals}")
 
-    total = corrected_column[1]
-    chunk_size = total // n_intervals
-
+    base, extra = divmod(n_integrations, n_intervals)
     intervals = []
+    start = 0
     for i in range(n_intervals):
-        start = i * chunk_size
-        end = total if i == n_intervals - 1 else start + chunk_size
+        size = base + (1 if i < extra else 0)  # first `extra` chunks get one more
+        end = start + size - 1
         intervals.append((start, end))
+        start = end + 1
 
     return intervals
 
@@ -74,7 +74,9 @@ def _expand_intervals(
     all_intervals = []
     for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_tgt, f_model_subtract, f_mask):
         inspect_path = inspect.result()  # resolve the path from the future
-        intervals = _split_ms_into_intervals(inspect_path, n_intervals=n_intervals)
+        ms_info = MSInfo.from_json(inspect_path)
+        n_integrations = ms_info.time.get("n_integrations")
+        intervals = _generate_ms_intervals(n_integrations=n_integrations, n_intervals=n_intervals)
         for interval in intervals:
             all_tgt.append(tgt)
             all_model_subtracts.append(subtract)
