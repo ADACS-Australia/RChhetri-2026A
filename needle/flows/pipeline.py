@@ -27,7 +27,8 @@ OptionalFutureList = list[PrefectFuture | None]
 
 
 def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tuple[int, int]]:
-    """Generates n_intervals intervals for cleaning for a measurement set with n_integrations integrations"""
+    """Generates `n_intervals` equal (or close to equal) intervals for cleaning for a measurement set with
+    `n_integrations` time integrations"""
     if not n_integrations or n_integrations < 1:
         raise ValueError(f"Erroneous value for n_integrations: {n_integrations}")
     if not 1 <= n_intervals <= n_integrations:
@@ -75,7 +76,7 @@ def _expand_intervals(
     for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_tgt, f_model_subtract, f_mask):
         inspect_path = inspect.result()  # resolve the path from the future
         ms_info = MSInfo.from_json(inspect_path)
-        n_integrations = ms_info.time.get("n_integrations")
+        n_integrations = ms_info.time.n_integrations
         intervals = _generate_ms_intervals(n_integrations=n_integrations, n_intervals=n_intervals)
         for interval in intervals:
             all_tgt.append(tgt)
