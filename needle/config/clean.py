@@ -17,8 +17,8 @@ class WSCleanConfig(NeedleModel):
     niter: int = 10000
     "Maximum number of clean iterations"
 
-    pol: str = "XX"
-    "Polarisation to image"
+    pol: Literal["I", "Q", "U", "V", "XX", "XY", "YX", "YY", "RR", "RL", "LR" "LL"] = "I"
+    "Polarisation/stokes field to image"
 
     data_column: str = "DATA"
     "Data column to image: DATA or CORRECTED_DATA"
