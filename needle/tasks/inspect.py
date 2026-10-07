@@ -19,12 +19,12 @@ def inspect_ms_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     if isinstance(ms, CalibrationSolution):  # No-op
-        logger.info(f"Calibration solution passed: {ms}\nWill not inspect")
+        logger.info(f"Calibration solution passed to task: {ms}\nWill not inspect")
         return
 
     # Check if the output exists already
     ctx = InspectMSContext(ms=ms, output_dir="inspect")
-    if ctx.output.exists and overwrite is False:
+    if ctx.output.exists() and overwrite is False:
         logger.info(f"Inspect output exists: {ctx.output}\nWill not recreate")
         return ctx.output
 
