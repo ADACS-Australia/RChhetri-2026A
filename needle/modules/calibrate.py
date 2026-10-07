@@ -43,6 +43,11 @@ class SolveCalibrationContext(SubprocessExecContext):
         "Path to the gain calibration solution table"
         return self.cal.with_suffix(".gcal")
 
+    @property
+    def expected_solution(self) -> CalibrationSolution:
+        "The expected CalibrationSolution object"
+        return CalibrationSolution(gcal=self.gcal, bpcal=self.bpcal)
+
     def _python_cmd(self, expr: str) -> list[str]:
         "Wraps a Python expression as a python3 -c command"
         return ["python3", "-c", expr]

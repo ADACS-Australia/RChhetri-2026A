@@ -38,6 +38,12 @@ class MSDiagnosticsOutput(BaseModel):
     def all_files(self) -> list[Path]:
         return [getattr(self, p) for p in self.model_fields_set if getattr(self, p) is not None]
 
+    @property
+    def exists(self) -> bool:
+        "True only if there are outputs and every one of them is on disk"
+        files = self.all_files
+        return bool(files) and all([p.exists() for p in files])
+
 
 class MSDiagnostics(BaseModel):
     """Class to take care of MS Diagnostics computation"""
@@ -64,6 +70,10 @@ class MSDiagnostics(BaseModel):
             self.output_dir: Path = self.ms.parent
         self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", MSDiagnosticsOutput())
+
+    def expected_output(self) -> MSDiagnosticsOutput:
+        "The output this would produce, whether or not the files exist yet"
+        return MSDiagnosticsOutput(**{name: getattr(self, name) for name in MSDiagnosticsOutput.model_fields})
 
     @property
     def tb_query(self):
@@ -424,6 +434,10 @@ class MSDiagnosticsContext(NeedleContext):
         msd.run_all_diagnostics()
         return msd
 
+    @property
+    def output(self) -> MSDiagnosticsOutput:
+        return MSDiagnostics(ms=self.ms, output_dir=self.output_dir).expected_output()
+
 
 class CalDiagnosticsOutput(BaseModel):
     gain_caltable_plot: Path | None = None
@@ -432,6 +446,12 @@ class CalDiagnosticsOutput(BaseModel):
     @property
     def all_files(self) -> list[Path]:
         return [getattr(self, p) for p in self.model_fields_set if getattr(self, p) is not None]
+
+    @property
+    def exists(self) -> bool:
+        "True only if there are outputs and every one of them is on disk"
+        files = self.all_files
+        return bool(files) and all(p.exists() for p in files)
 
 
 class CalDiagnostics(BaseModel):
@@ -448,6 +468,10 @@ class CalDiagnostics(BaseModel):
             self.output_dir = self.solution.gcal.parent
         self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", CalDiagnosticsOutput())
+
+    def expected_output(self) -> MSDiagnosticsOutput:
+        "The output this would produce, whether or not the files exist yet"
+        return CalDiagnosticsOutput(**{name: getattr(self, name) for name in CalDiagnosticsOutput.model_fields})
 
     @property
     def gcal(self) -> Path:
@@ -578,6 +602,10 @@ class CalDiagnosticsContext(NeedleContext):
         cd = CalDiagnostics(solution=self.solution, output_dir=self.output_dir)
         cd.run_all_diagnostics()
         return cd
+
+    @property
+    def output(self) -> CalDiagnosticsOutput:
+        return CalDiagnostics(solution=self.solution, output_dir=self.output_dir).expected_output()
 
 
 def _amp_phase_fig(xlabel: str, title_amp: str, title_phase: str) -> tuple[plt.Figure, np.ndarray]:

@@ -12,8 +12,10 @@ from needle.modules.flag import flag_observation, FlagContext
 
 
 @task(cache_policy=NO_CACHE)
-def flag_ms_task(client: Client, ms: Path | CalibrationSolution, cfg: FlagConfig, log_level: str = "INFO") -> Path:
-    """Flags a measurement set. Returns the same measurement set"""
+def flag_ms_task(
+    client: Client, ms: Path | CalibrationSolution, cfg: FlagConfig, log_level: str = "INFO", **kwargs
+) -> Path:
+    """Flags a measurement set. Returns the same measurement set. Always runs regardless of overwrite value."""
     fn_inputs = locals().items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
@@ -28,8 +30,10 @@ def flag_ms_task(client: Client, ms: Path | CalibrationSolution, cfg: FlagConfig
 
 
 @task(cache_policy=NO_CACHE)
-def flag_ms_pair_task(client: Client, ms_pair: BeamPair, cfg: FlagConfig, log_level: str = "INFO") -> BeamPair:
-    """Flags a pair of measurement sets. Returns the same measurement set pair"""
+def flag_ms_pair_task(
+    client: Client, ms_pair: BeamPair, cfg: FlagConfig, log_level: str = "INFO", **kwargs
+) -> BeamPair:
+    """Flags a pair of measurement sets. Returns the same measurement set pair. Always runs regardless of overwrite value."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))

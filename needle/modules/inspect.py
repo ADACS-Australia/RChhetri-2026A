@@ -104,13 +104,9 @@ class MSInfo(BaseModel):
     "Path to the measurement set to perform diagnostics for"
 
     output_dir: Path | None = None
-    "Location to output the diagnostics to"
+    "Subdirectory to output the diagnostics to"
 
     def model_post_init(self, __context):
-        if self.output_dir is None:
-            self.output_dir = self.ms.parent
-
-        # Populated only when loading from JSON, bypassing lazy computation.
         self._preloaded: dict = {}
 
     @cached_property
@@ -151,7 +147,9 @@ class MSInfo(BaseModel):
 
     @property
     def output_path(self) -> Path:
-        return self.output_dir / f"{self.ms.stem}_inspect.json"
+        if self.output_dir:
+            return self.ms.parent / self.output_dir / Path(f"{self.ms.stem}_inspect.json")
+        return self.ms.parent / f"{self.ms.stem}_inspect.json"
 
     def to_json(self) -> Path:
         """Serialise all metadata to a JSON file next to the MS.
@@ -384,6 +382,11 @@ class InspectMSContext(NeedleContext):
     def _valid_ms(cls, ms: Path) -> Path:
         validate_path_ms(ms)
         return ms
+
+    @property
+    def output(self) -> Path:
+        "Expected output of this context execution"
+        return MSInfo(ms=self.ms, output_dir=self.output_dir).output_path
 
     def execute(self) -> MSInfo:
         return MSInfo(ms=self.ms, output_dir=self.output_dir)

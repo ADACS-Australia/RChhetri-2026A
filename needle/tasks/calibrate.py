@@ -16,7 +16,7 @@ from needle.lib.logging import setup_logging
 
 @task(cache_policy=NO_CACHE)
 def solve_calibration_task(
-    client: Client, cfg: SolveCalibrationConfig, cal: CalInput, log_level: str = "INFO"
+    client: Client, cfg: SolveCalibrationConfig, cal: CalInput, log_level: str = "INFO", overwrite=False, **kwargs
 ) -> CalibrationSolution:
     """Solves for a calibration solution. If the provided cal is already solved, this is a no-op"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
@@ -25,13 +25,22 @@ def solve_calibration_task(
 
     if not isinstance(cal, CalibrationSolution):
         ctx = SolveCalibrationContext(cfg=cfg, cal=cal)
+        if ctx.expected_solution.exists() and overwrite is False:
+            logger.info(f"Found existing solution: {ctx.expected_solution}\nWill not reprocess.")
+            return ctx.expected_solution
         cal = client.submit(solve_calibration, ctx).result()
     return cal
 
 
 @task(cache_policy=NO_CACHE)
 def apply_calibration_task(
-    client: Client, cfg: ApplyCalibrationConfig, cal: CalibrationSolution, tgt: Path, log_level: str = "INFO"
+    client: Client,
+    cfg: ApplyCalibrationConfig,
+    cal: CalibrationSolution,
+    tgt: Path,
+    log_level: str = "INFO",
+    overwrite=False,
+    **kwargs,
 ) -> Path:
     """Applies an existing calibrator solution to the target. Returns the calibrated target measurement set."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
@@ -39,4 +48,7 @@ def apply_calibration_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = ApplyCalibrationContext(cfg=cfg, cal=cal, tgt=tgt)
+    if ctx.calibrated_tgt_path.exists() and overwrite is False:  # Do not re-process
+        logger.info(f"Found existing solution: {ctx.calibrated_tgt_path}\nWill not reprocess.")
+        return ctx.calibrated_tgt_path
     return client.submit(apply_calibration, ctx).result()

@@ -46,6 +46,10 @@ class CreateMaskContext(NeedleContext):
         validate_path_fits(im)
         return im
 
+    @property
+    def output(self) -> CreateMaskOutput:
+        return CreateMaskOutput(prefix=self.image.with_suffix(""))
+
     def execute(self) -> CreateMaskOutput:
         """Creates the mask and writes it to file"""
         output = CreateMaskOutput(prefix=self.image.with_suffix(""))

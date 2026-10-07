@@ -11,11 +11,23 @@ from needle.config.calibrate import CalibrationSolution, CalInput
 
 logger = logging.getLogger(__name__)
 
-TGT_PATTERN = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
-CAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)"
-BPCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.bpcal"
-GCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.gcal"
-BEAM_DIR_PATTERN = r"beam\d{2}"
+TGT_PATTERN = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)$"
+CAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)$"
+BPCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.bpcal$"
+GCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.gcal$"
+BEAM_DIR_PATTERN = r"beam\d{2}$"
+
+# Priority of formats to use. Best last.
+FORMAT_PRIORITY = (".mir", ".uvfits" ".ms")
+
+
+def _sort_key(path: Path) -> tuple[int, str]:
+    """Order by format preference, then name so ties are deterministic.
+
+    Suffixes not in the list (.bpcal, .gcal) get -1; they never compete, so it makes no difference.
+    """
+    rank = FORMAT_PRIORITY.index(path.suffix) if path.suffix in FORMAT_PRIORITY else -1
+    return rank, path.name
 
 
 def _index(directories: list[Path], pattern: str) -> dict[str, Path]:
@@ -26,11 +38,16 @@ def _index(directories: list[Path], pattern: str) -> dict[str, Path]:
 
     found: dict[str, Path] = {}
     for directory in directories:
-        for path in directory.iterdir():
+        for path in sorted(directory.iterdir(), key=_sort_key):
             if m := re.match(pattern, path.name):
                 beam = m.group("beam")
                 if beam in found:
-                    logger.warning(f"Beam {beam} found in both {found[beam].parent} and {directory}, using {path}")
+                    if found[beam].parent == directory:
+                        logger.info(
+                            f"Beam {beam} has multiple formats in {directory}, using {path.name} over {found[beam].name}"
+                        )
+                    else:
+                        logger.warning(f"Beam {beam} found in both {found[beam].parent} and {directory}, using {path}")
                 found[beam] = path
     return found
 
@@ -51,6 +68,8 @@ def find_beam_pairs(
     :param cal_pattern: The regex pattern to use for calibrator sources
     :param bpcal_pattern: The regex pattern to use for bandpass calibration solutions
     :param gcal_pattern: The regex pattern to use for gain calibration solutions
+    :param beam_dir_pattern: The regex pattern to use for finding pre-existing beam directories
+    :param format_priority: Priority list
     """
     # Beam dirs go last so already-staged files win. Identify them by name, as .ms/.mir are directories too.
     beam_dirs = sorted(p for p in search_dir.iterdir() if p.is_dir() and re.fullmatch(beam_dir_pattern, p.name))
