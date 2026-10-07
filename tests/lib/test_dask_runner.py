@@ -1,8 +1,32 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from needle.lib.dask_runner import build_dask_client
+from distributed import Client, LocalCluster
+
+from needle.lib.dask_runner import build_dask_client, _close_stray_clients
 from needle.config.cluster import ClusterConfig
+
+
+def test_close_stray_clients_only_closes_clients_on_same_scheduler():
+    cluster_kwargs = dict(n_workers=1, threads_per_worker=1, processes=False, dashboard_address=None)
+
+    with LocalCluster(**cluster_kwargs) as cluster_a, LocalCluster(**cluster_kwargs) as cluster_b:
+        with (
+            Client(cluster_a) as main_client,
+            Client(cluster_a.scheduler_address) as stray_client,
+            Client(cluster_b) as other_cluster_client,
+        ):
+            assert stray_client.scheduler.address == main_client.scheduler.address
+            assert other_cluster_client.scheduler.address != main_client.scheduler.address
+
+            _close_stray_clients(main_client)
+
+            # The extra client on the same scheduler is closed
+            assert stray_client.status == "closed"
+            # The client we passed in is left alone (the caller closes it)
+            assert main_client.status == "running"
+            # Clients on a different scheduler are untouched
+            assert other_cluster_client.status == "running"
 
 
 def test_build_dask_client_uses_provided_cfg():
