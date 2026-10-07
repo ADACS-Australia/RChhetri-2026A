@@ -47,7 +47,7 @@ def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tu
 
 
 def _unmapped_defaults(cfg: NeedleConfig) -> dict:
-    return {"log_level": unmapped(cfg.flow.log_level)}
+    return {"log_level": unmapped(cfg.flow.log_level), "overwrite": unmapped(cfg.flow.overwrite)}
 
 
 def _source_find_and_mask(client: Client, cfg: NeedleConfig, f_shallow_image: FutureList) -> FutureList:
@@ -120,7 +120,6 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
 
     # Get the beam pairs to work with
     beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), log_level=cfg.flow.log_level)
-    logger.info(f"Found beam pairs: {beam_pairs}")
     f_beam_pairs = setup_beam_dir_task.map(beam_pairs, log_level=unmapped(cfg.flow.log_level))
 
     # Exctract the individual calibrators and targets

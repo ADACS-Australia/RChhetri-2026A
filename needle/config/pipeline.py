@@ -26,8 +26,8 @@ class ConfigLoadError(Exception):
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    overwrite: bool = True
-    "Whether to overwrite any existing data"
+    overwrite: bool = False
+    "Whether to overwrite any existing data. True will redo much of the processing/calculations. False will not touch existing outputs where possible."
 
     shm_size: str = "2gb"
     "Size of /dev/shm in the runtime container"
@@ -98,11 +98,9 @@ class NeedleConfig(NeedleModel):
                     "deep_clean.auto_threshold and interval_clean.auto_threshold must be set for flow.skip_to_deep_clean to be set"
                 )
         elif self.deep_clean.auto_mask:
-            logging.warning("deep_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
+            logger.warning("deep_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
         elif self.interval_clean.auto_mask:
-            logging.warning(
-                "interval_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on"
-            )
+            logger.warning("interval_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
         return self
 
     @classmethod
