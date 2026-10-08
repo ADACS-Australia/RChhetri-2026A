@@ -9,7 +9,9 @@ from needle.modules.casa_data import download_casa_rundata, CasaDataUpdateContex
 
 
 @task
-def update_casa_data(data_path: Path, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO") -> None:
+def update_casa_data(
+    data_path: Path, runtime: Optional[ContainerConfig] = None, log_level: str = "INFO", **kwargs
+) -> None:
     """Updates the casa dataset. ONLY run this in serial
 
     :param data_path: The path to the casa dataset

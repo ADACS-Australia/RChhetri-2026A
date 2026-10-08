@@ -104,13 +104,17 @@ class MSInfo(BaseModel):
     "Path to the measurement set to perform diagnostics for"
 
     output_dir: Path | None = None
-    "Location to output the diagnostics to"
+    "Subdirectory to output the diagnostics to"
+
+    _output_dir: Path
+    "Internally referenced output directory"
 
     def model_post_init(self, __context):
-        if self.output_dir is None:
-            self.output_dir = self.ms.parent
-
-        # Populated only when loading from JSON, bypassing lazy computation.
+        if not self.output_dir:
+            object.__setattr__(self, "_output_dir", self.ms.parent)
+        else:
+            object.__setattr__(self, "_output_dir", self.ms.parent / self.output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         self._preloaded: dict = {}
 
     @cached_property
@@ -151,7 +155,7 @@ class MSInfo(BaseModel):
 
     @property
     def output_path(self) -> Path:
-        return self.output_dir / f"{self.ms.stem}_inspect.json"
+        return self._output_dir / f"{self.ms.stem}_inspect.json"
 
     def to_json(self) -> Path:
         """Serialise all metadata to a JSON file next to the MS.
@@ -169,10 +173,10 @@ class MSInfo(BaseModel):
             "fields": asdict(self.fields),
             "data_columns": self.data_columns,
         }
-        logger.info(f"Writing inspection result to {self.output_path}")
-        with open(self.output_path, "w") as f:
+        logger.info(f"Writing inspection result to {self._output_path}")
+        with open(self._output_path, "w") as f:
             json.dump(payload, f, indent=2, default=str)
-        return self.output_path
+        return self._output_path
 
     @classmethod
     def from_json(cls, path: Path | str) -> "MSInfo":
@@ -186,6 +190,7 @@ class MSInfo(BaseModel):
         :returns: MSInfo instance with all sections pre-populated.
         """
         path = Path(path)
+
         if not path.exists():
             raise FileNotFoundError(f"Inspection JSON not found: {path}")
         logger.info(f"Loading inspection result from {path}")
@@ -384,6 +389,11 @@ class InspectMSContext(NeedleContext):
     def _valid_ms(cls, ms: Path) -> Path:
         validate_path_ms(ms)
         return ms
+
+    @property
+    def output(self) -> Path:
+        "Expected output of this context execution"
+        return MSInfo(ms=self.ms, output_dir=self.output_dir).output_path
 
     def execute(self) -> MSInfo:
         return MSInfo(ms=self.ms, output_dir=self.output_dir)

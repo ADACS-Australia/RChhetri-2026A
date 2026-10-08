@@ -43,6 +43,11 @@ class SolveCalibrationContext(SubprocessExecContext):
         "Path to the gain calibration solution table"
         return self.cal.with_suffix(".gcal")
 
+    @property
+    def output(self) -> CalibrationSolution:
+        "The expected CalibrationSolution object"
+        return CalibrationSolution(gcal=self.gcal_path, bpcal=self.bpcal_path)
+
     def _python_cmd(self, expr: str) -> list[str]:
         "Wraps a Python expression as a python3 -c command"
         return ["python3", "-c", expr]
@@ -98,7 +103,7 @@ class ApplyCalibrationContext(SubprocessExecContext):
         return tgt
 
     @property
-    def calibrated_tgt_path(self) -> Path:
+    def output_path(self) -> Path:
         "Path to the calibrated target measurement set produced by split"
         return self.tgt.parent / f"{self.tgt.stem}_calibrated.ms"
 
@@ -120,7 +125,7 @@ class ApplyCalibrationContext(SubprocessExecContext):
         kwargs = self.cfg.split.to_kwargs()
         kwargs_str = ", ".join(f"{k}={v!r}" for k, v in kwargs.items())
         return self._python_cmd(
-            f"from casatasks import split; split(vis='{self.tgt}', outputvis='{self.calibrated_tgt_path}', {kwargs_str})"
+            f"from casatasks import split; split(vis='{self.tgt}', outputvis='{self.output_path}', {kwargs_str})"
         )
 
     @property
@@ -172,9 +177,9 @@ def apply_calibration(ctx: ApplyCalibrationContext) -> Path:
     logger.info(
         f"Running calibration on source {ctx.tgt} using calibration solutions: {ctx.cal.bpcal.name} and {ctx.cal.gcal.name}"
     )
-    if ctx.calibrated_tgt_path.exists():
-        logger.info(f"Removing existing observation: {ctx.calibrated_tgt_path}")
-        shutil.rmtree(ctx.calibrated_tgt_path)
+    if ctx.output_path.exists():
+        logger.info(f"Removing existing observation: {ctx.output_path}")
+        shutil.rmtree(ctx.output_path)
 
     ctx.log_cmd()
     procs = ctx.execute()
@@ -183,8 +188,8 @@ def apply_calibration(ctx: ApplyCalibrationContext) -> Path:
         if p.stderr:
             logger.warning(p.stderr)
         p.check_returncode()
-    logger.info(f"Calibration application complete. Written to {ctx.calibrated_tgt_path}")
-    return ctx.calibrated_tgt_path
+    logger.info(f"Calibration application complete. Written to {ctx.output_path}")
+    return ctx.output_path
 
 
 @click.option(

@@ -9,7 +9,7 @@ from prefect.cache_policies import NO_CACHE
 
 from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
-from needle.modules.clean import run_clean, WSCleanContext
+from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
 
 
 @task(cache_policy=NO_CACHE)
@@ -20,8 +20,10 @@ def interval_clean_task(
     mask: Optional[Path],
     interval: tuple[int, int],
     log_level: str = "INFO",
+    overwrite: bool = False,
     dependencies: Optional[Any] = None,
-) -> list[Path]:
+    **kwargs,
+) -> WSCleanIntervalOutput:
     """Cleans a single time interval slice of a measurement set.
 
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
@@ -32,30 +34,25 @@ def interval_clean_task(
     _ = dependencies
 
     output_dir = Path(f"{ms.with_suffix('')}_interval")
-    os.makedirs(output_dir, exist_ok=True)
+    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
+    if overwrite is False and ctx.output.exists:
+        logger.info(f"Interval {interval[0]}->{interval[1]} clean already complete at {output_dir}\nWill not reprocess")
+        return ctx.output
 
-    logger.info(f"Cleaning interval {interval} of {ms}")
-    wsclean_output = client.submit(
-        run_clean,
-        ctx=WSCleanContext(
-            cfg=cfg,
-            ms=ms,
-            fits_mask=mask,
-            interval=interval,
-            output_dir=output_dir,
-        ),
-    ).result()
+    logger.info(f"Cleaning interval {interval[0]}->{interval[1]} of {ms}")
+    wsclean_output: WSCleanIntervalOutput = client.submit(run_clean, ctx).result()
+
     n_expected = interval[1] - interval[0]
     if not len(wsclean_output.image) == n_expected:
         raise FileNotFoundError(
             f"Expected number of image files ({n_expected}) do not match actual count ({len(wsclean_output.image)})"
         )
-
     for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
         os.remove(f)
 
     # Remap the interval images so that they're named nicely
-    return wsclean_output.remap_interval_images(interval_start=interval[0])
+    wsclean_output.remap(interval_start=interval[0])
+    return wsclean_output
 
 
 @task(cache_policy=NO_CACHE)
@@ -65,6 +62,8 @@ def clean_task(
     cfg: WSCleanConfig,
     mask: Optional[Path] = None,
     log_level: str = "INFO",
+    overwrite: bool = False,
+    **kwargs,
 ) -> Path:
     """Perform a clean on a measurement set with an optional mask input. Return the fits image path.
     Expects only one image output.
@@ -74,11 +73,14 @@ def clean_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    wsclean_output = client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)).result()
+    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
+    if not cfg.subtract_model and ctx.output.image and overwrite is False:
+        logger.info(f"Found existing output: image: {ctx.output.image}\nWill not recreate")
+        return ctx.output.image[0]
 
-    if len(wsclean_output.image) != 1:
-        raise RuntimeError(f"Unexpected number of wsclean image outputs: {wsclean_output.image}")
-
+    wsclean_output = client.submit(run_clean, ctx).result()
+    if not cfg.subtract_model and len(wsclean_output.image != 1):
+        raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
     return wsclean_output.image[0]
 
 
@@ -89,10 +91,11 @@ def predict_task(
     cfg: WSCleanConfig,
     log_level: str = "INFO",
     dependencies: Optional[Any] = None,
+    **kwargs,
 ) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
-    Mostly the same as clean_task but doesn't return the wsclean output.
+    Mostly the same as clean_task but doesn't return the wsclean output and always runs regardless of `overwrite`.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)

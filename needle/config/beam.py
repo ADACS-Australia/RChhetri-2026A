@@ -7,6 +7,16 @@ from needle.config.calibrate import CalInput
 logger = logging.getLogger(__name__)
 
 
+def _move(path: Path, new_dir: Path) -> Path:
+    dest = new_dir / path.name
+    if path == dest:  # already staged
+        return path
+    if dest.exists():
+        raise FileExistsError(f"Cannot move {path} -> {dest}: destination already exists")
+    path.rename(dest)
+    return dest
+
+
 class BeamPair(NeedleModel):
     """A matched target/calibrator pair belonging to the same beam."""
 
@@ -29,21 +39,13 @@ class BeamPair(NeedleModel):
     def move_tgt(self, new_dir: Path):
         "Moves the target to a new location"
         new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
-        new_path = new_dir / self.tgt.name
-        self.tgt.rename(new_path)
-        self.tgt = new_path
+        self.tgt = _move(self.tgt, new_dir)
 
     def move_cal(self, new_dir: Path):
         "Moves the calibrator to a new location"
         new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
         if isinstance(self.cal, Path):
-            new_path = new_dir / self.cal.name
-            self.cal.rename(new_path)
-            self.cal = new_path
-        else:  # CalibrationSolution
-            new_path = new_dir / self.cal.bpcal.name
-            self.cal.bpcal.rename(new_path)
-            self.cal.bpcal = new_path
-            new_path = new_dir / self.cal.gcal.name
-            self.cal.gcal.rename(new_path)
-            self.cal.gcal = new_path
+            self.cal = _move(self.cal, new_dir)
+        else:
+            self.cal.bpcal = _move(self.cal.bpcal, new_dir)
+            self.cal.gcal = _move(self.cal.gcal, new_dir)

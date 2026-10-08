@@ -12,11 +12,17 @@ from pathlib import Path
 from typing import Optional
 
 import click
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from needle.lib.validate import validate_path_ms, validate_path_fits
 from needle.config.base import NeedleModel, needle_module_args
-from needle.config.clean import WSCleanConfig, ShallowCleanConfig, DeepCleanConfig, ModelSubtractCleanConfig
+from needle.config.clean import (
+    WSCleanConfig,
+    ShallowCleanConfig,
+    DeepCleanConfig,
+    ModelSubtractCleanConfig,
+    IntervalCleanConfig,
+)
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -48,26 +54,68 @@ class WSCleanOutput(NeedleModel):
     def residual(self) -> list[Path]:
         return [Path(i) for i in glob(f"{self.prefix}*-residual.fits")]
 
-    def remap_interval_images(self, interval_start: int) -> list[Path]:
-        """Rename interval images from chunk-relative to absolute timestep indices.
+    def exists(self) -> bool:
+        """Only checks that a single output exists, assumes it's correct. This is a naive approach. An algorithm for
+        the expected output based on the inputs would be more robust, but hard to implement."""
+        for o in [self.image, self.psf, self.dirty, self.model, self.residual]:
+            if o:
+                return True
+        return False
 
-        WSClean names interval images with a chunk-relative index (e.g. 't0031'), which
-        resets to zero for each task. This method renames them to absolute timestep indices
-        by offsetting with the interval start (e.g. t0031 with interval_start=87 -> t0118).
 
-        :param interval_start: The absolute timestep at which this interval chunk begins.
+class WSCleanIntervalOutput(WSCleanOutput):
+    """Outputs of an interval clean. WSClean writes one image per timestep, indexed from zero within the chunk
+    ({prefix}-t0000-image.fits, ...), and remap() renames them to absolute timestep indices
+    ({base}-t{start:04d}-image.fits, ...), where base is the prefix without its trailing _{start}_{end}.
+    """
+
+    prefix: Path
+    "The -name of the chunk. Must end with _{start}_{end}"
+
+    interval: tuple[int, int]
+    "The (start, end) timestep range of the chunk, end exclusive"
+
+    @model_validator(mode="after")
+    def _prefix_ends_with_interval(self):
+        if not str(self.prefix).endswith(self._suffix):
+            raise ValueError(f"Prefix {self.prefix} should end with {self._suffix}")
+        return self
+
+    @property
+    def _suffix(self) -> str:
+        return f"_{self.interval[0]}_{self.interval[1]}"
+
+    @property
+    def base(self) -> Path:
+        "The prefix with the trailing _{start}_{end} removed. Remapped images are named from this"
+        return Path(str(self.prefix)[: -len(self._suffix)])
+
+    @property
+    def image(self) -> list[Path]:
+        "The final (remapped) image paths, one per timestep. Computed from the interval, so they may not exist yet"
+        start, end = self.interval
+        return [Path(f"{self.base}-t{i:04d}-image.fits") for i in range(start, end)]
+
+    def exists(self) -> bool:
+        "True if every remapped image is on disk. Remapping is the last step, so this means the chunk finished"
+        return all(p.exists() for p in self.image)
+
+    def remap(self) -> list[Path]:
+        """Rename WSClean's chunk-relative images to absolute timestep indices.
+
+        e.g. t0031 with a chunk starting at 87 -> t0118
+
         :raises ValueError: Raised if an image with an unrecognised interval token format is found.
-        :returns: List of renamed image paths with absolute timestep indices.
+        :returns: The renamed image paths.
         """
-        clean_prefix = str(self.prefix).rsplit("_", 2)[0]
+        start = self.interval[0]
         renamed = []
-        for path in self.image:
-            suffix = path.name[len(Path(self.prefix).name) :]
-            t_str, product = suffix[1:].split("-", 1)
-            if not (t_str.startswith("t") and t_str[1:].isdigit()):
-                raise ValueError(f"Expected WSClean interval token (e.g. 't0031') but got '{t_str}' in '{path.name}'")
-            absolute_idx = interval_start + int(t_str[1:])
-            new_path = path.parent / f"{Path(clean_prefix).name}-t{absolute_idx:04d}-{product}"
+        # "-t" after the prefix stops a chunk like _5_10 from also picking up files from _5_100
+        for path in sorted(Path(p) for p in glob(f"{self.prefix}-t*-image.fits")):
+            token, product = path.name[len(self.prefix.name) + 1 :].split("-", 1)
+            if not (token.startswith("t") and token[1:].isdigit()):
+                raise ValueError(f"Expected WSClean interval token (e.g. 't0031') but got '{token}' in '{path.name}'")
+            new_path = path.parent / f"{self.base.name}-t{start + int(token[1:]):04d}-{product}"
             path.rename(new_path)
             renamed.append(new_path)
         return renamed
@@ -92,7 +140,7 @@ class WSCleanContext(SubprocessExecContext):
     "Predict visibilities - this will create a MODEL_DATA column in the ms"
 
     output_dir: Path | None = None
-    "A directory to output the resulting files to. Default (None) is ms directory."
+    "A subdirectory to output the resulting files to. Default (None) is ms directory."
 
     @field_validator("ms")
     @classmethod
@@ -164,15 +212,22 @@ class WSCleanContext(SubprocessExecContext):
             cmd = ["wsclean", "-name", self.name, "-predict"]
 
         cmd.append(str(self.ms))
-        return [cmd]  # execute() expects a list of lists
+        cmds = []  # execute() expects a list of lists
+        if self.output_dir:
+            cmds.append(["mkdir", "-p", "-m", "770", self.output_dir])
+        cmds.append(cmd)
+        return cmds
 
     @property
-    def output(self) -> WSCleanOutput:
+    def output(self) -> WSCleanOutput | WSCleanIntervalOutput:
         """The WSCleanOutput object - the expected outputs from running the cmd"""
-        return WSCleanOutput(prefix=self.name)
+        if isinstance(self.cfg, IntervalCleanConfig):
+            return WSCleanIntervalOutput(prefix=self.name, interval=self.interval)
+        else:
+            return WSCleanOutput(prefix=self.name)
 
 
-def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
+def run_clean(ctx: WSCleanContext) -> WSCleanOutput | WSCleanIntervalOutput:
     """Run WSClean on a measurement set.
 
     Builds and executes the WSClean command for the given config. Both
@@ -192,7 +247,7 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
             logger.warning(p.stderr)
         p.check_returncode()
 
-    logger.info(f"WSClean complete, output image: {ctx.output.image}")
+    logger.info(f"WSClean complete, output: {ctx.output}")
     return ctx.output
 
 

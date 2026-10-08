@@ -22,6 +22,9 @@ class CalibrationSolution(NeedleModel):
             raise ValueError(f"Bandpass calibration solution expected (.bpcal), got {self.bpcal}")
         return self
 
+    def exists(self) -> bool:
+        return all([self.gcal.exists(), self.bpcal.exists()])
+
 
 CalInput = Path | CalibrationSolution
 
