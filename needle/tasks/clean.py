@@ -74,12 +74,13 @@ def clean_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
-    if all([ctx.output.image, ctx.output.model]) and overwrite is False:  # Do not recreate image
+    if not cfg.subtract_model and ctx.output.image and overwrite is False:
+        logger.info(f"Found existing output: image: {ctx.output.image}\nWill not recreate")
         return ctx.output.image[0]
 
     wsclean_output = client.submit(run_clean, ctx).result()
-    if len(wsclean_output.image) != 1:
-        raise RuntimeError(f"Unexpected number of wsclean image outputs: {wsclean_output.image}")
+    if not cfg.subtract_model and len(wsclean_output.image != 1):
+        raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
     return wsclean_output.image[0]
 
 
@@ -101,7 +102,5 @@ def predict_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = dependencies
 
-    wsclean_output = client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, predict=True)).result()
-    if len(wsclean_output.model) != 1:
-        raise RuntimeError(f"Unexpected number of wsclean image outputs: {wsclean_output.image}")
+    client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, predict=True)).result()
     return ms

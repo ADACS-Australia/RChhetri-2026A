@@ -34,7 +34,7 @@ def source_find_task(
     # Convert the catalog to a more workable json format
     output_json = output.sources_txt.with_suffix(".json")
     if overwrite is False and output_json.exists():
-        logger.info(f"JSONN file exists at {output_json}\nWill not recalculate.")
+        logger.info(f"JSON file exists at {output_json}\nWill not recalculate.")
     else:
         source_list = AegeanSourceList.from_txt_catalog(output.sources_txt)
         source_list.to_json(output_json)

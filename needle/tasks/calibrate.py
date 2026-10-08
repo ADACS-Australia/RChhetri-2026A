@@ -25,9 +25,9 @@ def solve_calibration_task(
 
     if not isinstance(cal, CalibrationSolution):
         ctx = SolveCalibrationContext(cfg=cfg, cal=cal)
-        if ctx.expected_solution.exists() and overwrite is False:
-            logger.info(f"Found existing solution: {ctx.expected_solution}\nWill not reprocess.")
-            return ctx.expected_solution
+        if ctx.output.exists() and overwrite is False:
+            logger.info(f"Found existing solution: {ctx.output}\nWill not reprocess.")
+            return ctx.output
         cal = client.submit(solve_calibration, ctx).result()
     return cal
 
@@ -48,7 +48,7 @@ def apply_calibration_task(
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
     ctx = ApplyCalibrationContext(cfg=cfg, cal=cal, tgt=tgt)
-    if ctx.calibrated_tgt_path.exists() and overwrite is False:  # Do not re-process
-        logger.info(f"Found existing solution: {ctx.calibrated_tgt_path}\nWill not reprocess.")
-        return ctx.calibrated_tgt_path
+    if ctx.output_path.exists() and overwrite is False:  # Do not re-process
+        logger.info(f"Found existing solution: {ctx.output_path}\nWill not reprocess.")
+        return ctx.output_path
     return client.submit(apply_calibration, ctx).result()

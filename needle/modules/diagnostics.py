@@ -55,7 +55,9 @@ class MSDiagnostics(BaseModel):
     spw: int = 0
     "Spectral window index to run diagnostics on"
     _output: MSDiagnosticsOutput
-    "The MSDiagnosticsOutput object to store output paths"
+    "Internally referenced MSDiagnosticsOutput object to store output paths"
+    _output_dir: Path
+    "Internally referenced output directory"
 
     @field_validator("ms")
     @classmethod
@@ -66,9 +68,11 @@ class MSDiagnostics(BaseModel):
         return ms
 
     def model_post_init(self, __context):
-        if self.output_dir is None:
-            self.output_dir: Path = self.ms.parent
-        self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
+        if not self.output_dir:
+            object.__setattr__(self, "_output_dir", self.ms.parent)
+        else:
+            object.__setattr__(self, "_output_dir", self.output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", MSDiagnosticsOutput())
 
     def expected_output(self) -> MSDiagnosticsOutput:
@@ -462,11 +466,16 @@ class CalDiagnostics(BaseModel):
     output_dir: Path | None = None
     "Location to output the diagnostics to"
     _output: CalDiagnosticsOutput
+    "Internally referenced CalDiagnosticsOutput object to store output paths"
+    _output_dir: Path
+    "Internally referenced output directory"
 
     def model_post_init(self, __context):
-        if self.output_dir is None:
-            self.output_dir = self.solution.gcal.parent
-        self.output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
+        if not self.output_dir:
+            object.__setattr__(self, "_output_dir", self.solution.gcal.parent)
+        else:
+            object.__setattr__(self, "_output_dir", self.output_dir)
+        self._output_dir.mkdir(parents=True, exist_ok=True, mode=0o770)
         object.__setattr__(self, "_output", CalDiagnosticsOutput())
 
     def expected_output(self) -> MSDiagnosticsOutput:

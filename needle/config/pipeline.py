@@ -15,6 +15,7 @@ from needle.config.flag import FlagConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
 from needle.config.watcher import WatcherConfig
+from needle.lib.constants import RED, GREEN, YELLOW, BOLD, FMT_RST
 
 logger = logging.getLogger(__name__)
 
@@ -140,15 +141,10 @@ class NeedleConfig(NeedleModel):
 
     @classmethod
     def validate(cls, source: str | Path | dict, quiet: bool = False, full_traceback: bool = False) -> bool:
-        BOLD = "\033[1m"
-        RED = "\033[91m"
-        GREEN = "\033[92m"
-        YELLOW = "\033[93m"
-        RESET = "\033[0m"
 
         def emit(msg: str, fmt: str = ""):
             if not quiet:
-                print(f"{fmt}{msg}{RESET}")
+                print(f"{fmt}{msg}{FMT_RST}")
 
         def clean_msg(msg: str) -> str:
             # Pydantic prefixes ValueErrors raised in validators
@@ -158,7 +154,7 @@ class NeedleConfig(NeedleModel):
             for err in exc.errors():
                 loc = " -> ".join(str(i) for i in err["loc"])
                 prefix = f"{loc}: " if loc else ""
-                emit(f"{indent}• {BOLD}{prefix}{RESET}{RED}{clean_msg(err['msg'])}", RED)
+                emit(f"{indent}• {BOLD}{prefix}{FMT_RST}{RED}{clean_msg(err['msg'])}", RED)
 
         emit("\n--- Config Validation ---", BOLD)
         # Try to read in the config file

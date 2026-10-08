@@ -140,7 +140,7 @@ class WSCleanContext(SubprocessExecContext):
     "Predict visibilities - this will create a MODEL_DATA column in the ms"
 
     output_dir: Path | None = None
-    "A directory to output the resulting files to. Default (None) is ms directory."
+    "A subdirectory to output the resulting files to. Default (None) is ms directory."
 
     @field_validator("ms")
     @classmethod
@@ -219,21 +219,15 @@ class WSCleanContext(SubprocessExecContext):
         return cmds
 
     @property
-    def output(self) -> WSCleanOutput | WSCleanIntervalOutput | None:
+    def output(self) -> WSCleanOutput | WSCleanIntervalOutput:
         """The WSCleanOutput object - the expected outputs from running the cmd"""
         if isinstance(self.cfg, IntervalCleanConfig):
             return WSCleanIntervalOutput(prefix=self.name, interval=self.interval)
-        elif isinstance(self.cfg, ModelSubtractCleanConfig):
-
-            logger.warning(
-                "Output of ModelSubtractClean operation cannot be determined as it modifies measurement sets in place"
-            )
-            return None
         else:
             return WSCleanOutput(prefix=self.name)
 
 
-def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
+def run_clean(ctx: WSCleanContext) -> WSCleanOutput | WSCleanIntervalOutput:
     """Run WSClean on a measurement set.
 
     Builds and executes the WSClean command for the given config. Both
@@ -253,7 +247,7 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput:
             logger.warning(p.stderr)
         p.check_returncode()
 
-    logger.info(f"WSClean complete, output image: {ctx.output.image}")
+    logger.info(f"WSClean complete, output: {ctx.output}")
     return ctx.output
 
 
