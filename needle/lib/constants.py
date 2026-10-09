@@ -9,3 +9,7 @@ RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 FMT_RST = "\033[0m"  # Format Reset
+
+
+# Key used to store if the model subtraction has been executed
+MODEL_SUBTRACT_KEY = "MODEL_SUBTRACTED"

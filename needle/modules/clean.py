@@ -1,11 +1,3 @@
-"""
-Runs WSClean on a measurement set.
-Supports different cleaning modes:
-    - Shallow clean (no mask)
-    - Deep clean (with mask)
-    - Model subtraction
-"""
-
 from glob import glob
 import logging
 from pathlib import Path
@@ -14,7 +6,6 @@ from typing import Optional
 import click
 from pydantic import field_validator, model_validator
 
-from needle.lib.validate import validate_path_ms, validate_path_fits
 from needle.config.base import NeedleModel, needle_module_args
 from needle.config.clean import (
     WSCleanConfig,
@@ -23,6 +14,9 @@ from needle.config.clean import (
     ModelSubtractCleanConfig,
     IntervalCleanConfig,
 )
+from needle.lib.casa import open_table
+from needle.lib.constants import MODEL_SUBTRACT_KEY
+from needle.lib.validate import validate_path_ms, validate_path_fits
 from needle.modules.needle_context import SubprocessExecContext
 
 logger = logging.getLogger(__name__)
@@ -155,6 +149,12 @@ class WSCleanContext(SubprocessExecContext):
             validate_path_fits(msk)
         return msk
 
+    @model_validator(mode="after")
+    def _no_predict_with_subtract(self):
+        if self.predict and self.cfg.subtract_model:
+            raise ValueError("predict and subtract_model cannot be combined")
+        return self
+
     @property
     def name(self) -> str:
         name = self.ms.with_suffix("")
@@ -227,17 +227,38 @@ class WSCleanContext(SubprocessExecContext):
             return WSCleanOutput(prefix=self.name)
 
 
-def run_clean(ctx: WSCleanContext) -> WSCleanOutput | WSCleanIntervalOutput:
+def run_clean(ctx: WSCleanContext, overwrite_predictions: bool = False) -> WSCleanOutput | WSCleanIntervalOutput:
     """Run WSClean on a measurement set.
 
-    Builds and executes the WSClean command for the given config. Both
-    shallow and deep cleans are handled by passing the appropriate
-    WSCleanConfig subclass. Output images are written with the given
-    name prefix.
+    Builds and executes the WSClean command for the given config. Both shallow and deep cleans are handled by passing
+    the appropriate WSCleanConfig subclass. Output images are written with the given name prefix.
+
+    If subtract_model is on, will check to see if a model has already been subtracted from this file. If so, will no-op.
+    If not, then it will add the keyword after performing the subtraction.
 
     :param ctx: WSClean run context object
+    :param overwrite_predictions: If true, will recreate predictions (MODEL_DATA) column if they exist already.
     :returns: The wsclean output object
     """
+
+    # MODEL_DATA check - don't recreate
+    if ctx.predict and not overwrite_predictions:
+        with open_table(ctx.ms) as tb:
+            cols = tb.colnames()  # list of column names (casatools)
+            if "MODEL_DATA" in cols:
+                logger.warning("Model has already been predicted. Will not recreate.")
+                return ctx.output
+
+    # Subtraction check
+    if ctx.cfg.subtract_model:
+        with open_table(ctx.ms) as tb:
+            subtracted = tb.getkeyword(MODEL_SUBTRACT_KEY) if MODEL_SUBTRACT_KEY in tb.getkeywords() else None
+            if subtracted is not None:
+                logger.warning(
+                    f"Model has already been subtracted. Will not re-subtract.\nCommand used in previous subtraction: '{subtracted}'"
+                )
+                return ctx.output
+
     logger.info(f"Running WSClean on {ctx.ms}")
     ctx.log_cmd()
     procs = ctx.execute()
@@ -247,7 +268,14 @@ def run_clean(ctx: WSCleanContext) -> WSCleanOutput | WSCleanIntervalOutput:
             logger.warning(p.stderr)
         p.check_returncode()
 
-    logger.info(f"WSClean complete, output: {ctx.output}")
+    # Add subtraction key for future runs
+    if ctx.cfg.subtract_model:
+        logger.info("Adding subtraction key to MS")
+        logger.debug(f"Subtraction value: {ctx._resolved_cmds_str}")
+        with open_table(ctx.ms, nomodify=False) as tb:
+            tb.putkeyword(MODEL_SUBTRACT_KEY, ctx._resolved_cmds_str)
+    logger.info("WSClean complete")
+    logger.debug(f"output: {ctx.output}")
     return ctx.output
 
 
