@@ -35,7 +35,7 @@ def interval_clean_task(
 
     output_dir = Path(f"{ms.with_suffix('')}_interval")
     ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
-    if overwrite is False and ctx.output.exists:
+    if overwrite is False and ctx.output.exists():
         logger.info(f"Interval {interval[0]}->{interval[1]} clean already complete at {output_dir}\nWill not reprocess")
         return ctx.output
 
@@ -51,7 +51,7 @@ def interval_clean_task(
         os.remove(f)
 
     # Remap the interval images so that they're named nicely
-    wsclean_output.remap(interval_start=interval[0])
+    wsclean_output.remap()
     return wsclean_output
 
 
@@ -79,7 +79,7 @@ def clean_task(
         return ctx.output.image[0]
 
     wsclean_output = client.submit(run_clean, ctx).result()
-    if not cfg.subtract_model and len(wsclean_output.image != 1):
+    if not cfg.subtract_model and len(wsclean_output.image) != 1:
         raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
     return wsclean_output.image[0]
 
@@ -91,16 +91,19 @@ def predict_task(
     cfg: WSCleanConfig,
     log_level: str = "INFO",
     dependencies: Optional[Any] = None,
+    overwrite: bool = False,
     **kwargs,
 ) -> Path:
     """Fills the MODEL_DATA column of the measurement set.
     Expects a run_clean to have been done with the provided config already to generate the -model.fits file.
-    Mostly the same as clean_task but doesn't return the wsclean output and always runs regardless of `overwrite`.
+    Mostly the same as clean_task but also generates a model column and doesn't return the wsclean output.
+    Model column will not be overwritten if it exists and overwrite is false.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
     _ = dependencies
 
-    client.submit(run_clean, WSCleanContext(cfg=cfg, ms=ms, predict=True)).result()
+    ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
+    client.submit(run_clean, ctx, overwrite_predictions=overwrite).result()
     return ms

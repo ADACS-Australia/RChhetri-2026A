@@ -176,7 +176,7 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
         f_mask=f_mask,
         n_intervals=cfg.flow.interval_tasks,
     )
-    f_interval_clean = interval_clean_task.map(
+    f_interval_clean = interval_clean_task.with_options(name="interval_clean").map(
         unmapped(client),
         all_tgt,
         cfg=unmapped(cfg.interval_clean),

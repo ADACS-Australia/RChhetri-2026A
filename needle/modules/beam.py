@@ -17,8 +17,8 @@ BPCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.bpcal$"
 GCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.gcal$"
 BEAM_DIR_PATTERN = r"beam\d{2}$"
 
-# Priority of formats to use. Best last.
-FORMAT_PRIORITY = (".mir", ".uvfits" ".ms")
+# Priority of formats to use. Best first.
+FORMAT_PRIORITY = (".ms", ".uvfits" ".mir")
 
 
 def _sort_key(path: Path) -> tuple[int, str]:

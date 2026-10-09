@@ -47,7 +47,8 @@ def convert_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    if isinstance(input, CalibrationSolution):
+    if isinstance(input, CalibrationSolution) or input.suffix == ".ms":
+        logger.info(f"No need to run conversion. Already in desired format: {input}")
         return input
     logger.info(f"Creating measurement set from {input}")
     ctx = ConvertContext(input=input)

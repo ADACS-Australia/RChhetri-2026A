@@ -173,10 +173,10 @@ class MSInfo(BaseModel):
             "fields": asdict(self.fields),
             "data_columns": self.data_columns,
         }
-        logger.info(f"Writing inspection result to {self._output_path}")
-        with open(self._output_path, "w") as f:
+        logger.info(f"Writing inspection result to {self.output_path}")
+        with open(self.output_path, "w") as f:
             json.dump(payload, f, indent=2, default=str)
-        return self._output_path
+        return self.output_path
 
     @classmethod
     def from_json(cls, path: Path | str) -> "MSInfo":
