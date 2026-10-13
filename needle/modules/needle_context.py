@@ -71,10 +71,8 @@ class SubprocessExecContext(NeedleContext):
         return self
 
     def log_cmd(self) -> None:
-        """Logs each command exactly as it will be run, including container
-        wrapping if a runtime is set"""
-        for c in self._resolved_cmds:
-            logger.debug(" ".join(str(x) for x in c))
+        """Logs each command exactly as it will be run, including container wrapping if a runtime is set"""
+        logger.debug(self._resolved_cmds_str)
 
     def execute(self) -> list[subprocess.CompletedProcess]:
         """Executes the commands using the runtime provided.
