@@ -5,7 +5,7 @@ import traceback
 from typing import Optional, Literal
 import yaml
 
-from pydantic import ValidationError, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 
 from needle.config.base import NeedleModel
 from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig
@@ -208,6 +208,30 @@ class NeedleConfig(NeedleModel):
                 emit(f"\n{traceback.format_exc()}", RED)
 
         return False
+
+    def show(self, section: str | None = None, **kwargs) -> None:
+        """Pretty-prints the whole config, or a single (sub-)section of it.
+
+        :param section: Section name, or dotted path (e.g. "deep_clean" or "deep_clean.auto_mask").
+            If None, the entire config is printed.
+        :raises KeyError: Raised if the section does not exist
+        """
+        target = self
+        title = "NeedleConfig"
+        if section:
+            for part in section.split("."):
+                fields = type(target).model_fields if isinstance(target, BaseModel) else {}
+                if part not in fields:
+                    valid = ", ".join(fields) or "(none, this is a leaf value)"
+                    raise KeyError(f"'{part}' is not a valid section of {title}. Options: {valid}")
+                target = getattr(target, part)
+                title = part
+
+        print(f"{BOLD}--- {section or 'NeedleConfig'} ---{FMT_RST}")
+        if isinstance(target, NeedleModel):
+            target.pprint(**kwargs)
+        else:
+            print(repr(target))  # a leaf value reached via a dotted path
 
     @staticmethod
     def _read_raw(source: str | Path | dict) -> dict:

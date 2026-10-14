@@ -1,3 +1,4 @@
+from enum import Enum
 from pathlib import Path
 import types
 from typing import Literal, Union, get_args, get_origin
@@ -7,6 +8,7 @@ import click
 from pydantic import BaseModel, ConfigDict
 from pydantic_core import PydanticUndefinedType
 
+from needle.lib.constants import GREEN, BOLD, YELLOW, CYAN, FMT_RST, DIM
 from needle.lib.logging import setup_logging
 
 
@@ -14,6 +16,13 @@ def _kv_pair(value: str) -> tuple[str, str]:
     """Parses a 'KEY=VALUE' string into a (key, value) tuple, for dict-typed fields."""
     key, _, val = value.partition("=")
     return key, val
+
+
+def _is_model_annotation(ann) -> bool:
+    """True if a type annotation is, or contains (e.g. `Foo | None`, `Optional[Foo]`), a pydantic model."""
+    if isinstance(ann, type) and issubclass(ann, BaseModel):
+        return True
+    return any(_is_model_annotation(a) for a in get_args(ann))
 
 
 class NeedleModel(BaseModel):
@@ -37,26 +46,59 @@ class NeedleModel(BaseModel):
         "Serialise this model to a flat dict of kwargs for passing to tasks"
         return self.model_dump(exclude_none=True)
 
-    def pretty_print(self, _last_levels: tuple[bool, ...] = ()) -> None:
-        """Pretty prints the model, including any nested models"""
-        if not _last_levels:
-            print(f"[{type(self).__name__}]")
-        fields = list(type(self).model_fields.keys())
-        for i, field_name in enumerate(fields):
-            field_val = getattr(self, field_name)
-            is_last = i == len(fields) - 1
-            pad = "".join("    " if last else "│   " for last in _last_levels)
+    def pformat(self, indent: int = 0, color: bool = True, mark_changed: bool = True) -> str:
+        """Returns a human-readable, tree-style rendering of this model and all nested models.
 
-            if isinstance(field_val, NeedleModel):
-                connector = "└── " if is_last else "├── "
-                if not _last_levels:  # Don't pad the final level
-                    print(f"{pad}│")
-                print(f"{pad}{connector}{field_name}: [{type(field_val).__name__}]")
-                field_val.pretty_print(_last_levels=(*_last_levels, is_last))
+        :param indent: Starting indentation level (in units of 2 spaces)
+        :param color: Whether to emit ANSI colour codes
+        :param mark_changed: Highlight values that differ from the field default
+        """
+        c = (lambda code, s: f"{code}{s}{FMT_RST}") if color else (lambda code, s: s)
+        lines: list[str] = []
 
+        def fmt_scalar(v) -> str:
+            return v.name if isinstance(v, Enum) else repr(v)
+
+        def render(value, prefix: str, key: str, is_last: bool, changed: bool, is_section: bool) -> None:
+            connector = "└── " if is_last else "├── "
+            branch = c(DIM, prefix + connector)
+            child_prefix = prefix + ("    " if is_last else "│   ")
+
+            if isinstance(value, NeedleModel):
+                lines.append(f"{branch}{c(BOLD + CYAN, key)}:")
+                render_children(value, child_prefix)
+            elif isinstance(value, dict) and value:
+                lines.append(f"{branch}{c(BOLD, key)}:")
+                items = list(value.items())
+                for i, (k, v) in enumerate(items):
+                    render(v, child_prefix, str(k), i == len(items) - 1, False, False)
+            elif isinstance(value, (list, tuple)) and any(isinstance(v, NeedleModel) for v in value):
+                lines.append(f"{branch}{c(BOLD, key)}:")
+                for i, v in enumerate(value):
+                    render(v, child_prefix, f"[{i}]", i == len(value) - 1, False, False)
             else:
-                connector = "└── " if is_last else "│   "
-                print(f"{pad}{connector}{field_name}: {field_val}")
+                key_style = BOLD + CYAN if is_section else BOLD
+                val = c(YELLOW if changed else GREEN, fmt_scalar(value))
+                lines.append(f"{branch}{c(key_style, key)}: {val}")
+
+        def render_children(model: "NeedleModel", prefix: str) -> None:
+            fields = list(type(model).model_fields.items())
+            for i, (name, info) in enumerate(fields):
+                value = getattr(model, name)
+                is_section = _is_model_annotation(info.annotation)
+                changed = False
+                if mark_changed and not isinstance(value, BaseModel):
+                    try:
+                        changed = value != info.get_default(call_default_factory=True)
+                    except Exception:
+                        changed = False
+                render(value, prefix, name, i == len(fields) - 1, changed, is_section)
+
+        render_children(self, "  " * indent)
+        return "\n".join(lines)
+
+    def pprint(self, **kwargs) -> None:
+        print(self.pformat(**kwargs))
 
     @classmethod
     def to_click_params(cls, prefix: str = "") -> list[click.Parameter]:

@@ -93,16 +93,10 @@ def cli():
 
 
 @cli.command()
-@click.option(
-    "--work-dir",
-    "work_dir",
-    required=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Location of the calibration and target observation pairs.",
-)
+@click.argument("work_dir", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
 @_log_level_options
 def run(work_dir, log_level):
-    """Runs the pipeline on a directory now."""
+    """Runs the pipeline on a directory (work_dir) now."""
     from needle.flows.pipeline import needle_pipeline
     from prefect.task_runners import ThreadPoolTaskRunner
 
@@ -270,13 +264,8 @@ def check_cluster(log_level, memory, cores, processes, walltime):
 
 
 @cli.command()
-@click.option(
-    "-c",
-    "--cfg",
-    "cfg_path",
-    default=Path.home() / ".needle.yaml",
-    type=click.Path(exists=True, path_type=Path),
-    help="Path to the config YAML file.",
+@click.argument(
+    "cfg_path", default=Path.home() / ".needle.yaml", required=False, type=click.Path(exists=True, path_type=Path)
 )
 @click.option("-p", "--pretty-print", "pretty_print", is_flag=True, help="Whether to pretty print the config")
 def validate(cfg_path, pretty_print):
@@ -285,8 +274,24 @@ def validate(cfg_path, pretty_print):
     if not valid:
         return
     if pretty_print:
-        click.echo()
-        NeedleConfig.load(path=cfg_path).pretty_print()
+        NeedleConfig.load(path=cfg_path).pretty_print().show()
+
+
+@cli.command()
+@click.option(
+    "-c",
+    "--cfg",
+    "cfg_path",
+    default=Path.home() / ".needle.yaml",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to the config YAML file.",
+)
+@click.argument("section", default=None, required=False)
+def display(section, cfg_path):
+    """Loads and renders either the entire config state, or one section (e.g. clean, flag) of it.
+    Use dot annotation for sub-sub sections (e.g. flag.quack)."""
+    cfg = NeedleConfig.load(cfg_path)
+    cfg.show(section)
 
 
 module = LazyGroup(

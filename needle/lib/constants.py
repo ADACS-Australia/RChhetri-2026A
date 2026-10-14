@@ -3,12 +3,14 @@ WORKFLOW_UMASK = 0o002  # Umask to allow group write/exec access
 
 
 # Log/Print formatting constants
+DIM = "\033[2m"
 BOLD = "\033[1m"
+FMT_RST = "\033[0m"  # Format Reset
+# Colours
 CYAN = "\033[36m"
 RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
-FMT_RST = "\033[0m"  # Format Reset
 
 
 # Key used to store if the model subtraction has been executed
