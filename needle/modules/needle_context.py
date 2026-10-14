@@ -43,7 +43,7 @@ class SubprocessExecContext(NeedleContext):
     @property
     def _resolved_cmds_str(self) -> str:
         """Returns the command as a string"""
-        return "\n".join(" ".join(cmd) for cmd in self._resolved_cmds)
+        return "\n".join(" ".join(str(cmd)) for cmd in self._resolved_cmds)
 
     @model_validator(mode="after")
     def _validate_cmd(self) -> "NeedleContext":

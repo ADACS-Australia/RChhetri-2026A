@@ -48,7 +48,7 @@ def test_open_table_opens_yields_and_closes():
     with patch("needle.lib.casa.get_table", return_value=fake_tb):
         with open_table("some/path.ms") as tb:
             assert tb is fake_tb
-            fake_tb.open.assert_called_once_with("some/path.ms")
+            fake_tb.open.assert_called_once_with("some/path.ms", nomodify=True)
             fake_tb.close.assert_not_called()
 
     fake_tb.close.assert_called_once()
