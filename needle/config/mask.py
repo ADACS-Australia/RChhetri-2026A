@@ -16,6 +16,9 @@ class CreateMaskOutput(NeedleModel):
     def mask(self) -> Path:
         return Path(str(self.prefix) + "-clean_mask").with_suffix(".fits")
 
+    def exists(self) -> bool:
+        return self.mask.exists()
+
 
 class CreateMaskConfig(NeedleModel):
     """Config for the mask creation step"""

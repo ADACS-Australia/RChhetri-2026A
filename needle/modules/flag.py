@@ -39,6 +39,10 @@ class FlagContext(SubprocessExecContext):
         return ["python3", "-c", expr]
 
     @property
+    def output(self) -> Path:
+        return Path(f"{self.ms}.flagversions")
+
+    @property
     def cmd(self) -> list[list[str]]:
         """Returns a list of flagdata commands for each active flagging step, in order
 

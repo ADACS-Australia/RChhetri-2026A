@@ -1,3 +1,6 @@
+## NOTE
+## There are missing type-hints here. That is by design.
+## We want to lazy load all CASA modules, so we can't import at the top level.
 import os
 from importlib.resources import files
 from contextlib import contextmanager
@@ -25,13 +28,14 @@ def get_table():
 
 
 @contextmanager
-def open_table(path: Path | str):
+def open_table(path: Path | str, nomodify: bool = True):
     """Context manager that opens and yields a CASA table object
 
     :param path: The path to the measurement set to open as a table object
+    :param nomodify: Whether this table can be written to
     """
     tb = get_table()
-    tb.open(str(path))
+    tb.open(str(path), nomodify=nomodify)
     try:
         yield tb
     finally:

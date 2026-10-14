@@ -87,16 +87,16 @@ def test_apply_calibration_context_paths(mock_ms, mock_solution):
     _, tgt = mock_ms
     cfg = ApplyCalibrationConfig.model_validate({"applycal": {}, "split": {}})
     ctx = ApplyCalibrationContext(cfg=cfg, cal=mock_solution, tgt=tgt)
-    assert ctx.calibrated_tgt_path == tgt.parent / "tgt_calibrated.ms"
+    assert ctx.output_path == tgt.parent / "tgt_calibrated.ms"
 
 
 def test_apply_calibration_context_cmd(mock_ms, mock_solution):
     """Test that ApplyCalibrationContext generates the expected CASA commands.
 
     Catches a bug where _applycal_cmd/_split_cmd reference self._bpcal_path,
-    self.gcal_path, and self._calibrated_tgt_path, none of which exist on
+    self.gcal_path, and self._output_path, none of which exist on
     ApplyCalibrationContext (should be self.cal.bpcal, self.cal.gcal, and
-    self.calibrated_tgt_path respectively). This currently raises AttributeError.
+    self.output_path respectively). This currently raises AttributeError.
     """
     _, tgt = mock_ms
     cfg = ApplyCalibrationConfig.model_validate({"applycal": {}, "split": {}})
@@ -109,7 +109,7 @@ def test_apply_calibration_context_cmd(mock_ms, mock_solution):
     assert str(mock_solution.bpcal) in cmds[0][2]
     assert str(mock_solution.gcal) in cmds[0][2]
     assert "split" in cmds[1][2]
-    assert str(ctx.calibrated_tgt_path) in cmds[1][2]
+    assert str(ctx.output_path) in cmds[1][2]
 
 
 @patch("needle.modules.needle_context.SubprocessExecContext.execute")
@@ -135,8 +135,8 @@ def test_apply_calibration_removes_existing_output(mock_rmtree, mock_execute, mo
     cfg = ApplyCalibrationConfig.model_validate({"applycal": {}, "split": {}})
     ctx = ApplyCalibrationContext(cfg=cfg, cal=mock_solution, tgt=tgt)
 
-    ctx.calibrated_tgt_path.mkdir()
+    ctx.output_path.mkdir()
 
     apply_calibration(ctx)
 
-    mock_rmtree.assert_called_once_with(ctx.calibrated_tgt_path)
+    mock_rmtree.assert_called_once_with(ctx.output_path)

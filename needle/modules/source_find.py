@@ -42,6 +42,9 @@ class SourceFindOutput(NeedleModel):
     def sources_txt(self) -> Path:
         return Path(str(self.prefix) + "-sources").with_suffix(".txt")
 
+    def exists(self) -> bool:
+        return self.sources_txt.exists()
+
 
 class SourceFindContext(SubprocessExecContext):
     """Context object for the Source Finding module"""

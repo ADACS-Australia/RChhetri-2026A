@@ -35,10 +35,15 @@ class SubprocessExecContext(NeedleContext):
     @property
     def _resolved_cmds(self) -> list[list[str]]:
         """Prepends runtime args to each command if runtime is set"""
+        cmds = [c for c in self.cmd if c]  # never prepend to / emit an empty command
         if self.runtime:
-            # It is important not to prepend to an empty command
-            return [self.runtime.to_args() + c for c in self.cmd if c]
-        return self.cmd
+            return [self.runtime.to_args() + c for c in cmds]
+        return cmds
+
+    @property
+    def _resolved_cmds_str(self) -> str:
+        """Returns the command as a string"""
+        return "\n".join(" ".join(str(cmd)) for cmd in self._resolved_cmds)
 
     @model_validator(mode="after")
     def _validate_cmd(self) -> "NeedleContext":
@@ -66,10 +71,8 @@ class SubprocessExecContext(NeedleContext):
         return self
 
     def log_cmd(self) -> None:
-        """Logs each command exactly as it will be run, including container
-        wrapping if a runtime is set"""
-        for c in self._resolved_cmds:
-            logger.debug(" ".join(str(x) for x in c))
+        """Logs each command exactly as it will be run, including container wrapping if a runtime is set"""
+        logger.debug(self._resolved_cmds_str)
 
     def execute(self) -> list[subprocess.CompletedProcess]:
         """Executes the commands using the runtime provided.

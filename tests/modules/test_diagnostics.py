@@ -30,7 +30,7 @@ def test_diagnostics_output_all_files():
 def test_ms_diagnostics_init(mock_validate, mock_ms):
     diag = MSDiagnostics(ms=mock_ms, output_dir=None)
     assert diag.ms == mock_ms
-    assert diag.output_dir == mock_ms.parent
+    assert diag._output_dir == mock_ms.parent
 
 
 @patch("needle.modules.diagnostics.validate_path_ms")
@@ -102,7 +102,7 @@ def test_ms_diagnostics_context_execute(mock_validate, mock_run_all, mock_ms):
     result = ctx.execute()
 
     assert result.ms == mock_ms
-    assert result.output_dir == mock_ms.parent
+    assert result._output_dir == mock_ms.parent
     mock_run_all.assert_called_once()
 
 
@@ -203,7 +203,7 @@ def test_cal_diagnostics_init(mock_solution):
     cd = CalDiagnostics(solution=mock_solution, output_dir=None)
     assert cd.gcal == mock_solution.gcal
     assert cd.bpcal == mock_solution.bpcal
-    assert cd.output_dir == mock_solution.gcal.parent
+    assert cd._output_dir == mock_solution.gcal.parent
 
 
 def test_cal_diagnostics_output_paths(mock_solution):

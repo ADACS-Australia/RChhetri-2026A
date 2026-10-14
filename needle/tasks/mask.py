@@ -16,6 +16,8 @@ def create_mask_task(
     fits_image: Path,
     cfg: CreateMaskConfig,
     log_level: str = "INFO",
+    overwrite: bool = False,
+    **kwargs,
 ) -> Path:
     """Creates a fits mask using a fits image as reference. Returns the path to the mask.
 
@@ -25,7 +27,12 @@ def create_mask_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    output = client.submit(create_mask, CreateMaskContext(cfg=cfg, image=fits_image, sources=sources_json)).result()
-    if not output.mask.exists():
+    ctx = CreateMaskContext(cfg=cfg, image=fits_image, sources=sources_json)
+    if overwrite is False and ctx.output.exists():
+        logger.info(f"Found existing mask at {ctx.output.mask}\nWill not recreate")
+        return ctx.output.mask
+
+    output = client.submit(create_mask, ctx).result()
+    if not output.exists():
         raise FileNotFoundError(f"Expected file output from source_find '{output.mask}' does not exist")
     return output.mask

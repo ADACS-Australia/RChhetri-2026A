@@ -5,7 +5,7 @@ import traceback
 from typing import Optional, Literal
 import yaml
 
-from pydantic import ValidationError, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 
 from needle.config.base import NeedleModel
 from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig
@@ -15,6 +15,7 @@ from needle.config.flag import FlagConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
 from needle.config.watcher import WatcherConfig
+from needle.lib.constants import RED, GREEN, YELLOW, BOLD, FMT_RST
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,8 @@ class ConfigLoadError(Exception):
 class PipelineFlowConfig(NeedleModel):
     """Flow-level configuration"""
 
-    overwrite: bool = True
-    "Whether to overwrite any existing data"
+    overwrite: bool = False
+    "Whether to overwrite any existing data. True will redo much of the processing/calculations. False will not touch existing outputs where possible."
 
     shm_size: str = "2gb"
     "Size of /dev/shm in the runtime container"
@@ -98,11 +99,9 @@ class NeedleConfig(NeedleModel):
                     "deep_clean.auto_threshold and interval_clean.auto_threshold must be set for flow.skip_to_deep_clean to be set"
                 )
         elif self.deep_clean.auto_mask:
-            logging.warning("deep_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
+            logger.warning("deep_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
         elif self.interval_clean.auto_mask:
-            logging.warning(
-                "interval_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on"
-            )
+            logger.warning("interval_clean.auto_mask is set but flow.skip_to_deep_clean is not. Consider turning it on")
         return self
 
     @classmethod
@@ -142,15 +141,10 @@ class NeedleConfig(NeedleModel):
 
     @classmethod
     def validate(cls, source: str | Path | dict, quiet: bool = False, full_traceback: bool = False) -> bool:
-        BOLD = "\033[1m"
-        RED = "\033[91m"
-        GREEN = "\033[92m"
-        YELLOW = "\033[93m"
-        RESET = "\033[0m"
 
         def emit(msg: str, fmt: str = ""):
             if not quiet:
-                print(f"{fmt}{msg}{RESET}")
+                print(f"{fmt}{msg}{FMT_RST}")
 
         def clean_msg(msg: str) -> str:
             # Pydantic prefixes ValueErrors raised in validators
@@ -160,7 +154,7 @@ class NeedleConfig(NeedleModel):
             for err in exc.errors():
                 loc = " -> ".join(str(i) for i in err["loc"])
                 prefix = f"{loc}: " if loc else ""
-                emit(f"{indent}• {BOLD}{prefix}{RESET}{RED}{clean_msg(err['msg'])}", RED)
+                emit(f"{indent}• {BOLD}{prefix}{FMT_RST}{RED}{clean_msg(err['msg'])}", RED)
 
         emit("\n--- Config Validation ---", BOLD)
         # Try to read in the config file
@@ -214,6 +208,30 @@ class NeedleConfig(NeedleModel):
                 emit(f"\n{traceback.format_exc()}", RED)
 
         return False
+
+    def show(self, section: str | None = None, **kwargs) -> None:
+        """Pretty-prints the whole config, or a single (sub-)section of it.
+
+        :param section: Section name, or dotted path (e.g. "deep_clean" or "deep_clean.auto_mask").
+            If None, the entire config is printed.
+        :raises KeyError: Raised if the section does not exist
+        """
+        target = self
+        title = "NeedleConfig"
+        if section:
+            for part in section.split("."):
+                fields = type(target).model_fields if isinstance(target, BaseModel) else {}
+                if part not in fields:
+                    valid = ", ".join(fields) or "(none, this is a leaf value)"
+                    raise KeyError(f"'{part}' is not a valid section of {title}. Options: {valid}")
+                target = getattr(target, part)
+                title = part
+
+        print(f"{BOLD}--- {section or 'NeedleConfig'} ---{FMT_RST}")
+        if isinstance(target, NeedleModel):
+            target.pprint(**kwargs)
+        else:
+            print(repr(target))  # a leaf value reached via a dotted path
 
     @staticmethod
     def _read_raw(source: str | Path | dict) -> dict:

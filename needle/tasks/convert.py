@@ -37,7 +37,7 @@ def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INF
 
 @task(cache_policy=NO_CACHE)
 def convert_task(
-    client: Client, input: Path | CalibrationSolution, log_level: str = "INFO"
+    client: Client, input: Path | CalibrationSolution, log_level: str = "INFO", **kwargs
 ) -> Path | CalibrationSolution:
     """Convert an observation file to a measurement set.
     Will not attempt to operate on calibration solutions.
@@ -47,7 +47,8 @@ def convert_task(
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    if isinstance(input, CalibrationSolution):
+    if isinstance(input, CalibrationSolution) or input.suffix == ".ms":
+        logger.info(f"No need to run conversion. Already in desired format: {input}")
         return input
     logger.info(f"Creating measurement set from {input}")
     ctx = ConvertContext(input=input)
