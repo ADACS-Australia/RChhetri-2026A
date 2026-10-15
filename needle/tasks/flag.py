@@ -6,8 +6,9 @@ from distributed import Client
 
 from needle.config.beam import BeamPair
 from needle.config.calibrate import CalibrationSolution
-from needle.lib.logging import beam_logger
 from needle.config.flag import FlagConfig
+from needle.lib.dask import submit_in_beam, map_in_beam
+from needle.lib.logging import beam_logger
 from needle.modules.flag import flag_observation, FlagContext
 
 
@@ -33,7 +34,7 @@ def flag_ms_task(
         if ctx.output.exists() and overwrite is False:
             logger.info(f"Found existing flagversion for tgt: {ctx.output}\nWill not reflag.")
             return ms
-        client.submit(flag_observation, ctx).result()
+        submit_in_beam(client, flag_observation, ctx).result()
         logger.info(f"Completed flagging task for {ms.name}")
     return ms
 
@@ -62,6 +63,6 @@ def flag_ms_pair_task(
                 task_ctxs.append(cal_ctx)
 
         logger.info(f"Beginning flagging task for beam {beam.beam}")
-        client.gather(client.map(flag_observation, task_ctxs))
+        client.gather(map_in_beam(client, flag_observation, task_ctxs))
         logger.info(f"Completed flagging task for beam {beam.beam}")
     return beam

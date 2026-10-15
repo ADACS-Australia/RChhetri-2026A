@@ -6,6 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from needle.config.mask import CreateMaskConfig
 from needle.modules.mask import create_mask, CreateMaskContext
+from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 
 
@@ -33,7 +34,7 @@ def create_mask_task(
             return ctx.output.mask
 
         logger.info(f"Beginning mask creation task for {fits_image}")
-        output = client.submit(create_mask, ctx).result()
+        output = submit_in_beam(client, create_mask, ctx).result()
         if not output.exists():
             raise FileNotFoundError(f"Expected file output from source_find '{output.mask}' does not exist")
         logger.info(f"Finished mask creation task for {fits_image}")

@@ -7,6 +7,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.beam import BeamPair
+from needle.lib.dask import submit_in_beam
 from needle.lib.exceptions import BeamUnusable
 from needle.lib.logging import beam_logger
 from needle.modules.diagnostics import (
@@ -28,7 +29,7 @@ def _flagged_pct(client: Client, ms: Path, logger) -> float:
         logger.info(f"Found existing diagnostics at {ctx.output.antenna_amp_stats_plot.parent}. Will not recreate.")
         output = ctx.output
     else:
-        output = client.submit(run_diagnostics, ctx).result()
+        output = submit_in_beam(client, run_diagnostics, ctx).result()
     with open(output.flag_summary_data) as f:
         return float(json.load(f)["overall_flagged_pct"])
 
@@ -83,7 +84,7 @@ def ms_diagnostics_task(
             logger.info(f"Found existing diagnostics at {ctx.output.antenna_amp_stats_plot.parent}. Will not recreate.")
             return ctx.output
         logger.info(f"Running diagnostics on {ms.name}")
-        result = client.submit(run_diagnostics, ctx).result()
+        result = submit_in_beam(client, run_diagnostics, ctx).result()
         logger.info(f"Completed diagnostics on {ms.name}")
     return result
 
@@ -102,6 +103,6 @@ def cal_diagnostics_task(
             logger.info(f"Found existing diagnostics at {ctx.output.gain_caltable_plot.parent}. Will not recreate.")
             return ctx.output
         logger.info(f"Beginning diagnostics on {cal.bpcal.name} and {cal.gcal.name}")
-        result = client.submit(run_diagnostics, ctx).result()
+        result = submit_in_beam(client, run_diagnostics, ctx).result()
         logger.info(f"Completed diagnostics on {cal.bpcal.name} and {cal.gcal.name}")
     return result

@@ -8,6 +8,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.clean import WSCleanConfig
+from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
 
@@ -42,7 +43,7 @@ def interval_clean_task(
             return ctx.output
 
         logger.info(f"Beginning cleaning of interval {interval[0]}->{interval[1]} of {ms}")
-        wsclean_output: WSCleanIntervalOutput = client.submit(run_clean, ctx).result()
+        wsclean_output: WSCleanIntervalOutput = submit_in_beam(client, run_clean, ctx).result()
 
         n_expected = interval[1] - interval[0]
         if not len(wsclean_output.image) == n_expected:
@@ -82,7 +83,7 @@ def clean_task(
             return ctx.output.image[0]
 
         logger.info(f"Beginning clean task for {ms.name}")
-        wsclean_output = client.submit(run_clean, ctx).result()
+        wsclean_output = submit_in_beam(client, run_clean, ctx).result()
         if not cfg.subtract_model and len(wsclean_output.image) != 1:
             raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
 
@@ -112,6 +113,6 @@ def predict_task(
 
         logger.info(f"Beginning model prediction task for {ms.name}")
         ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
-        client.submit(run_clean, ctx, overwrite_predictions=overwrite).result()
+        submit_in_beam(client, run_clean, ctx, overwrite_predictions=overwrite).result()
         logger.info(f"Completed model prediction task for {ms.name}")
     return ms

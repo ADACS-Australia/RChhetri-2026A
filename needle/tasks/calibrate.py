@@ -6,6 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig, CalInput, CalibrationSolution
 from needle.lib.logging import beam_logger
+from needle.lib.dask import submit_in_beam
 from needle.modules.calibrate import (
     SolveCalibrationContext,
     ApplyCalibrationContext,
@@ -29,7 +30,7 @@ def solve_calibration_task(
                 logger.info(f"Found existing solution: {ctx.output}\nWill not reprocess.")
                 return ctx.output
             logger.info(f"Beginning calibration solution calculation for calibrator: {cal.name}")
-            cal = client.submit(solve_calibration, ctx).result()
+            cal = submit_in_beam(client, solve_calibration, ctx).result()
             logger.info(f"Completed calibration solution calculation: {cal.bpcal.name} and {cal.gcal.name}")
     return cal
 
@@ -56,7 +57,7 @@ def apply_calibration_task(
         logger.info(
             f"Beginning calibration application for calibrator solutions: {cal.bpcal.name} and {cal.gcal.name} to target: {tgt.name}"
         )
-        result = client.submit(apply_calibration, ctx).result()
+        result = submit_in_beam(client, apply_calibration, ctx).result()
         logger.info(
             f"""Completed calibration application for calibrator solutions: {cal.bpcal.name} and {cal.gcal.name} to target: {tgt.name}
         Calibrated solution name: {result.name}"""

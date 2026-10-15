@@ -6,6 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.lib.aegean import AegeanSourceList
+from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.source_find import source_find, SourceFindContext
 from needle.config.source_find import SourceFindConfig
@@ -28,7 +29,7 @@ def source_find_task(
             output = ctx.output
         else:
             logger.info(f"Beginning source-finding for {fits_image}")
-            output = client.submit(source_find, ctx).result()
+            output = submit_in_beam(client, source_find, ctx).result()
             if not output.sources_txt.exists():
                 raise FileNotFoundError(f"Expected file output from source_find '{output.sources_txt}' does not exist")
             logger.info(f"Completed source-finding for {fits_image}")
