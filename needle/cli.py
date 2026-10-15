@@ -94,14 +94,10 @@ def cli():
 
 @cli.command()
 @click.argument("work_dir", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
-@_log_level_options
-def run(work_dir, log_level):
+def run(work_dir):
     """Runs the pipeline on a directory (work_dir) now."""
     from needle.flows.pipeline import needle_pipeline
     from prefect.task_runners import ThreadPoolTaskRunner
-
-    _setup_cli_logging(log_level)
-    setup_logging(log_level)
 
     cluster_cfg_hm = ClusterConfig.get_config()
     cluster_cfg_hm.to_cluster()

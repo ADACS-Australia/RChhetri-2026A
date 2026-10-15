@@ -6,7 +6,7 @@ from prefect.cache_policies import NO_CACHE
 
 from needle.config.mask import CreateMaskConfig
 from needle.modules.mask import create_mask, CreateMaskContext
-from needle.lib.logging import setup_logging
+from needle.lib.logging import beam_logger
 
 
 @task(cache_policy=NO_CACHE, task_run_name="create_mask_{fits_image.stem}")
@@ -24,15 +24,17 @@ def create_mask_task(
     :raises FileNotFoundError: Raised if the mask file is not found after running the mask module
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    logger = setup_logging(log_level)
-    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+    with beam_logger(fits_image.parent, log_level) as logger:
+        logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = CreateMaskContext(cfg=cfg, image=fits_image, sources=sources_json)
-    if overwrite is False and ctx.output.exists():
-        logger.info(f"Found existing mask at {ctx.output.mask}\nWill not recreate")
-        return ctx.output.mask
+        ctx = CreateMaskContext(cfg=cfg, image=fits_image, sources=sources_json)
+        if overwrite is False and ctx.output.exists():
+            logger.info(f"Found existing mask at {ctx.output.mask}\nWill not recreate")
+            return ctx.output.mask
 
-    output = client.submit(create_mask, ctx).result()
-    if not output.exists():
-        raise FileNotFoundError(f"Expected file output from source_find '{output.mask}' does not exist")
+        logger.info(f"Beginning mask creation task for {fits_image}")
+        output = client.submit(create_mask, ctx).result()
+        if not output.exists():
+            raise FileNotFoundError(f"Expected file output from source_find '{output.mask}' does not exist")
+        logger.info(f"Finished mask creation task for {fits_image}")
     return output.mask
