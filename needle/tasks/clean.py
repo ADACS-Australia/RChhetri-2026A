@@ -12,7 +12,7 @@ from needle.config.clean import WSCleanConfig
 from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="interval_clean_{ms.stem}_{interval[0]}_{interval[1]}")
 def interval_clean_task(
     client: Client,
     ms: Path,
@@ -55,7 +55,7 @@ def interval_clean_task(
     return wsclean_output
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="clean_{ms.stem}")
 def clean_task(
     client: Client,
     ms: Path,
@@ -84,7 +84,7 @@ def clean_task(
     return wsclean_output.image[0]
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="predict_{ms.stem}")
 def predict_task(
     client: Client,
     ms: Path,

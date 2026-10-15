@@ -9,7 +9,7 @@ from needle.lib.logging import setup_logging
 from needle.modules.inspect import InspectMSContext, MSInfo, inspect_ms
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="inspect_{ms.stem}")
 def inspect_ms_task(
     client: Client, ms: Path | CalibrationSolution, log_level: str = "INFO", overwrite: bool = False, **kwargs
 ) -> Path:

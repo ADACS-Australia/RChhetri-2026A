@@ -14,7 +14,7 @@ from needle.modules.calibrate import (
 from needle.lib.logging import setup_logging
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="solve_calibration_{cal.stem}")
 def solve_calibration_task(
     client: Client, cfg: SolveCalibrationConfig, cal: CalInput, log_level: str = "INFO", overwrite=False, **kwargs
 ) -> CalibrationSolution:
@@ -32,7 +32,7 @@ def solve_calibration_task(
     return cal
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="apply_calibration_{cal.stem}")
 def apply_calibration_task(
     client: Client,
     cfg: ApplyCalibrationConfig,

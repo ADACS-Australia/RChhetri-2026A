@@ -11,7 +11,7 @@ from needle.modules.source_find import source_find, SourceFindContext
 from needle.config.source_find import SourceFindConfig
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="source_find_{fits_path.stem}")
 def source_find_task(
     client: Client, fits_path: Path, cfg: SourceFindConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
 ) -> Path:
