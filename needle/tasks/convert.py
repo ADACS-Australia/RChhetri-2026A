@@ -10,32 +10,42 @@ from needle.modules.convert import convert_to_ms, ConvertContext
 from needle.lib.logging import setup_logging
 
 
-@task(cache_policy=NO_CACHE)
-def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INFO") -> BeamPair:
+@task(cache_policy=NO_CACHE, task_run_name="convert_beam{pair.beam}")
+def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INFO", **kwargs) -> BeamPair:
     """Convert a raw beam pair to measurement sets.
     Uses existing .ms files if already present, otherwise converts.
     Will not attempt to operate on calibration solutions.
-    Also creates the beam directory and puts the measurements sets in there.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
     logger = setup_logging(log_level)
     logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
+    f_tgt = None
+    tgt = pair.tgt
     ctx = ConvertContext(input=pair.tgt)
-    logger.info(f"Creating measurement set from {pair.tgt}")
-    f_tgt_ms = client.submit(convert_to_ms, ctx)
+    if pair.tgt.suffix == ".ms":
+        logger.info(f"No need to run conversion. Already in desired format: {pair.tgt}")
+    else:
+        logger.info(f"Creating measurement set from {pair.tgt}")
+        f_tgt = client.submit(convert_to_ms, ctx)
 
+    f_cal = None
     cal = pair.cal
-    if not isinstance(pair.cal, CalibrationSolution):
+    if isinstance(pair.cal, CalibrationSolution) or pair.cal.suffix == ".ms":
+        logger.info(f"No need to run conversion. Already in desired format: {pair.cal}")
+    else:
         ctx = ConvertContext(input=pair.cal)
         logger.info(f"Creating measurement set from {pair.cal}")
-        f_cal_ms = client.submit(convert_to_ms, ctx).result()
-    tgt_ms, cal = client.gather([f_tgt_ms, f_cal_ms])
+        f_cal = client.submit(convert_to_ms, ctx)
+    if f_tgt:
+        tgt = f_tgt.result()
+    if f_cal:
+        cal = f_cal.result()
 
-    return BeamPair(beam=pair.beam, tgt=tgt_ms, cal=cal)
+    return BeamPair(beam=pair.beam, tgt=tgt, cal=cal)
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="convert_{path.stem}")
 def convert_task(
     client: Client, input: Path | CalibrationSolution, log_level: str = "INFO", **kwargs
 ) -> Path | CalibrationSolution:

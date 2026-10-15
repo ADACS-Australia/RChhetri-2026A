@@ -8,7 +8,7 @@ from needle.lib.logging import setup_logging
 from needle.modules.beam import find_beam_pairs, BEAM_DIR_PATTERN
 
 
-@task
+@task(task_run_name="find_beam_pairs")
 def find_beam_pairs_task(search_dir: Path, log_level: str = "INFO", **kwargs) -> list[BeamPair]:
     """Searches a directory for beam pairs
 
@@ -25,7 +25,7 @@ def find_beam_pairs_task(search_dir: Path, log_level: str = "INFO", **kwargs) ->
     return beam_pairs
 
 
-@task
+@task(task_run_name="setup_beam_dir_beam{beam_pair.beam}")
 def setup_beam_dir_task(beam_pair: BeamPair, log_level: str = "INFO", **kwargs) -> BeamPair:
     """Sets up a beamXX directory for the provided beam in its parent directory
 

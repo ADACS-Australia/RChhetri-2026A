@@ -25,6 +25,11 @@ class CalibrationSolution(NeedleModel):
     def exists(self) -> bool:
         return all([self.gcal.exists(), self.bpcal.exists()])
 
+    @property
+    def stem(self):
+        """For comaptability with Path.stem"""
+        return self.gcal.stem
+
 
 CalInput = Path | CalibrationSolution
 

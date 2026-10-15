@@ -6,13 +6,15 @@ from needle.config.beam import BeamPair
 from needle.config.calibrate import CalibrationSolution
 
 
-@task()
-def extract_tgt_task(pair: BeamPair) -> Path:
+@task(task_run_name="extract_tgt_from_beam{pair.beam}")
+def extract_tgt_task(pair: BeamPair, dependency=None) -> Path:
     """Extract target from a BeamPair Object"""
+    _ = dependency
     return pair.tgt
 
 
-@task()
-def extract_cal_task(pair: BeamPair) -> Path | CalibrationSolution:
+@task(task_run_name="extract_cal_from_beam{pair.beam}")
+def extract_cal_task(pair: BeamPair, dependency=None) -> Path | CalibrationSolution:
     """Extract calibrator from a BeamPair Object"""
+    _ = dependency
     return pair.cal

@@ -9,7 +9,7 @@ from needle.modules.mask import create_mask, CreateMaskContext
 from needle.lib.logging import setup_logging
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="create_mask_{fits_image.stem}")
 def create_mask_task(
     client: Client,
     sources_json: Path,

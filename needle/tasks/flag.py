@@ -11,7 +11,7 @@ from needle.config.flag import FlagConfig
 from needle.modules.flag import flag_observation, FlagContext
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="flag_{ms.stem}")
 def flag_ms_task(
     client: Client,
     ms: Path | CalibrationSolution,
@@ -37,7 +37,7 @@ def flag_ms_task(
     return ms
 
 
-@task(cache_policy=NO_CACHE)
+@task(cache_policy=NO_CACHE, task_run_name="flag_beam{ms_pair.beam}")
 def flag_ms_pair_task(
     client: Client, ms_pair: BeamPair, cfg: FlagConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
 ) -> BeamPair:
@@ -52,11 +52,13 @@ def flag_ms_pair_task(
         logger.info(f"Found existing flagversion for tgt: {tgt_ctx.output}\nWill not reflag.")
     else:
         task_ctxs.append(tgt_ctx)
-    cal_ctx = FlagContext(cfg=cfg, ms=ms_pair.cal)
-    if cal_ctx.output.exists() and overwrite is False:
-        logger.info(f"Found existing flagversion for tgt: {tgt_ctx.output}\nWill not reflag.")
-    else:
-        task_ctxs.append(cal_ctx)
+
+    if not isinstance(ms_pair.cal, CalibrationSolution):
+        cal_ctx = FlagContext(cfg=cfg, ms=ms_pair.cal)
+        if cal_ctx.output.exists() and overwrite is False:
+            logger.info(f"Found existing flagversion for tgt: {tgt_ctx.output}\nWill not reflag.")
+        else:
+            task_ctxs.append(cal_ctx)
 
     client.gather(client.map(flag_observation, task_ctxs))
     return ms_pair
