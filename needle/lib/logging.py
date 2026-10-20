@@ -1,6 +1,7 @@
 import contextvars
 import copy
 import logging
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,7 @@ from typing import Optional
 LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 NEEDLE_LOGGER = "needle"
+WATCHER_LOGGER = "needle.watcher"
 NEEDLE_BEAM_LOGGER_FMT = "needle.beam.{beam_dir}"
 PREFECT_RUN_LOGGERS = ("prefect.flow_runs", "prefect.task_runs")
 
@@ -34,6 +36,13 @@ def _file_handler(path: Path, level: str, mode: str = "a") -> logging.FileHandle
     handler = logging.FileHandler(path, mode=mode, encoding="utf-8")
     handler.setLevel(level)
     handler.setFormatter(NeedleFileFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT))
+    return handler
+
+
+def _stream_handler(level: str) -> logging.StreamHandler:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT))
     return handler
 
 
@@ -130,3 +139,31 @@ def beam_logger(beam_dir: Path, level: str = "INFO"):
         _current_beam_handler.reset(token)
         logger.removeHandler(handler)
         handler.close()
+
+
+def setup_watcher_logger(level: str = "INFO", log_file: Optional[Path] = Path("./watcher.log")) -> logging.Logger:
+    """Watcher logger. Call once.
+
+    Always logs to stdout; additionally writes to log_file when one is given.
+
+    :param level: Level string e.g. "INFO", "DEBUG"
+    :param log_file: File to mirror the logs to, or None for stdout only
+    :return: Configured logger
+    """
+    log_file = Path(log_file) if log_file is not None else None
+    watcher_logger = logging.getLogger(WATCHER_LOGGER)
+    watcher_logger.setLevel(level)
+    # The needle/root handlers (and Prefect's console) must not duplicate watcher output
+    watcher_logger.propagate = False
+
+    # Replace handlers from any previous call rather than stacking duplicates
+    for old in list(watcher_logger.handlers):
+        watcher_logger.removeHandler(old)
+        old.close()
+
+    watcher_logger.addHandler(_stream_handler(level))
+    if log_file is not None:
+        log_file.unlink(missing_ok=True)
+        watcher_logger.addHandler(_file_handler(log_file, level))
+
+    return watcher_logger

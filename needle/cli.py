@@ -16,7 +16,7 @@ import click
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.constants import WORKFLOW_UMASK
-from needle.lib.dask_runner import build_dask_client
+from needle.lib.dask import build_dask_client
 from needle.lib.logging import setup_logging
 from needle.lib.slurm import memory_string_to_int
 
