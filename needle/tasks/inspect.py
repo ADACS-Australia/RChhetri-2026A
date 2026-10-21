@@ -5,7 +5,7 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 from needle.config.calibrate import CalibrationSolution
-from needle.lib.logging import setup_logging
+from needle.lib.logging import beam_logger
 from needle.modules.inspect import InspectMSContext, MSInfo, inspect_ms
 
 
@@ -15,18 +15,21 @@ def inspect_ms_task(
 ) -> Path:
     """Inspects a measurement set. Outputs the metadata to a json file for each ms"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    logger = setup_logging(log_level)
-    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+    with beam_logger(ms.parent, log_level) as logger:
+        logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    if isinstance(ms, CalibrationSolution):  # No-op
-        logger.info(f"Calibration solution passed to task: {ms}\nWill not inspect")
-        return
+        if isinstance(ms, CalibrationSolution):  # No-op
+            logger.info(f"Calibration solution passed to task: {ms}\nWill not inspect")
+            return
 
-    # Check if the output exists already
-    ctx = InspectMSContext(ms=ms, output_dir="inspect")
-    if ctx.output.exists() and overwrite is False:
-        logger.info(f"Inspect output exists: {ctx.output}\nWill not recreate")
-        return ctx.output
+        # Check if the output exists already
+        ctx = InspectMSContext(ms=ms, output_dir="inspect")
+        if ctx.output.exists() and overwrite is False:
+            logger.info(f"Inspect output exists: {ctx.output}\nWill not recreate")
+            return ctx.output
 
-    ms_info: MSInfo = client.submit(inspect_ms, ctx).result()
-    return client.submit(ms_info.to_json).result()
+        logger.info(f"Beginning inspection task for {ms.name}")
+        ms_info: MSInfo = client.submit(inspect_ms, ctx).result()
+        result = client.submit(ms_info.to_json).result()
+        logger.info(f"Completed inspection task for {ms.name}")
+    return result

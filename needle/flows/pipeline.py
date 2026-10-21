@@ -35,23 +35,12 @@ FutureList = list[PrefectFuture]
 OptionalFutureList = list[PrefectFuture | None]
 
 
-def _pipeline_flow_name() -> str:
-    """Should be called only at runtime. Generates the name of the flow"""
-    params = flow_run.get_parameters()
-    target_obs = Path(params["work_dir"]).stem
-    return f"pipeline-{target_obs}"
-
-
-def _unmapped_defaults(cfg: NeedleConfig) -> dict:
-    return {"log_level": unmapped(cfg.flow.log_level), "overwrite": unmapped(cfg.flow.overwrite)}
-
-
 @flow(
     name="needle-pipeline",
     log_prints=True,
     task_runner=ThreadPoolTaskRunner(),
     persist_result=True,
-    flow_run_name=_pipeline_flow_name,
+    flow_run_name=lambda: f"pipeline-{Path(flow_run.get_parameters()["work_dir"]).stem}",
 )
 def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: str, work_dir: Path | str) -> Flow:
     """The needle pipeline. Runs all operations end-to-end.
@@ -62,10 +51,14 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     :param client_address_hm: The addresss of the running Dask scheduler with additional memory. Used for memory intensive jobs
     :param work_dir: The directory containing all of the data to work with.
     """
-    logger = setup_logging(cfg.flow.log_level)
+    logger = setup_logging(cfg.flow.log_level, log_file=Path(work_dir) / "needle.log")
     logger.debug(f"Config: {cfg}")
     client = Client(client_address)
     client_hm = Client(client_address_hm)
+
+    def _unmapped_defaults(cfg: NeedleConfig) -> dict:
+        return {"log_level": unmapped(cfg.flow.log_level), "overwrite": unmapped(cfg.flow.overwrite)}
+
     defaults = _unmapped_defaults(cfg)
 
     ##########################
@@ -84,9 +77,7 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     ## Flag and  calibrate ##
     #########################
 
-    f_beam_pairs = flag_ms_pair_task.map(
-        client=unmapped(client), ms_pair=f_beam_pairs, cfg=unmapped(cfg.flag), **defaults
-    )
+    f_beam_pairs = flag_ms_pair_task.map(client=unmapped(client), beam=f_beam_pairs, cfg=unmapped(cfg.flag), **defaults)
     # Check that the beam is good enough to use
     f_beam_pairs = pre_cal_diagnostics.map(client=unmapped(client_hm), beam=f_beam_pairs, **defaults)
     # Solve and apply calibration
@@ -145,26 +136,7 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     #######################
     ## Interval Cleaning ##
     #######################
-
     f_interval_clean = _submit_interval_cleans(client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger)
-    # one task per (MS, interval) combination
-    # all_tgt, all_model_subtracts, all_masks, all_intervals = _expand_intervals(
-    #     f_tgt=f_tgt,
-    #     f_inspect_tgt=f_inspect_tgt,
-    #     f_model_subtract=f_model_subtract,
-    #     f_mask=f_mask,
-    #     n_intervals=cfg.flow.interval_tasks,
-    # )
-
-    # f_interval_clean = interval_clean_task.with_options(name="interval_clean").map(
-    #     unmapped(client),
-    #     all_tgt,
-    #     cfg=unmapped(cfg.interval_clean),
-    #     mask=all_masks,
-    #     interval=all_intervals,  # each task gets its own slice
-    #     dependencies=all_model_subtracts,
-    #     **defaults,
-    # )
 
     ###################################
     ## Finish and check for failures ##
@@ -218,25 +190,6 @@ def _submit_interval_cleans(
     return f_interval_clean
 
 
-def _report_failures(logger) -> int:
-    """Logs every task run in this flow run that itself failed (NotReady downstream
-    tasks are Pending, so they are excluded). Returns the number of failures."""
-    with get_client(sync_client=True) as client:
-        failed = client.read_task_runs(
-            flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[flow_run.id])),
-            task_run_filter=TaskRunFilter(
-                state=TaskRunFilterState(type=TaskRunFilterStateType(any_=[StateType.FAILED, StateType.CRASHED]))
-            ),
-        )
-    for tr in failed:
-        msg = tr.state.message or tr.state.name
-        if "BeamUnusable" in msg:
-            logger.warning(f"{tr.name} dropped: {msg}")
-        else:
-            logger.error(f"{tr.name} FAILED: {msg}")
-    return len(failed)
-
-
 def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tuple[int, int]]:
     """Generates `n_intervals` equal (or close to equal) intervals for cleaning for a measurement set with
     `n_integrations` time integrations"""
@@ -257,29 +210,20 @@ def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tu
     return intervals
 
 
-# def _ok(fut: PrefectFuture) -> bool:
-#     # Checks if the state of the future is complete
-#     fut.wait()
-#     return fut.state.is_completed()
-
-
-# def _expand_intervals(
-#     f_tgt: FutureList,
-#     f_inspect_tgt: FutureList,
-#     f_model_subtract: FutureList,
-#     f_mask: OptionalFutureList,
-#     n_intervals: int,
-# ) -> tuple[FutureList, FutureList, FutureList, list[tuple[int, int]]]:
-#     """Compute intervals per MS and flatten everything for mapping.
-#     Each MS fans out into n_intervals tasks, so we replicate tgt/subtract futures accordingly"""
-#     all_tgt, all_model_subtracts, all_masks, all_intervals = [], [], [], []
-#     for tgt, inspect, subtract, mask in zip(f_tgt, f_inspect_tgt, f_model_subtract, f_mask):
-#         if not (_ok(tgt) and _ok(inspect)):
-#             continue
-#         ms_info = MSInfo.from_json(inspect.result())
-#         for interval in _generate_ms_intervals(ms_info.time.n_integrations, n_intervals):
-#             all_tgt.append(tgt)
-#             all_model_subtracts.append(subtract)
-#             all_masks.append(mask)
-#             all_intervals.append(interval)
-#     return all_tgt, all_model_subtracts, all_masks, all_intervals
+def _report_failures(logger) -> int:
+    """Logs every task run in this flow run that itself failed (NotReady downstream
+    tasks are Pending, so they are excluded). Returns the number of failures."""
+    with get_client(sync_client=True) as client:
+        failed = client.read_task_runs(
+            flow_run_filter=FlowRunFilter(id=FlowRunFilterId(any_=[flow_run.id])),
+            task_run_filter=TaskRunFilter(
+                state=TaskRunFilterState(type=TaskRunFilterStateType(any_=[StateType.FAILED, StateType.CRASHED]))
+            ),
+        )
+    for tr in failed:
+        msg = tr.state.message or tr.state.name
+        if "BeamUnusable" in msg:
+            logger.warning(f"{tr.name} dropped: {msg}")
+        else:
+            logger.error(f"{tr.name} FAILED: {msg}")
+    return len(failed)

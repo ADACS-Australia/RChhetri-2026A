@@ -7,8 +7,9 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 
-from needle.lib.logging import setup_logging
 from needle.config.clean import WSCleanConfig
+from needle.lib.dask import submit_in_beam
+from needle.lib.logging import beam_logger
 from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
 
 
@@ -29,29 +30,32 @@ def interval_clean_task(
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    logger = setup_logging(log_level)
-    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
-    _ = dependencies
+    with beam_logger(ms.parent, log_level) as logger:
+        logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+        _ = dependencies
 
-    output_dir = Path(f"{ms.with_suffix('')}_interval")
-    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
-    if overwrite is False and ctx.output.exists():
-        logger.info(f"Interval {interval[0]}->{interval[1]} clean already complete at {output_dir}\nWill not reprocess")
-        return ctx.output
+        output_dir = Path(f"{ms.with_suffix('')}_interval")
+        ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
+        if overwrite is False and ctx.output.exists():
+            logger.info(
+                f"Interval {interval[0]}->{interval[1]} clean already complete at {output_dir}\nWill not reprocess"
+            )
+            return ctx.output
 
-    logger.info(f"Cleaning interval {interval[0]}->{interval[1]} of {ms}")
-    wsclean_output: WSCleanIntervalOutput = client.submit(run_clean, ctx).result()
+        logger.info(f"Beginning cleaning of interval {interval[0]}->{interval[1]} of {ms}")
+        wsclean_output: WSCleanIntervalOutput = submit_in_beam(client, run_clean, ctx).result()
 
-    n_expected = interval[1] - interval[0]
-    if not len(wsclean_output.image) == n_expected:
-        raise FileNotFoundError(
-            f"Expected number of image files ({n_expected}) do not match actual count ({len(wsclean_output.image)})"
-        )
-    for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
-        os.remove(f)
+        n_expected = interval[1] - interval[0]
+        if not len(wsclean_output.image) == n_expected:
+            raise FileNotFoundError(
+                f"Expected number of image files ({n_expected}) do not match actual count ({len(wsclean_output.image)})"
+            )
+        for f in wsclean_output.psf + wsclean_output.dirty + wsclean_output.residual + wsclean_output.model:
+            os.remove(f)
 
-    # Remap the interval images so that they're named nicely
-    wsclean_output.remap()
+        # Remap the interval images so that they're named nicely
+        wsclean_output.remap()
+        logger.info(f"Completed interval cleaning task on inerval {interval[0]}->{interval[1]} for {ms.name}")
     return wsclean_output
 
 
@@ -70,17 +74,20 @@ def clean_task(
 
     :raises RuntimeError: Raised if there is not exactly one image output"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    logger = setup_logging(log_level)
-    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+    with beam_logger(ms.parent, log_level) as logger:
+        logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
-    if not cfg.subtract_model and ctx.output.image and overwrite is False:
-        logger.info(f"Found existing output: image: {ctx.output.image}\nWill not recreate")
-        return ctx.output.image[0]
+        ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
+        if not cfg.subtract_model and ctx.output.image and overwrite is False:
+            logger.info(f"Found existing output: image: {ctx.output.image}\nWill not recreate")
+            return ctx.output.image[0]
 
-    wsclean_output = client.submit(run_clean, ctx).result()
-    if not cfg.subtract_model and len(wsclean_output.image) != 1:
-        raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
+        logger.info(f"Beginning clean task for {ms.name}")
+        wsclean_output = submit_in_beam(client, run_clean, ctx).result()
+        if not cfg.subtract_model and len(wsclean_output.image) != 1:
+            raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
+
+        logger.info(f"Completed clean task for {ms.name}")
     return wsclean_output.image[0]
 
 
@@ -100,10 +107,12 @@ def predict_task(
     Model column will not be overwritten if it exists and overwrite is false.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    logger = setup_logging(log_level)
-    logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
-    _ = dependencies
+    with beam_logger(ms.parent, log_level) as logger:
+        logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+        _ = dependencies
 
-    ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
-    client.submit(run_clean, ctx, overwrite_predictions=overwrite).result()
+        logger.info(f"Beginning model prediction task for {ms.name}")
+        ctx = WSCleanContext(cfg=cfg, ms=ms, predict=True)
+        submit_in_beam(client, run_clean, ctx, overwrite_predictions=overwrite).result()
+        logger.info(f"Completed model prediction task for {ms.name}")
     return ms

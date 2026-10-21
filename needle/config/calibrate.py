@@ -30,6 +30,11 @@ class CalibrationSolution(NeedleModel):
         """For comaptability with Path.stem"""
         return self.gcal.stem
 
+    @property
+    def parent(self):
+        """For comaptability with Path.parent"""
+        return self.gcal.parent
+
 
 CalInput = Path | CalibrationSolution
 

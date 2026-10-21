@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 
 from distributed import Client, LocalCluster
 
-from needle.lib.dask_runner import build_dask_client, _close_stray_clients
+from needle.lib.dask import build_dask_client, _close_stray_clients
 from needle.config.cluster import ClusterConfig
 
 
@@ -36,8 +36,8 @@ def test_build_dask_client_uses_provided_cfg():
     mock_cfg.to_cluster.return_value = mock_cluster
 
     with (
-        patch("needle.lib.dask_runner.ClusterConfig") as mock_cfg_cls,
-        patch("needle.lib.dask_runner.Client") as mock_client_cls,
+        patch("needle.lib.dask.ClusterConfig") as mock_cfg_cls,
+        patch("needle.lib.dask.Client") as mock_client_cls,
     ):
         mock_client_instance = mock_client_cls.return_value
 
@@ -56,7 +56,7 @@ def test_build_dask_client_falls_back_to_get_config():
     mock_cluster = MagicMock()
     mock_cfg.to_cluster.return_value = mock_cluster
 
-    with patch("needle.lib.dask_runner.ClusterConfig") as mock_cfg_cls, patch("needle.lib.dask_runner.Client"):
+    with patch("needle.lib.dask.ClusterConfig") as mock_cfg_cls, patch("needle.lib.dask.Client"):
         mock_cfg_cls.get_config.return_value = mock_cfg
 
         with build_dask_client() as (client, cluster):
@@ -72,7 +72,7 @@ def test_build_dask_client_closes_client_and_cluster_on_success():
     mock_cluster = MagicMock()
     mock_cfg.to_cluster.return_value = mock_cluster
 
-    with patch("needle.lib.dask_runner.Client") as mock_client_cls:
+    with patch("needle.lib.dask.Client") as mock_client_cls:
         mock_client_instance = mock_client_cls.return_value
 
         with build_dask_client(mock_cfg):
@@ -88,7 +88,7 @@ def test_build_dask_client_closes_client_and_cluster_on_exception():
     mock_cluster = MagicMock()
     mock_cfg.to_cluster.return_value = mock_cluster
 
-    with patch("needle.lib.dask_runner.Client") as mock_client_cls:
+    with patch("needle.lib.dask.Client") as mock_client_cls:
         mock_client_instance = mock_client_cls.return_value
 
         with pytest.raises(RuntimeError, match="boom"):
