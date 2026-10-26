@@ -300,6 +300,7 @@ module = LazyGroup(
         "convert": ("needle.modules.convert:entrypoint", "Convert a .uvfits/.mir file to a measurement set"),
         "diagnostics": ("needle.modules.diagnostics:entrypoint", "Run diagnostics on a measurement set"),
         "flag": ("needle.modules.flag:entrypoint", "Flag a measurement set"),
+        "imstack": ("needle.modules.imstack:entrypoint", "Build an HDF5 image stack from WSClean FITS images"),
         "inspect": ("needle.modules.inspect:entrypoint", "Inspect a measurement set"),
         "mask": ("needle.modules.mask:entrypoint", "Find sources in a .fits image"),
         "source-find": ("needle.modules.source_find:entrypoint", "Find sources in a .fits image"),
