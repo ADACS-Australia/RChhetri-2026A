@@ -9,9 +9,13 @@ COPY uv.lock .
 # Copy dependency files first — separate layer so it's only reinstalled when dependencies change
 COPY pyproject.toml .
 COPY uv.lock .
-RUN uv pip install --system --prefix=/opt/needle -r pyproject.toml 
-    # Drop this becuase we install it with other packages and it causes conflicts
-    # rm /opt/needle/lib/python3.12/site-packages/casatools/__casac__/lib/libsqlite3.so.0 
+RUN uv pip install --system --prefix=/opt/needle -r pyproject.toml
+
+# Remove CASA's bundled sqlite3 if it was installed into the project prefix.
+# It shadows the system library and breaks Python's sqlite3 extension.
+RUN if [ -d /opt/needle/lib/python3.12/site-packages/casatools ]; then \
+        find /opt/needle/lib/python3.12/site-packages/casatools -name "libsqlite3.so*" -print -delete; \
+    fi
 
 COPY README.md .
 COPY needle/ ./needle/
