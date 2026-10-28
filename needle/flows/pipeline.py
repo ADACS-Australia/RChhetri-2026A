@@ -134,9 +134,9 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
         unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
     )
 
-    #######################
-    ## Interval Cleaning ##
-    #######################
+    ##########################################
+    ## Interval Cleaning and Image Stacking ##
+    ##########################################
     f_interval_clean, intervals_by_beam = _submit_interval_cleans(
         client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger
     )
@@ -147,6 +147,10 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     ###################################
     for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_inspect_cal):
         f.wait()  # Don't use .result() as it causes crashing on failure
+    # Interval cleans depend on model subtraction. Wait for it explicitly so the flow
+    # does not cancel it if no interval cleans were planned.
+    for f in f_model_subtract:
+        f.wait()
     for f in f_interval_clean:
         f.wait()
     for f in f_image_stack:
@@ -171,9 +175,13 @@ def _submit_interval_cleans(
     intervals_by_beam = {}
 
     for inspect in as_completed(f_inspect_tgt):
-        if not inspect.state.is_completed():
-            continue  # dead beam, the failure report will cover it
         i = idx_by_run[inspect.task_run_id]
+        if not inspect.state.is_completed():
+            logger.error(
+                f"Skipping interval cleaning for beam index {i}: inspect finished in state "
+                f"{inspect.state.name}: {inspect.state.message}"
+            )
+            continue  # dead beam, the failure report will cover it
         try:
             ms_info = MSInfo.from_json(inspect.result())
             intervals = _generate_ms_intervals(ms_info.time.n_integrations, cfg.flow.interval_tasks)
@@ -195,6 +203,8 @@ def _submit_interval_cleans(
                 )
             )
             intervals_by_beam.setdefault(i, []).append(f_interval_clean[-1])
+    if not f_interval_clean:
+        logger.warning("No interval clean tasks were submitted; image stacks will not be created")
     return f_interval_clean, intervals_by_beam
 
 
