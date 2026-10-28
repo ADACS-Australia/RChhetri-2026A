@@ -23,6 +23,9 @@ class BeamPair(NeedleModel):
     beam: str
     "Beam identifier e.g. '00'"
 
+    name: str
+    "Name of the observation e.g. 'SB123456'"
+
     tgt: Path
     "Path to the target input file"
 

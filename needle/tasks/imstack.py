@@ -16,7 +16,7 @@ def create_image_stack_task(
     cfg: ImageStackConfig,
     input_dir: Path,
     obsid: str,
-    n_timesteps: int,
+    beam_file: Path,
     log_level: str = "INFO",
     overwrite: bool = False,
     **kwargs,
@@ -30,13 +30,7 @@ def create_image_stack_task(
     with beam_logger(input_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
-        ctx = ImageStackContext(
-            cfg=cfg,
-            obsid=obsid,
-            input_dir=input_dir,
-            n_timesteps=n_timesteps,
-            overwrite=overwrite,
-        )
+        ctx = ImageStackContext(cfg=cfg, obsid=obsid, input_dir=input_dir, beam_file=beam_file)
         if not overwrite and ctx.output.exists():
             logger.info(f"Found existing image stack at {ctx.output}\nWill not recreate")
             return ctx.output

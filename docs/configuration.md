@@ -172,11 +172,10 @@ interval_clean:
   scale: "5asec"
 
 imstack:
-  suffixes: ["image"]
-  pols: ["XX", "YY"]
-  stamp_size: 16
-  start: 0
   time_interval: 1.0
+  stamp_size: 16
+  pb_threshold: 0.1
+  dtype: "float16"
 ```
 
 ## Cluster

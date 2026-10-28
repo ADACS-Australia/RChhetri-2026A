@@ -17,8 +17,16 @@ BPCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.bpcal$"
 GCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.gcal$"
 BEAM_DIR_PATTERN = r"beam\d{2}$"
 
-# Priority of formats to use. Best first.
-FORMAT_PRIORITY = (".ms", ".uvfits" ".mir")
+# Priority of formats to use. Best last.
+FORMAT_PRIORITY = (".mir", ".uvfits", ".ms")
+
+
+def _target_name(path: Path, pattern: str) -> str:
+    """Extract the observation name from a target path using the pattern's `name` group."""
+    m = re.match(pattern, path.name)
+    if m is None or "name" not in m.groupdict():
+        raise ValueError(f"Target pattern {pattern!r} must match {path.name!r} and define a 'name' group")
+    return m.group("name")
 
 
 def _sort_key(path: Path) -> tuple[int, str]:
@@ -69,7 +77,6 @@ def find_beam_pairs(
     :param bpcal_pattern: The regex pattern to use for bandpass calibration solutions
     :param gcal_pattern: The regex pattern to use for gain calibration solutions
     :param beam_dir_pattern: The regex pattern to use for finding pre-existing beam directories
-    :param format_priority: Priority list
     """
     # Beam dirs go last so already-staged files win. Identify them by name, as .ms/.mir are directories too.
     beam_dirs = sorted(p for p in search_dir.iterdir() if p.is_dir() and re.fullmatch(beam_dir_pattern, p.name))
@@ -80,7 +87,7 @@ def find_beam_pairs(
     bpcals = _index(dirs, bpcal_pattern)
     gcals = _index(dirs, gcal_pattern)
 
-    # Seaerch for targets, calibrators and calibrator solutions. A solution needs a .gcal and a .bpcal
+    # Search for targets, calibrators and calibrator solutions. A solution needs a .gcal and a .bpcal
     solved_beams = bpcals.keys() & gcals.keys()
     bp_only = bpcals.keys() - gcals.keys()
     gc_only = gcals.keys() - bpcals.keys()
@@ -98,15 +105,6 @@ def find_beam_pairs(
         **{b: Path(p) for b, p in calibrators.items()},
         **{b: CalibrationSolution(bpcal=bpcals[b], gcal=gcals[b]) for b in solved_beams},  # solutions win
     }
-
-    # Only beams with both a target and calibration input (observation or solution) are usable
-    solved_beams = bpcals.keys() & gcals.keys()
-    bp_only = bpcals.keys() - gcals.keys()
-    gc_only = gcals.keys() - bpcals.keys()
-    if bp_only:
-        logger.warning(f".bpcal with no matching .gcal for beams: {bp_only}")
-    if gc_only:
-        logger.warning(f".gcal with no matching .bpcal for beams: {gc_only}")
 
     overlap = calibrators.keys() & solved_beams
     if overlap:
@@ -129,4 +127,7 @@ def find_beam_pairs(
         logger.debug(f"Failed to find beam pairs with patterns: \ntgt: {tgt_pattern} \ncal: {cal_pattern}")
         logger.debug(f"Looked in directory and found (unmatched) files: {list(search_dir.iterdir())}")
 
-    return [BeamPair(beam=beam, tgt=targets[beam], cal=cal_inputs[beam]) for beam in sorted(matched)]
+    return [
+        BeamPair(beam=beam, name=_target_name(targets[beam], tgt_pattern), tgt=targets[beam], cal=cal_inputs[beam])
+        for beam in sorted(matched)
+    ]
