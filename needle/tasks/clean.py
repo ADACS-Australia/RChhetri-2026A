@@ -10,7 +10,13 @@ from prefect.cache_policies import NO_CACHE
 from needle.config.clean import WSCleanConfig
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
-from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
+from needle.modules.clean import interval_output_dir, run_clean, WSCleanContext, WSCleanIntervalOutput
+
+
+@task(task_run_name="interval_dir_{ms.stem}")
+def interval_dir_task(ms: Path) -> Path:
+    """Returns the directory containing the interval clean outputs for a measurement set."""
+    return interval_output_dir(ms)
 
 
 @task(cache_policy=NO_CACHE, task_run_name="interval_clean_{ms.stem}_{interval[0]}_{interval[1]}")
@@ -34,7 +40,7 @@ def interval_clean_task(
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 
-        output_dir = Path(f"{ms.with_suffix('')}_interval")
+        output_dir = interval_output_dir(ms)
         ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
         if overwrite is False and ctx.output.exists():
             logger.info(

@@ -174,7 +174,6 @@ interval_clean:
 imstack:
   time_interval: 1.0
   stamp_size: 16
-  pb_threshold: 0.1
   dtype: "float16"
 ```
 

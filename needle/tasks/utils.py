@@ -20,8 +20,8 @@ def extract_cal_task(pair: BeamPair, dependency=None) -> Path | CalibrationSolut
     return pair.cal
 
 
-@task(task_run_name="extract_cal_from_beam{pair.beam}")
-def extract_name_task(pair: BeamPair, dependency=None) -> Path | CalibrationSolution:
-    """Extract name from a BeamPair Object"""
+@task(task_run_name="extract_name_from_beam{pair.beam}")
+def extract_name_task(pair: BeamPair, dependency=None) -> str:
+    """Extract the observation name from a BeamPair object."""
     _ = dependency
     return pair.name

@@ -1,12 +1,11 @@
 """
 Builds HDF5 image stacks from a directory of WSClean FITS images.
 
-An image stack stores a sequence of images with a shared celestial WCS, along with the primary
-beam, timestamps and per-timestep metadata. It is intended for fast time-domain queries over a
-single field.
+An image stack stores a sequence of images with a shared celestial WCS, timestamps and
+per-timestep metadata. It is intended for fast time-domain queries over a single field.
 
 Images are identified by a four-digit timestep token (e.g. ``-t0000-``) and are stacked in
-alphabetical filename order. The primary beam is supplied at runtime.
+alphabetical filename order.
 
 This module was adapted with permission from John Morgan's code: https://github.com/johnsmorgan/imstack
 """
@@ -15,7 +14,6 @@ import getpass
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import click
 import h5py
@@ -25,7 +23,6 @@ from pydantic import field_validator
 
 from needle.config.base import needle_module_args
 from needle.config.imstack import ImageStackConfig
-from needle.lib.validate import validate_path_fits
 from needle.modules.needle_context import NeedleContext
 
 logger = logging.getLogger(__name__)
@@ -74,9 +71,6 @@ class ImageStackContext(NeedleContext):
     obsid: str
     "Observation identifier used in filenames"
 
-    beam_file: Path
-    "Path to the primary beam FITS image"
-
     input_dir: Path = Path(".")
     "Directory containing the FITS images"
 
@@ -90,14 +84,6 @@ class ImageStackContext(NeedleContext):
             raise ValueError(f"Input directory does not exist: {v}")
         return v
 
-    @field_validator("beam")
-    @classmethod
-    def _valid_beam(cls, v: Path) -> Path:
-        validate_path_fits(v)
-        if not v.is_file():
-            raise ValueError(f"Primary beam does not exist: {v}")
-        return v
-
     @property
     def output(self) -> Path:
         "The output HDF5 path"
@@ -109,7 +95,7 @@ class ImageStackContext(NeedleContext):
         :raises FileNotFoundError: Raised if the directory contains no images
         :return: The ordered FITS image paths
         """
-        images = sorted(path for path in self.input_dir.glob(IMAGE_GLOB) if path != self.beam_file)
+        images = sorted(self.input_dir.glob(IMAGE_GLOB))
         if not images:
             raise FileNotFoundError(f"No FITS images matching '{IMAGE_GLOB}' in {self.input_dir}")
         return images
@@ -122,32 +108,6 @@ class ImageStackContext(NeedleContext):
             raise ValueError(f"Image size {data.shape[0]} must be divisible by stamp_size {self.cfg.stamp_size}")
         return data.shape[0]
 
-    def _write_beam(self, group: h5py.Group, image_size: int) -> np.ndarray:
-        """Write the primary beam and return the boolean mask of usable pixels.
-
-        :param group: The HDF5 group to write to
-        :param image_size: The image size in pixels
-        :return: The boolean mask of usable pixels
-        """
-        beam = group.create_dataset(
-            "beam", (1, image_size, image_size, 1, 1), dtype=np.float32, compression="lzf", shuffle=True
-        )
-        data, header = _read_fits(self.beam_file, self.cfg.hdu)
-        if data.shape != (image_size, image_size):
-            raise ValueError(f"Primary beam shape {data.shape} does not match image shape {image_size}")
-        beam[0, :, :, 0, 0] = data
-        for key, item in _header_attrs(header).items():
-            beam.attrs[key] = item
-
-        pb_sum = np.abs(np.asarray(data, dtype=np.float64))
-        if np.isnan(pb_sum).any():
-            logger.warning("NaNs in primary beam")
-        pb_max = np.nanmax(pb_sum)
-        if not np.isfinite(pb_max) or pb_max <= 0:
-            logger.warning("Primary beam is empty or invalid. All data will be masked")
-            return np.zeros((image_size, image_size), dtype=bool)
-        return pb_sum > self.cfg.pb_threshold * pb_max
-
     def _write_group(self, df: h5py.File, images: list[Path]) -> None:
         """Write the image stack.
 
@@ -159,8 +119,6 @@ class ImageStackContext(NeedleContext):
         image_size = self._image_size(images[0])
         n_timesteps = len(images)
         logger.debug(f"data shape: {(1, image_size, image_size, 1, n_timesteps)}")
-
-        pb_mask = self._write_beam(group, image_size)
 
         timestamp = group.create_dataset("timestamp", (n_timesteps,), dtype="S64")
 
@@ -185,9 +143,7 @@ class ImageStackContext(NeedleContext):
             image, image_header = _read_fits(path, self.cfg.hdu)
             if image.shape != (image_size, image_size):
                 raise ValueError(f"Image shape {image.shape} does not match expected {image_size} in {path}")
-            image = np.asarray(image, dtype=dtype)
-            image[~pb_mask] = np.nan
-            data_ds[0, :, :, 0, t] = image
+            data_ds[0, :, :, 0, t] = np.asarray(image, dtype=dtype)
             filenames[0, 0, t] = str(path).encode("utf-8")
 
             date_obs = image_header.get("DATE-OBS")
@@ -246,16 +202,9 @@ def create_image_stack(ctx: ImageStackContext) -> Path:
     default=Path("."),
     help="Directory containing the FITS images",
 )
-@click.option(
-    "--beam",
-    "-b",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    required=True,
-    help="Path to the primary beam FITS image",
-)
 @click.option("--overwrite", is_flag=True, help="Overwrite an existing output file")
-def _create(cfg: ImageStackConfig, obsid: str, input_dir: Path, beam: Path, overwrite: bool):
-    ctx = ImageStackContext(cfg=cfg, obsid=obsid, input_dir=input_dir, beam=beam, overwrite=overwrite)
+def _create(cfg: ImageStackConfig, obsid: str, input_dir: Path, overwrite: bool):
+    ctx = ImageStackContext(cfg=cfg, obsid=obsid, input_dir=input_dir, overwrite=overwrite)
     create_image_stack(ctx)
 
 

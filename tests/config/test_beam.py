@@ -33,7 +33,7 @@ def _assert_dir_mode(path, expected_octal="770"):
 
 
 def test_move_tgt(tmp_path, mock_tgt, mock_cal_path, no_umask):
-    pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
+    pair = BeamPair(beam="00", name="tgt", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
     pair.move_tgt(new_dir)
@@ -45,7 +45,7 @@ def test_move_tgt(tmp_path, mock_tgt, mock_cal_path, no_umask):
 
 
 def test_move_cal_with_path(tmp_path, mock_tgt, mock_cal_path, no_umask):
-    pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
+    pair = BeamPair(beam="00", name="tgt", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
     pair.move_cal(new_dir)
@@ -57,7 +57,7 @@ def test_move_cal_with_path(tmp_path, mock_tgt, mock_cal_path, no_umask):
 
 
 def test_move_cal_with_solution(tmp_path, mock_tgt, mock_cal_solution, no_umask):
-    pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_solution)
+    pair = BeamPair(beam="00", name="tgt", tgt=mock_tgt, cal=mock_cal_solution)
     new_dir = tmp_path / "new_location"
     orig_gcal, orig_bpcal = mock_cal_solution.gcal, mock_cal_solution.bpcal
 
@@ -73,7 +73,7 @@ def test_move_cal_with_solution(tmp_path, mock_tgt, mock_cal_solution, no_umask)
 
 
 def test_move_files_moves_both_tgt_and_cal(tmp_path, mock_tgt, mock_cal_path, no_umask):
-    pair = BeamPair(beam="00", tgt=mock_tgt, cal=mock_cal_path)
+    pair = BeamPair(beam="00", name="tgt", tgt=mock_tgt, cal=mock_cal_path)
     new_dir = tmp_path / "new_location"
 
     pair.move_files(new_dir)

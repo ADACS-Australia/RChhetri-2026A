@@ -14,9 +14,6 @@ class ImageStackConfig(NeedleModel):
     stamp_size: int = 16
     "HDF5 chunk size in pixels. The image size must be divisible by this"
 
-    pb_threshold: float = 0.1
-    "Fraction of the maximum primary beam below which data is set to NaN"
-
     time_interval: float = 1.0
     "Seconds between consecutive timesteps. Stored as TIME_INTERVAL"
 
@@ -38,13 +35,6 @@ class ImageStackConfig(NeedleModel):
     def _valid_stamp_size(cls, v: int) -> int:
         if v < 1:
             raise ValueError(f"stamp_size must be positive, got {v}")
-        return v
-
-    @field_validator("pb_threshold")
-    @classmethod
-    def _valid_pb_threshold(cls, v: float) -> float:
-        if not 0 <= v <= 1:
-            raise ValueError(f"pb_threshold must be between 0 and 1, got {v}")
         return v
 
     @field_validator("time_interval")

@@ -44,7 +44,7 @@ def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INF
             cal = f_cal.result()
             logger.info(f"Completed measurement set conversion for {pair.cal.name}")
 
-    return BeamPair(beam=pair.beam, tgt=tgt, cal=cal)
+    return BeamPair(beam=pair.beam, name=pair.name, tgt=tgt, cal=cal)
 
 
 @task(cache_policy=NO_CACHE, task_run_name="convert_{path.stem}")

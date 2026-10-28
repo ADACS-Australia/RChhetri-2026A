@@ -88,3 +88,11 @@ Uses the previous MS inspection to determine the number of data intervals. Then 
 **Configuration:** [IntervalCleanConfig][needle.config.clean.IntervalCleanConfig]
 
 **Side Effects:** One .fits image for each interval of the dataset.
+
+### Image Stack
+
+After all interval cleans for a beam finish, combines that beam's interval images into a single HDF5 image stack.
+
+**Configuration:** [ImageStackConfig][needle.config.imstack.ImageStackConfig]
+
+**Side Effects:** One .hdf5 image stack per beam, written alongside the interval images.

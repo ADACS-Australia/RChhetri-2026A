@@ -22,14 +22,15 @@ from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
 from needle.tasks.casa_data import update_casa_data
-from needle.tasks.clean import clean_task, interval_clean_task, predict_task
+from needle.tasks.clean import clean_task, interval_clean_task, interval_dir_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.diagnostics import cal_diagnostics_task, ms_diagnostics_task, pre_cal_diagnostics
 from needle.tasks.flag import flag_ms_pair_task
+from needle.tasks.imstack import create_image_stack_task
 from needle.tasks.inspect import inspect_ms_task
 from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
-from needle.tasks.utils import extract_cal_task, extract_tgt_task
+from needle.tasks.utils import extract_cal_task, extract_name_task, extract_tgt_task
 
 FutureList = list[PrefectFuture]
 OptionalFutureList = list[PrefectFuture | None]
@@ -136,7 +137,10 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     #######################
     ## Interval Cleaning ##
     #######################
-    f_interval_clean = _submit_interval_cleans(client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger)
+    f_interval_clean, intervals_by_beam = _submit_interval_cleans(
+        client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger
+    )
+    f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beam_pairs, logger)
 
     ###################################
     ## Finish and check for failures ##
@@ -144,6 +148,8 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_inspect_cal):
         f.wait()  # Don't use .result() as it causes crashing on failure
     for f in f_interval_clean:
+        f.wait()
+    for f in f_image_stack:
         f.wait()
     _report_failures(logger=logger)
 
@@ -156,12 +162,13 @@ def _submit_interval_cleans(
     f_model_subtract: FutureList,
     f_mask: OptionalFutureList,
     logger,
-) -> FutureList:
+) -> tuple[FutureList, dict[int, FutureList]]:
     """Submits interval cleans for each beam as soon as its inspect task finishes.
     Beams whose inspect failed (or was skipped) are ignored."""
     # as_completed yields the futures in finish order, so map each back to its beam index
     idx_by_run = {f.task_run_id: i for i, f in enumerate(f_inspect_tgt)}
     f_interval_clean = []
+    intervals_by_beam = {}
 
     for inspect in as_completed(f_inspect_tgt):
         if not inspect.state.is_completed():
@@ -187,7 +194,40 @@ def _submit_interval_cleans(
                     overwrite=cfg.flow.overwrite,
                 )
             )
-    return f_interval_clean
+            intervals_by_beam.setdefault(i, []).append(f_interval_clean[-1])
+    return f_interval_clean, intervals_by_beam
+
+
+def _submit_image_stacks(
+    client: Client,
+    cfg: NeedleConfig,
+    intervals_by_beam: dict[int, FutureList],
+    f_tgt: FutureList,
+    f_beam_pairs: FutureList,
+    logger,
+) -> FutureList:
+    """Submits one image-stack task per beam, waiting for every interval clean in that beam."""
+    if not intervals_by_beam:
+        return []
+
+    f_input_dir = interval_dir_task.map(f_tgt)
+    f_obsid = extract_name_task.map(f_beam_pairs)
+
+    f_image_stack = []
+    for i, f_intervals in sorted(intervals_by_beam.items()):
+        logger.info(f"Queuing image stack for beam index {i} after {len(f_intervals)} interval clean(s)")
+        f_image_stack.append(
+            create_image_stack_task.submit(
+                client,
+                cfg=cfg.imstack,
+                input_dir=f_input_dir[i],
+                obsid=f_obsid[i],
+                log_level=cfg.flow.log_level,
+                overwrite=cfg.flow.overwrite,
+                wait_for=f_intervals,
+            )
+        )
+    return f_image_stack
 
 
 def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tuple[int, int]]:

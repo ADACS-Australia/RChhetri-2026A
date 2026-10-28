@@ -1,9 +1,9 @@
 """
 Reads and queries HDF5 image stacks produced by the imstack module.
 
-An image stack stores a sequence of images with a shared celestial WCS, along with the primary
-beam, timestamps and per-timestep metadata. It is intended for fast time-domain queries over a
-single field.
+An image stack stores a sequence of images with a shared celestial WCS, timestamps and
+per-timestep metadata. Older stacks may also contain a primary beam. It is intended for fast
+time-domain queries over a single field.
 
 This module was adapted with permission from John Morgan's code: https://github.com/johnsmorgan/imstack
 """
@@ -87,7 +87,7 @@ def sault_weight(data: np.ndarray, beam: np.ndarray, sigma: np.ndarray, correct:
 class ImageStack:
     """Access an HDF5 image stack written by the imstack module.
 
-    The stack axes are (polarisation, y, x, channel, time) for image data and
+    The stack axes are (polarisation, y, x, channel, time) for image data and, when present,
     (polarisation, y, x, channel, 1) for the primary beam. x is the fastest varying axis.
     """
 
@@ -273,7 +273,7 @@ class ImageStack:
         if correct:
             if not self.beam:
                 logger.warning("No beam stored in the stack. Returning uncorrected data")
-                return ts
+                return ts[0] if self.n_pol == 1 else ts
             beam = np.asarray(self.pix2beam(x, y, avg_pol=False))
             if self.n_pol == 1:
                 return ts[0] / beam[0]
@@ -311,7 +311,7 @@ class ImageStack:
         if correct:
             if not self.beam:
                 logger.warning("No beam stored in the stack. Returning uncorrected data")
-                return cube
+                return cube[0] if self.n_pol == 1 else cube
             beam = np.asarray(self.pix2beam(x_slice, y_slice, avg_pol=False))
             if self.n_pol == 1:
                 return cube[0] / beam[0][..., np.newaxis]

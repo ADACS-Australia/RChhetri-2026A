@@ -40,40 +40,25 @@ def _image_name(time: int) -> str:
     return f"obs_{PREFIX}-t{time:04d}-image.fits"
 
 
-def _beam_name() -> str:
-    return f"obs_{PREFIX}-beam.fits"
-
-
-def _beam_path(directory: Path) -> Path:
-    return directory / "beams" / _beam_name()
-
-
 @pytest.fixture
 def stack_dir(tmp_path: Path) -> Path:
-    """Two timesteps of 8x8 images and a primary beam outside the image directory."""
+    """Two timesteps of 8x8 images."""
     for t in range(2):
         _write(tmp_path / _image_name(t), t + 1, f"2020-01-01T00:00:0{t}.000")
-    beam = _beam_path(tmp_path)
-    beam.parent.mkdir()
-    _write(beam, 1.0)
     return tmp_path
 
 
 def _ctx(
     directory: Path,
     *,
-    beam: Path | None = None,
     overwrite: bool = False,
-    outfile: Path | None = None,
     **cfg,
 ) -> ImageStackContext:
     return ImageStackContext(
         cfg=ImageStackConfig(**{"stamp_size": 4, "time_interval": 1.0, **cfg}),
         obsid="obs",
         input_dir=directory,
-        beam=beam or _beam_path(directory),
         overwrite=overwrite,
-        outfile=outfile,
     )
 
 
@@ -88,7 +73,7 @@ def test_create_and_query(stack_dir):
         assert np.allclose(stack.pix2ts(4, 4, correct=False), [1.0, 2.0])
         assert stack.pix2ts(4, 4, avg_pol=False).shape == (2,)
         assert stack.pix2cube(4, 4, 3).shape == (3, 3, 2)
-        assert stack.get_beam().shape == (SIZE, SIZE)
+        assert not stack.beam
         assert stack.get_interval() == 1.0
         assert np.allclose(stack.get_intervals(), [0.0, 1.0])
         assert stack.world2pix(10.0, -45.0) == (4, 3)
@@ -110,45 +95,6 @@ def test_no_images_raises(stack_dir):
         path.unlink()
     with pytest.raises(FileNotFoundError, match="No FITS images"):
         create_image_stack(_ctx(stack_dir))
-
-
-def test_missing_beam_raises(stack_dir):
-    _beam_path(stack_dir).unlink()
-    with pytest.raises(ValueError, match="Primary beam does not exist"):
-        _ctx(stack_dir)
-
-
-def test_supplied_beam_is_used(stack_dir):
-    _write(stack_dir / "decoy-beam.fits", 5.0)
-    output = create_image_stack(_ctx(stack_dir))
-    with ImageStack(output) as stack:
-        assert np.isclose(stack.pix2beam(4, 4), 1.0)
-
-
-def test_single_pol_beam_correction(stack_dir):
-    _write(_beam_path(stack_dir), 2.0)
-    output = create_image_stack(_ctx(stack_dir))
-    with ImageStack(output) as stack:
-        assert np.isclose(stack.pix2beam(4, 4), 2.0)
-        assert np.allclose(stack.pix2ts(4, 4), [0.5, 1.0])
-        assert np.allclose(stack.pix2ts(4, 4, avg_pol=False), [0.5, 1.0])
-
-
-def test_nan_below_beam_threshold_is_masked(stack_dir):
-    beam = np.ones((SIZE, SIZE), dtype=np.float32)
-    beam[0, 0] = 0.0
-    fits.writeto(_beam_path(stack_dir), beam, _header(), overwrite=True)
-
-    output = create_image_stack(_ctx(stack_dir))
-    with ImageStack(output) as stack:
-        assert np.isnan(stack.data[0, 0, 0, 0, 0])
-
-
-def test_custom_outfile(stack_dir):
-    outfile = stack_dir / "nested" / "custom.h5"
-    output = create_image_stack(_ctx(stack_dir, outfile=outfile))
-    assert output == outfile
-    assert output.exists()
 
 
 def test_existing_output_raises_without_overwrite(stack_dir):
@@ -190,6 +136,7 @@ def test_beam_files_in_input_dir_are_not_stacked(stack_dir):
     output = create_image_stack(_ctx(stack_dir))
     with h5py.File(output) as df:
         assert df["image"].shape == (1, SIZE, SIZE, 1, 2)
+        assert "beam" not in df
 
 
 def test_non_image_suffixes_are_ignored(stack_dir):
