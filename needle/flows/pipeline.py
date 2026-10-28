@@ -184,7 +184,14 @@ def _submit_interval_cleans(
             continue  # dead beam, the failure report will cover it
         try:
             ms_info = MSInfo.from_json(inspect.result())
-            intervals = _generate_ms_intervals(ms_info.time.n_integrations, cfg.flow.interval_tasks)
+            n_integrations = ms_info.time.n_integrations
+            n_intervals = min(cfg.flow.interval_tasks, n_integrations)
+            if n_intervals < cfg.flow.interval_tasks:
+                logger.warning(
+                    f"Beam index {i} has only {n_integrations} integration(s); "
+                    f"using {n_intervals} interval(s) instead of {cfg.flow.interval_tasks}"
+                )
+            intervals = _generate_ms_intervals(n_integrations, n_intervals)
         except Exception as e:
             logger.error(f"Could not plan intervals for beam index {i}: {type(e).__name__}: {e}")
             continue
