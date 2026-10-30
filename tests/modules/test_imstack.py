@@ -105,19 +105,36 @@ def test_existing_output_raises_without_overwrite(stack_dir):
     assert create_image_stack(_ctx(stack_dir, overwrite=True)).exists()
 
 
-def test_failed_write_leaves_no_partial_output(stack_dir, monkeypatch):
+def test_failed_write_keeps_partial_output_for_resume(stack_dir, monkeypatch):
     ctx = _ctx(stack_dir)
 
     def fail(*args, **kwargs):
         raise RuntimeError("write failed")
 
-    monkeypatch.setattr(ImageStackContext, "_write_group", fail)
+    monkeypatch.setattr(ImageStackContext, "_write_images", fail)
     with pytest.raises(RuntimeError, match="write failed"):
         create_image_stack(ctx)
 
-    tmp = ctx.output.with_name(f".{ctx.output.name}.tmp")
     assert not ctx.output.exists()
-    assert not tmp.exists()
+    assert ctx._partial.exists()
+
+
+def test_partial_stack_is_resumed(stack_dir):
+    ctx = _ctx(stack_dir)
+    images = ctx._images()
+    image_size = ctx._image_size(images[0])
+
+    with h5py.File(ctx._partial, "w") as df:
+        ctx._create_group(df, images, image_size)
+        ctx._write_image(df, images[0], 0)
+        df.flush()
+        ctx._write_progress(1, images, image_size)
+
+    output = create_image_stack(ctx)
+    with ImageStack(output) as stack:
+        assert np.allclose(stack.pix2ts(4, 4), [1.0, 2.0])
+    assert not ctx._partial.exists()
+    assert not ctx._progress.exists()
 
 
 def test_image_size_must_divide_stamp_size(stack_dir):
