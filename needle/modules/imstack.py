@@ -11,6 +11,8 @@ This module was adapted with permission from John Morgan's code: https://github.
 """
 
 import getpass
+import hashlib
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +32,17 @@ logger = logging.getLogger(__name__)
 
 IMAGE_GLOB = "*t[0-9][0-9][0-9][0-9]*-image.fits"
 "WSClean images, e.g. obs-t0000-image.fits"
+
+CHECKPOINT_IMAGES = 50
+"Number of images between HDF5 flushes and progress checkpoints"
+
+MIN_CHUNK_SIZE = 128
+"Minimum HDF5 chunk size in pixels. Small chunks make full-image writes very slow."
+
+
+def _images_hash(images: list[Path]) -> str:
+    """Stable hash of the ordered image paths, used to validate a resumed stack."""
+    return hashlib.sha256("\n".join(str(path) for path in images).encode("utf-8")).hexdigest()
 
 
 def _header_attrs(header: fits.Header) -> dict:
@@ -108,51 +121,130 @@ class ImageStackContext(NeedleContext):
             raise ValueError(f"Image size {data.shape[0]} must be divisible by stamp_size {self.cfg.stamp_size}")
         return data.shape[0]
 
-    def _write_group(self, df: h5py.File, images: list[Path]) -> None:
-        """Write the image stack.
+    @property
+    def _partial(self) -> Path:
+        "Partially written image stack, kept between worker retries"
+        return self.output.with_name(f".{self.output.name}.partial")
+
+    @property
+    def _progress(self) -> Path:
+        "Checkpoint file recording how many images are safely written"
+        return self.output.with_name(f".{self.output.name}.progress")
+
+    def _create_group(self, df: h5py.File, images: list[Path], image_size: int) -> None:
+        """Create the datasets for a new image stack.
 
         :param df: The open HDF5 file
         :param images: The ordered FITS image paths
+        :param image_size: The image size in pixels
         """
         group = df["/"]
         group.attrs["TIME_INTERVAL"] = self.cfg.time_interval
-        image_size = self._image_size(images[0])
         n_timesteps = len(images)
         logger.debug(f"data shape: {(1, image_size, image_size, 1, n_timesteps)}")
 
-        timestamp = group.create_dataset("timestamp", (n_timesteps,), dtype="S64")
+        group.create_dataset("timestamp", (n_timesteps,), dtype="S64")
 
         _, header = _read_fits(images[n_timesteps // 2], self.cfg.hdu)
         header_ds = group.create_dataset("header", data=[], dtype=np.dtype(self.cfg.dtype))
         for key, item in _header_attrs(header).items():
             header_ds.attrs[key] = item
 
+        chunk_size = min(image_size, max(MIN_CHUNK_SIZE, self.cfg.stamp_size))
         data_shape = (1, image_size, image_size, 1, n_timesteps)
-        chunks = (1, self.cfg.stamp_size, self.cfg.stamp_size, 1, 1)
+        chunks = (1, chunk_size, chunk_size, 1, 1)
         filename_len = max(len(str(path).encode("utf-8")) for path in images)
         dtype = np.dtype(self.cfg.dtype)
 
         logger.info("Writing image data")
-        data_ds = group.create_dataset("image", data_shape, chunks=chunks, dtype=dtype, compression="lzf", shuffle=True)
-        filenames = group.create_dataset(
+        group.create_dataset("image", data_shape, chunks=chunks, dtype=dtype, compression="lzf", shuffle=True)
+        group.create_dataset(
             "image_filenames", (1, 1, n_timesteps), dtype=f"S{filename_len}", compression="lzf"
         )
 
-        for t, path in enumerate(images):
-            logger.debug(f"processing {path}")
-            image, image_header = _read_fits(path, self.cfg.hdu)
-            if image.shape != (image_size, image_size):
-                raise ValueError(f"Image shape {image.shape} does not match expected {image_size} in {path}")
-            data_ds[0, :, :, 0, t] = np.asarray(image, dtype=dtype)
-            filenames[0, 0, t] = str(path).encode("utf-8")
+    def _write_image(self, df: h5py.File, path: Path, t: int) -> None:
+        """Write one image to the stack.
 
-            date_obs = image_header.get("DATE-OBS")
-            if date_obs is None:
-                raise ValueError(f"Missing DATE-OBS in {path}")
-            timestamp[t] = str(date_obs).encode("utf-8")
+        :param df: The open HDF5 file
+        :param path: The FITS image path
+        :param t: The timestep index
+        """
+        data_ds = df["image"]
+        filenames = df["image_filenames"]
+        timestamp = df["timestamp"]
+
+        logger.debug(f"processing {path}")
+        image, image_header = _read_fits(path, self.cfg.hdu)
+        expected = (data_ds.shape[1], data_ds.shape[2])
+        if image.shape != expected:
+            raise ValueError(f"Image shape {image.shape} does not match expected {expected} in {path}")
+        data_ds[0, :, :, 0, t] = np.asarray(image, dtype=data_ds.dtype)
+        filenames[0, 0, t] = str(path).encode("utf-8")
+
+        date_obs = image_header.get("DATE-OBS")
+        if date_obs is None:
+            raise ValueError(f"Missing DATE-OBS in {path}")
+        timestamp[t] = str(date_obs).encode("utf-8")
+
+    def _write_progress(self, n_done: int, images: list[Path], image_size: int) -> None:
+        """Atomically record how many images are safely written."""
+        data = {
+            "n_done": n_done,
+            "n_images": len(images),
+            "image_size": image_size,
+            "dtype": self.cfg.dtype,
+            "stamp_size": self.cfg.stamp_size,
+            "paths_hash": _images_hash(images),
+        }
+        progress = self._progress
+        tmp = progress.with_name(f"{progress.name}.tmp")
+        tmp.write_text(json.dumps(data))
+        tmp.replace(progress)
+
+    def _resume_start(self, df: h5py.File, images: list[Path], image_size: int) -> int:
+        """Return the number of images already written, or 0 if the stack cannot be resumed."""
+        progress = self._progress
+        try:
+            data = json.loads(progress.read_text())
+        except (OSError, json.JSONDecodeError):
+            return 0
+
+        expected = {
+            "n_images": len(images),
+            "image_size": image_size,
+            "dtype": self.cfg.dtype,
+            "stamp_size": self.cfg.stamp_size,
+            "paths_hash": _images_hash(images),
+        }
+        if any(data.get(key) != value for key, value in expected.items()):
+            return 0
+
+        n_done = data.get("n_done")
+        if not isinstance(n_done, int) or not 0 <= n_done <= len(images):
+            return 0
+        if "image" not in df or "timestamp" not in df or "image_filenames" not in df:
+            return 0
+        if df["image"].shape != (1, image_size, image_size, 1, len(images)):
+            return 0
+        return n_done
+
+    def _write_images(self, df: h5py.File, images: list[Path], start: int) -> None:
+        """Write images from ``start`` to the end, checkpointing as it goes."""
+        n_timesteps = len(images)
+        image_size = df["image"].shape[1]
+        for t in range(start, n_timesteps):
+            self._write_image(df, images[t], t)
+            if (t + 1) % CHECKPOINT_IMAGES == 0:
+                df.flush()
+                self._write_progress(t + 1, images, image_size)
+        df.flush()
+        self._write_progress(n_timesteps, images, image_size)
 
     def execute(self) -> Path:
         """Build the image stack and write it to the output path.
+
+        Partial stacks are checkpointed so a worker killed mid-write resumes instead of
+        rebuilding all images from scratch.
 
         :raises FileExistsError: Raised if the output exists and overwrite is False
         :return: The image stack output
@@ -164,17 +256,40 @@ class ImageStackContext(NeedleContext):
         images = self._images()
         logger.info(f"Found {len(images)} images in {self.input_dir}")
         output.parent.mkdir(parents=True, exist_ok=True, mode=0o770)
-        tmp = output.with_name(f".{output.name}.tmp")
-        tmp.unlink(missing_ok=True)
+        partial = self._partial
+        progress = self._progress
+        if self.overwrite:
+            partial.unlink(missing_ok=True)
+            progress.unlink(missing_ok=True)
+
+        image_size = self._image_size(images[0])
+        start = 0
+        if partial.exists() and progress.exists():
+            try:
+                with h5py.File(partial, "r", rdcc_nbytes=self.cfg.cache_size_mb * 1024 * 1024) as df:
+                    start = self._resume_start(df, images, image_size)
+            except OSError as e:
+                logger.warning(f"Could not resume partial image stack: {e}")
+                start = 0
+
+        if start == 0:
+            partial.unlink(missing_ok=True)
+            progress.unlink(missing_ok=True)
+            mode = "w"
+        else:
+            logger.info(f"Resuming image stack at {start}/{len(images)} images")
+            mode = "r+"
+
         logger.info(f"Writing image stack to {output}")
-        try:
-            with h5py.File(tmp, "w", rdcc_nbytes=self.cfg.cache_size_mb * 1024 * 1024) as df:
+        with h5py.File(partial, mode, rdcc_nbytes=self.cfg.cache_size_mb * 1024 * 1024) as df:
+            if mode == "w":
                 df.attrs["USER"] = getpass.getuser()
                 df.attrs["DATE_CREATED"] = datetime.now(timezone.utc).isoformat()
-                self._write_group(df, images)
-            tmp.replace(output)
-        finally:
-            tmp.unlink(missing_ok=True)
+                self._create_group(df, images, image_size)
+            self._write_images(df, images, start)
+
+        partial.replace(output)
+        progress.unlink(missing_ok=True)
         logger.info(f"Image stack written to {output}")
         return output
 

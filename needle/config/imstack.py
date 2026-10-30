@@ -12,7 +12,7 @@ class ImageStackConfig(NeedleModel):
     "FITS HDU index to read"
 
     stamp_size: int = 16
-    "HDF5 chunk size in pixels. The image size must be divisible by this"
+    "Minimum HDF5 chunk size in pixels. Chunks below 128 are enlarged to 128 unless the image is smaller"
 
     time_interval: float = 1.0
     "Seconds between consecutive timesteps. Stored as TIME_INTERVAL"
