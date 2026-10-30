@@ -5,6 +5,7 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 from needle.config.imstack import ImageStackConfig
+from needle.lib.beam import find_beam_dir
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.imstack import ImageStackContext, create_image_stack
@@ -26,9 +27,7 @@ def create_image_stack_task(
     :return: The path to the HDF5 image stack
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(
-        input_dir.parent, log_level
-    ) as logger:  # TODO: input_dir.parent isn't the best way to write to the beam log
+    with beam_logger(find_beam_dir(input_dir), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = ImageStackContext(cfg=cfg, obsid=obsid, input_dir=input_dir, overwrite=overwrite)

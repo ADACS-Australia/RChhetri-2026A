@@ -7,6 +7,7 @@ from prefect.cache_policies import NO_CACHE
 from needle.config.beam import BeamPair
 from needle.config.calibrate import CalibrationSolution
 from needle.modules.convert import convert_to_ms, ConvertContext
+from needle.lib.beam import find_beam_dir
 from needle.lib.logging import beam_logger
 
 
@@ -17,7 +18,7 @@ def convert_beam_pair_task(client: Client, pair: BeamPair, log_level: str = "INF
     Will not attempt to operate on calibration solutions.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(pair.tgt.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(pair.tgt), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         f_tgt = None
@@ -56,7 +57,7 @@ def convert_task(
     Also creates the beam directory and puts the measurements sets in there.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(input.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(input), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(input, CalibrationSolution) or input.suffix == ".ms":

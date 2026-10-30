@@ -5,6 +5,7 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 from needle.config.calibrate import CalibrationSolution
+from needle.lib.beam import find_beam_dir
 from needle.lib.logging import beam_logger
 from needle.modules.inspect import InspectMSContext, MSInfo, inspect_ms
 
@@ -15,7 +16,7 @@ def inspect_ms_task(
 ) -> Path:
     """Inspects a measurement set. Outputs the metadata to a json file for each ms"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op

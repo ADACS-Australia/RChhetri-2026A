@@ -8,6 +8,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.clean import WSCleanConfig
+from needle.lib.beam import find_beam_dir
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.clean import interval_output_dir, run_clean, WSCleanContext, WSCleanIntervalOutput
@@ -36,7 +37,7 @@ def interval_clean_task(
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 
@@ -80,7 +81,7 @@ def clean_task(
 
     :raises RuntimeError: Raised if there is not exactly one image output"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
@@ -113,7 +114,7 @@ def predict_task(
     Model column will not be overwritten if it exists and overwrite is false.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 

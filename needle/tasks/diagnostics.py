@@ -7,6 +7,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.beam import BeamPair
+from needle.lib.beam import find_beam_dir
 from needle.lib.dask import submit_in_beam
 from needle.lib.exceptions import BeamUnusable
 from needle.lib.logging import beam_logger
@@ -49,7 +50,7 @@ def pre_cal_diagnostics(
     :raises BeamUnusable: Raised if the fraction of flagged data is past the threshold for either of the cal or tgt observations
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(beam.tgt.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(beam.tgt), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         to_check = []
@@ -73,7 +74,7 @@ def ms_diagnostics_task(
 ) -> MSDiagnosticsOutput:
     """Runs diagnostics on a measurement set"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -95,7 +96,7 @@ def cal_diagnostics_task(
 ) -> CalDiagnosticsOutput:
     """Runs diagnostics on a calibration solution"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(cal.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(cal), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = CalDiagnosticsContext(solution=cal, output_dir=cal.gcal.parent / DIAGNOSTICS_DIRNAME)
