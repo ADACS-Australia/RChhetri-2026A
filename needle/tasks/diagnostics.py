@@ -7,7 +7,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.beam import BeamPair
-from needle.lib.beam import find_beam_dir
+from needle.lib.names import NeedleNames
 from needle.lib.dask import submit_in_beam
 from needle.lib.exceptions import BeamUnusable
 from needle.lib.logging import beam_logger
@@ -50,9 +50,13 @@ def pre_cal_diagnostics(
     :raises BeamUnusable: Raised if the fraction of flagged data is past the threshold for either of the cal or tgt observations
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(beam.tgt), log_level) as logger:
+    with beam_logger(NeedleNames(beam.tgt).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
+        if NeedleNames(beam.tgt).calibrated_image_path.exists:
+            logger.info(f"""Found existing calibrated image: {NeedleNames(beam.tgt).calibrated_image_path}
+                Will not perform preliminary diagnostics.""")
+            return beam
         to_check = []
         if not isinstance(beam.cal, CalibrationSolution):  # nothing to check if it's a solution
             to_check.append(("Calibrator", beam.cal))
@@ -74,7 +78,7 @@ def ms_diagnostics_task(
 ) -> MSDiagnosticsOutput:
     """Runs diagnostics on a measurement set"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(ms), log_level) as logger:
+    with beam_logger(NeedleNames(ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -96,7 +100,7 @@ def cal_diagnostics_task(
 ) -> CalDiagnosticsOutput:
     """Runs diagnostics on a calibration solution"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(cal), log_level) as logger:
+    with beam_logger(NeedleNames(cal).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = CalDiagnosticsContext(solution=cal, output_dir=cal.gcal.parent / DIAGNOSTICS_DIRNAME)

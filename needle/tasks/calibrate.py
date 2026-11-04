@@ -5,9 +5,10 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConfig, CalInput, CalibrationSolution
-from needle.lib.beam import find_beam_dir
+from needle.lib.names import NeedleNames
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
+from needle.lib.names import NeedleNames
 from needle.modules.calibrate import (
     SolveCalibrationContext,
     ApplyCalibrationContext,
@@ -22,7 +23,7 @@ def solve_calibration_task(
 ) -> CalibrationSolution:
     """Solves for a calibration solution. If the provided cal is already solved, this is a no-op"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(cal), log_level) as logger:
+    with beam_logger(NeedleNames(cal).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if not isinstance(cal, CalibrationSolution):
@@ -30,6 +31,12 @@ def solve_calibration_task(
             if ctx.output.exists() and overwrite is False:
                 logger.info(f"Found existing solution: {ctx.output}\nWill not reprocess.")
                 return ctx.output
+            elif NeedleNames(cal).calibrated_image_path.exists and overwrite is False:
+                logger.info(
+                    f"Found existing calibrated image: {NeedleNames(cal).calibrated_image_path}\nWill not reprocess."
+                )
+                return ctx.output
+
             logger.info(f"Beginning calibration solution calculation for calibrator: {cal.name}")
             cal = submit_in_beam(client, solve_calibration, ctx).result()
             logger.info(f"Completed calibration solution calculation: {cal.bpcal.name} and {cal.gcal.name}")
@@ -48,13 +55,19 @@ def apply_calibration_task(
 ) -> Path:
     """Applies an existing calibrator solution to the target. Returns the calibrated target measurement set."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(cal), log_level) as logger:
+    with beam_logger(NeedleNames(cal).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = ApplyCalibrationContext(cfg=cfg, cal=cal, tgt=tgt)
         if ctx.output_path.exists() and overwrite is False:  # Do not re-process
             logger.info(f"Found existing solution: {ctx.output_path}\nWill not reprocess.")
             return ctx.output_path
+        elif NeedleNames(cal).calibrated_image_path.exists and overwrite is False:
+            logger.info(
+                f"Found existing calibrated image: {NeedleNames(cal).calibrated_image_path}\nWill not reprocess."
+            )
+            return ctx.output
+
         logger.info(
             f"Beginning calibration application for calibrator solutions: {cal.bpcal.name} and {cal.gcal.name} to target: {tgt.name}"
         )
