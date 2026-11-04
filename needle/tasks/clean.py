@@ -8,9 +8,16 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.clean import WSCleanConfig
+from needle.lib.beam import find_beam_dir
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
-from needle.modules.clean import run_clean, WSCleanContext, WSCleanIntervalOutput
+from needle.modules.clean import interval_output_dir, run_clean, WSCleanContext, WSCleanIntervalOutput
+
+
+@task(task_run_name="interval_dir_{ms.stem}")
+def interval_dir_task(ms: Path) -> Path:
+    """Returns the directory containing the interval clean outputs for a measurement set."""
+    return interval_output_dir(ms)
 
 
 @task(cache_policy=NO_CACHE, task_run_name="interval_clean_{ms.stem}_{interval[0]}_{interval[1]}")
@@ -30,11 +37,11 @@ def interval_clean_task(
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 
-        output_dir = Path(f"{ms.with_suffix('')}_interval")
+        output_dir = interval_output_dir(ms)
         ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask, interval=interval, output_dir=output_dir)
         if overwrite is False and ctx.output.exists():
             logger.info(
@@ -74,7 +81,7 @@ def clean_task(
 
     :raises RuntimeError: Raised if there is not exactly one image output"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
@@ -107,7 +114,7 @@ def predict_task(
     Model column will not be overwritten if it exists and overwrite is false.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 

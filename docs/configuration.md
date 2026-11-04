@@ -170,6 +170,11 @@ model_subtract:
 interval_clean:
   niter: 1000
   scale: "5asec"
+
+imstack:
+  time_interval: 1.0
+  stamp_size: 16
+  dtype: "float16"
 ```
 
 ## Cluster

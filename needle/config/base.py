@@ -197,7 +197,8 @@ class NeedleModel(BaseModel):
 
             if get_origin(annotation) is list:
                 raw = flat.get(field_name, ())
-                kwargs[field_name] = list(raw) if raw else []
+                if raw:  # an empty repeatable option should fall back to the model default
+                    kwargs[field_name] = list(raw)
                 continue
 
             # Recurse into nested NeedleModel subclasses

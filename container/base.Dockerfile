@@ -51,5 +51,9 @@ RUN wget -O wsclean-v${WSCLEAN_VERSION}.tar.bz2 https://gitlab.com/aroffringa/ws
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv pip install --system "casatasks==${CASA_VERSION}" "casatools==${CASA_VERSION}" "aegeantools==${AEGEAN_VERSION}"
 
+# CASA bundles an old libsqlite3 which shadows the system library and breaks
+# Python's sqlite3 extension (undefined symbol: sqlite3_deserialize).
+RUN find /usr/local/lib/python3.12/site-packages/casatools -name "libsqlite3.so*" -print -delete
+
 
 

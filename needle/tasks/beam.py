@@ -43,7 +43,7 @@ def setup_beam_dir_task(beam_pair: BeamPair, **kwargs) -> BeamPair:
 
     log_file = new_dir / "beam.log"
     if log_file.exists():
-        log_file.remove()
+        log_file.unlink()
 
     # Move the data to the new directory
     logger.info(f"Moving all beam files to {new_dir}")

@@ -7,6 +7,7 @@ from distributed import Client
 from needle.config.beam import BeamPair
 from needle.config.calibrate import CalibrationSolution
 from needle.config.flag import FlagConfig
+from needle.lib.beam import find_beam_dir
 from needle.lib.dask import submit_in_beam, map_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.flag import flag_observation, FlagContext
@@ -23,7 +24,7 @@ def flag_ms_task(
 ) -> Path:
     """Flags a measurement set. Returns the same measurement set."""
     fn_inputs = locals().items()
-    with beam_logger(ms.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(ms), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -45,7 +46,7 @@ def flag_ms_pair_task(
 ) -> BeamPair:
     """Flags a pair of measurement sets. Returns the same measurement set pair."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(beam.tgt.parent, log_level) as logger:
+    with beam_logger(find_beam_dir(beam.tgt), log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         task_ctxs = []

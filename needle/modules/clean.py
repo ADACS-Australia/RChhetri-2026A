@@ -22,6 +22,11 @@ from needle.modules.needle_context import SubprocessExecContext
 logger = logging.getLogger(__name__)
 
 
+def interval_output_dir(ms: Path) -> Path:
+    """The directory containing the interval clean outputs for a measurement set."""
+    return Path(f"{ms.with_suffix('')}_interval")
+
+
 class WSCleanOutput(NeedleModel):
     """Class to encompass the outputs of WSClean. Uses glob to find expected files using the name prefix"""
 

@@ -18,9 +18,11 @@ def test_find_beam_pairs(tmp_path):
     pairs = find_beam_pairs(data_dir)
     assert len(pairs) == 2
     assert pairs[0].beam == "01"
+    assert pairs[0].name == "target"
     assert pairs[0].tgt == data_dir / "target_beam01.ms"
     assert pairs[0].cal == data_dir / "cal_beam01.ms"
     assert pairs[1].beam == "02"
+    assert pairs[1].name == "target"
     assert pairs[1].tgt == data_dir / "target_beam02.ms"
     assert pairs[1].cal == data_dir / "cal_beam02.ms"
 
@@ -32,12 +34,13 @@ def test_find_beam_pairs_custom_patterns(tmp_path):
     (data_dir / "T01.ms").touch()
     (data_dir / "C01.ms").touch()
 
-    tgt_pattern = r"T(?P<beam>\d+)\.ms"
+    tgt_pattern = r"(?P<name>T)(?P<beam>\d+)\.ms"
     cal_pattern = r"C(?P<beam>\d+)\.ms"
 
     pairs = find_beam_pairs(data_dir, tgt_pattern=tgt_pattern, cal_pattern=cal_pattern)
     assert len(pairs) == 1
     assert pairs[0].beam == "01"
+    assert pairs[0].name == "T"
     assert pairs[0].tgt == data_dir / "T01.ms"
     assert pairs[0].cal == data_dir / "C01.ms"
 

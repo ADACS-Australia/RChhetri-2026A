@@ -12,6 +12,7 @@ from needle.config.calibrate import SolveCalibrationConfig, ApplyCalibrationConf
 from needle.config.clean import ShallowCleanConfig, DeepCleanConfig, IntervalCleanConfig, ModelSubtractCleanConfig
 from needle.config.data import DataConfig
 from needle.config.flag import FlagConfig
+from needle.config.imstack import ImageStackConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
 from needle.config.watcher import WatcherConfig
@@ -83,7 +84,10 @@ class NeedleConfig(NeedleModel):
     "Deep clean config"
 
     interval_clean: IntervalCleanConfig = IntervalCleanConfig()
-    "Deep clean config"
+    "Interval clean config"
+
+    imstack: ImageStackConfig = ImageStackConfig()
+    "Image stack creation config"
 
     @model_validator(mode="after")
     def _check_skip_to_deep_clean(self) -> "NeedleConfig":

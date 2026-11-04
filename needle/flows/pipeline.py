@@ -11,13 +11,15 @@ from prefect.client.schemas.filters import (
     TaskRunFilterStateType,
 )
 from prefect.client.schemas.objects import StateType
-from prefect.futures import PrefectFuture, as_completed
+from prefect.futures import PrefectFuture
 from prefect.runtime import flow_run
 from prefect.task_runners import ThreadPoolTaskRunner
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.logging import setup_logging
+from needle.modules.clean import interval_output_dir
+from needle.modules.imstack import IMAGE_GLOB
 from needle.modules.inspect import MSInfo
 from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
 from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
@@ -26,6 +28,7 @@ from needle.tasks.clean import clean_task, interval_clean_task, predict_task
 from needle.tasks.convert import convert_beam_pair_task
 from needle.tasks.diagnostics import cal_diagnostics_task, ms_diagnostics_task, pre_cal_diagnostics
 from needle.tasks.flag import flag_ms_pair_task
+from needle.tasks.imstack import create_image_stack_task
 from needle.tasks.inspect import inspect_ms_task
 from needle.tasks.mask import create_mask_task
 from needle.tasks.source_find import source_find_task
@@ -133,17 +136,26 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
         unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
     )
 
-    #######################
-    ## Interval Cleaning ##
-    #######################
-    f_interval_clean = _submit_interval_cleans(client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger)
+    ##########################################
+    ## Interval Cleaning and Image Stacking ##
+    ##########################################
+    f_interval_clean, intervals_by_beam = _submit_interval_cleans(
+        client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger
+    )
+    f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beam_pairs, logger)
 
     ###################################
     ## Finish and check for failures ##
     ###################################
     for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_inspect_cal):
         f.wait()  # Don't use .result() as it causes crashing on failure
+    # Interval cleans depend on model subtraction. Wait for it explicitly so the flow does not cancel it if no interval
+    # cleans were planned.
+    for f in f_model_subtract:
+        f.wait()
     for f in f_interval_clean:
+        f.wait()
+    for f in f_image_stack:
         f.wait()
     _report_failures(logger=logger)
 
@@ -156,20 +168,32 @@ def _submit_interval_cleans(
     f_model_subtract: FutureList,
     f_mask: OptionalFutureList,
     logger,
-) -> FutureList:
+) -> tuple[FutureList, dict[int, FutureList]]:
     """Submits interval cleans for each beam as soon as its inspect task finishes.
     Beams whose inspect failed (or was skipped) are ignored."""
-    # as_completed yields the futures in finish order, so map each back to its beam index
-    idx_by_run = {f.task_run_id: i for i, f in enumerate(f_inspect_tgt)}
     f_interval_clean = []
+    intervals_by_beam = {}
 
-    for inspect in as_completed(f_inspect_tgt):
+    for i, inspect in enumerate(f_inspect_tgt):
+        # Wait explicitly rather than relying on as_completed: an inspect future can
+        # transiently report Pending while its upstream target future is resolving.
+        inspect.wait()
         if not inspect.state.is_completed():
+            logger.error(
+                f"Skipping interval cleaning for beam index {i}: inspect finished in state "
+                f"{inspect.state.name}: {inspect.state.message}"
+            )
             continue  # dead beam, the failure report will cover it
-        i = idx_by_run[inspect.task_run_id]
         try:
             ms_info = MSInfo.from_json(inspect.result())
-            intervals = _generate_ms_intervals(ms_info.time.n_integrations, cfg.flow.interval_tasks)
+            n_integrations = ms_info.time.n_integrations
+            n_intervals = min(cfg.flow.interval_tasks, n_integrations)
+            if n_intervals < cfg.flow.interval_tasks:
+                logger.warning(
+                    f"Beam index {i} has only {n_integrations} integration(s); "
+                    f"using {n_intervals} interval(s) instead of {cfg.flow.interval_tasks}"
+                )
+            intervals = _generate_ms_intervals(n_integrations, n_intervals)
         except Exception as e:
             logger.error(f"Could not plan intervals for beam index {i}: {type(e).__name__}: {e}")
             continue
@@ -187,7 +211,59 @@ def _submit_interval_cleans(
                     overwrite=cfg.flow.overwrite,
                 )
             )
-    return f_interval_clean
+            intervals_by_beam.setdefault(i, []).append(f_interval_clean[-1])
+    return f_interval_clean, intervals_by_beam
+
+
+def _submit_image_stacks(
+    client: Client,
+    cfg: NeedleConfig,
+    intervals_by_beam: dict[int, FutureList],
+    f_tgt: FutureList,
+    f_beam_pairs: FutureList,
+    logger,
+) -> FutureList:
+    """Submits one image-stack task per beam, waiting for every interval clean in that beam."""
+    beam_indices = set(intervals_by_beam)
+    if not beam_indices:
+        # Interval cleans may have been cached or skipped without leaving futures behind.
+        # Fall back to any beam that already has interval images on disk.
+        for i in range(len(f_tgt)):
+            try:
+                input_dir = interval_output_dir(f_tgt[i].result())
+            except Exception:
+                continue
+            if input_dir.is_dir() and any(input_dir.glob(IMAGE_GLOB)):
+                logger.warning(f"No interval clean futures for beam index {i}; using existing interval images")
+                beam_indices.add(i)
+
+    f_image_stack = []
+    for i in sorted(beam_indices):
+        f_intervals = intervals_by_beam.get(i, [])
+        if f_intervals:
+            logger.info(f"Waiting for {len(f_intervals)} interval clean(s) for beam index {i}")
+            for f in f_intervals:
+                f.wait()
+
+            failed = [f for f in f_intervals if not f.state.is_completed()]
+            if failed:
+                logger.error(
+                    f"Skipping image stack for beam index {i}: {len(failed)} interval clean(s) did not complete"
+                )
+                continue
+
+        logger.info(f"Queuing image stack for beam index {i}")
+        f_image_stack.append(
+            create_image_stack_task.submit(
+                client,
+                cfg=cfg.imstack,
+                input_dir=interval_output_dir(f_tgt[i].result()),
+                obsid=f_beam_pairs[i].result().name,
+                log_level=cfg.flow.log_level,
+                overwrite=cfg.flow.overwrite,
+            )
+        )
+    return f_image_stack
 
 
 def _generate_ms_intervals(n_integrations: int, n_intervals: int = 1) -> list[tuple[int, int]]:
