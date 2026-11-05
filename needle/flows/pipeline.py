@@ -15,19 +15,20 @@ from prefect.futures import PrefectFuture
 from prefect.runtime import flow_run
 from prefect.task_runners import ThreadPoolTaskRunner
 
+from needle.config.calibrate import CalInput, CalibrationSolution
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.logging import setup_logging
 from needle.modules.clean import interval_output_dir
 from needle.modules.imstack import IMAGE_GLOB
 from needle.modules.inspect import MSInfo
-from needle.tasks.beam import setup_beam_dir_task, find_beam_pairs_task
+from needle.tasks.beam import setup_beam_dir_task, find_beams_task
 from needle.tasks.calibrate import solve_calibration_task, apply_calibration_task
 from needle.tasks.casa_data import update_casa_data
-from needle.tasks.clean import clean_task, interval_clean_task, predict_task
-from needle.tasks.convert import convert_beam_pair_task
+from needle.tasks.clean import clean_task, interval_clean_task, predict_task, choose_image_task
+from needle.tasks.convert import convert_beam_task
 from needle.tasks.diagnostics import cal_diagnostics_task, ms_diagnostics_task, pre_cal_diagnostics
-from needle.tasks.flag import flag_ms_pair_task
+from needle.tasks.flag import flag_ms_beam_task
 from needle.tasks.imstack import create_image_stack_task
 from needle.tasks.inspect import inspect_ms_task
 from needle.tasks.mask import create_mask_task
@@ -70,23 +71,23 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
 
     # Update the casa measures dataset before doing anything
     update_casa_data(data_path=cfg.data.casa_dir / "casadata", runtime=ClusterConfig.get_config().container)
-    # Get the beam pairs to work with
-    beam_pairs = find_beam_pairs_task(search_dir=Path(work_dir), **defaults)
-    f_beam_pairs = setup_beam_dir_task.map(beam_pairs, **defaults)
-    # Convert pairs to measurement sets
-    f_beam_pairs = convert_beam_pair_task.map(client=unmapped(client), pair=f_beam_pairs, **defaults)
+    # Get the beams to work with
+    beams = find_beams_task(search_dir=Path(work_dir), **defaults)
+    f_beams = setup_beam_dir_task.map(beams, **defaults)
+    # Convert beams to measurement sets
+    f_beams = convert_beam_task.map(client=unmapped(client), beam=f_beams, **defaults)
 
     #########################
     ## Flag and  calibrate ##
     #########################
 
-    f_beam_pairs = flag_ms_pair_task.map(client=unmapped(client), beam=f_beam_pairs, cfg=unmapped(cfg.flag), **defaults)
+    f_beams = flag_ms_beam_task.map(client=unmapped(client), beam=f_beams, cfg=unmapped(cfg.flag), **defaults)
     # Check that the beam is good enough to use
-    f_beam_pairs = pre_cal_diagnostics.map(client=unmapped(client_hm), beam=f_beam_pairs, **defaults)
+    f_beams = pre_cal_diagnostics.map(client=unmapped(client_hm), beam=f_beams, **defaults)
     # Solve and apply calibration
-    f_cal = extract_cal_task.map(pair=f_beam_pairs)
-    f_tgt = extract_tgt_task.map(pair=f_beam_pairs)
-    f_cal_soln = solve_calibration_task.map(
+    f_cal: CalInput | None = extract_cal_task.map(beam=f_beams)
+    f_tgt: Path = extract_tgt_task.map(beam=f_beams)
+    f_cal_soln: CalibrationSolution | None = solve_calibration_task.map(
         client=unmapped(client), cal=f_cal, cfg=unmapped(cfg.calibrate_solve), **defaults
     )
     f_tgt = apply_calibration_task.map(
@@ -135,14 +136,17 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
     f_model_subtract = clean_task.with_options(task_run_name="model_subtract_{ms.stem}").map(
         unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
     )
+    f_chosen_image = choose_image_task.map(
+        model_subtract=f_model_subtract, deep=f_deep_image, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
+    )
 
     ##########################################
     ## Interval Cleaning and Image Stacking ##
     ##########################################
     f_interval_clean, intervals_by_beam = _submit_interval_cleans(
-        client, cfg, f_tgt, f_inspect_tgt, f_model_subtract, f_mask, logger
+        client, cfg, f_tgt, f_inspect_tgt, f_chosen_image, f_mask, logger
     )
-    f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beam_pairs, logger)
+    f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beams, logger)
 
     ###################################
     ## Finish and check for failures ##
@@ -151,7 +155,7 @@ def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: s
         f.wait()  # Don't use .result() as it causes crashing on failure
     # Interval cleans depend on model subtraction. Wait for it explicitly so the flow does not cancel it if no interval
     # cleans were planned.
-    for f in f_model_subtract:
+    for f in f_chosen_image:
         f.wait()
     for f in f_interval_clean:
         f.wait()
@@ -220,7 +224,7 @@ def _submit_image_stacks(
     cfg: NeedleConfig,
     intervals_by_beam: dict[int, FutureList],
     f_tgt: FutureList,
-    f_beam_pairs: FutureList,
+    f_beams: FutureList,
     logger,
 ) -> FutureList:
     """Submits one image-stack task per beam, waiting for every interval clean in that beam."""
@@ -258,7 +262,7 @@ def _submit_image_stacks(
                 client,
                 cfg=cfg.imstack,
                 input_dir=interval_output_dir(f_tgt[i].result()),
-                obsid=f_beam_pairs[i].result().name,
+                obsid=f_beams[i].result().name,
                 log_level=cfg.flow.log_level,
                 overwrite=cfg.flow.overwrite,
             )

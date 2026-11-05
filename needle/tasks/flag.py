@@ -4,10 +4,10 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 from distributed import Client
 
-from needle.config.beam import BeamPair
+from needle.config.beam import BeamInput, CalibratedBeam
 from needle.config.calibrate import CalibrationSolution
 from needle.config.flag import FlagConfig
-from needle.lib.beam import find_beam_dir
+from needle.lib.names import NeedleNames
 from needle.lib.dask import submit_in_beam, map_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.flag import flag_observation, FlagContext
@@ -24,7 +24,7 @@ def flag_ms_task(
 ) -> Path:
     """Flags a measurement set. Returns the same measurement set."""
     fn_inputs = locals().items()
-    with beam_logger(find_beam_dir(ms), log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -41,13 +41,16 @@ def flag_ms_task(
 
 
 @task(cache_policy=NO_CACHE, task_run_name="flag_beam{beam.beam}")
-def flag_ms_pair_task(
-    client: Client, beam: BeamPair, cfg: FlagConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
-) -> BeamPair:
+def flag_ms_beam_task(
+    client: Client, beam: BeamInput, cfg: FlagConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
+) -> BeamInput:
     """Flags a pair of measurement sets. Returns the same measurement set pair."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(beam.tgt), log_level) as logger:
+    with beam_logger(NeedleNames(path=beam.path).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+        if isinstance(beam, CalibratedBeam):
+            logger.info(f"Found existing calibrated image: {beam.path}\nWill not reprocess.")
+            return beam
 
         task_ctxs = []
         tgt_ctx = FlagContext(cfg=cfg, ms=beam.tgt)
@@ -63,7 +66,8 @@ def flag_ms_pair_task(
             else:
                 task_ctxs.append(cal_ctx)
 
-        logger.info(f"Beginning flagging task for beam {beam.beam}")
-        client.gather(map_in_beam(client, flag_observation, task_ctxs))
-        logger.info(f"Completed flagging task for beam {beam.beam}")
+        if len(task_ctxs):
+            logger.info(f"Beginning flagging task for beam {beam.beam}")
+            client.gather(map_in_beam(client, flag_observation, task_ctxs))
+            logger.info(f"Completed flagging task for beam {beam.beam}")
     return beam

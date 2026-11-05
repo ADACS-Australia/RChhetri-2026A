@@ -32,6 +32,11 @@ class BeamPair(NeedleModel):
     cal: CalInput
     "The calibrator observation or solution"
 
+    @property
+    def path(self) -> Path:
+        "Main data file for this beam"
+        return self.tgt
+
     def move_files(self, new_dir):
         "Move the tgt and cal to a new directory"
         # Do not make parents! This can lead to issues if multiple processes attempt to create the parent concurrently
@@ -52,3 +57,30 @@ class BeamPair(NeedleModel):
         else:
             self.cal.bpcal = _move(self.cal.bpcal, new_dir)
             self.cal.gcal = _move(self.cal.gcal, new_dir)
+
+
+class CalibratedBeam(NeedleModel):
+    """A calibrated target"""
+
+    beam: str
+    "Beam identifier e.g. '00'"
+
+    name: str
+    "Name of the observation e.g. 'SB123456'"
+
+    ms: Path
+    "Path to the calibrated measurement set"
+
+    @property
+    def path(self) -> Path:
+        "Main data file for this beam"
+        return self.ms
+
+    def move_files(self, new_dir: Path):
+        "Move the calibrated MS to a new directory"
+        # Do not make parents! This can lead to issues if multiple processes attempt to create the parent concurrently
+        new_dir.mkdir(parents=False, exist_ok=True, mode=0o770)
+        self.ms = _move(self.ms, new_dir)
+
+
+BeamInput = BeamPair | CalibratedBeam

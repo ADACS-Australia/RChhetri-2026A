@@ -8,7 +8,7 @@ from prefect.cache_policies import NO_CACHE
 
 
 from needle.config.clean import WSCleanConfig
-from needle.lib.beam import find_beam_dir
+from needle.lib.names import NeedleNames
 from needle.lib.dask import submit_in_beam
 from needle.lib.logging import beam_logger
 from needle.modules.clean import interval_output_dir, run_clean, WSCleanContext, WSCleanIntervalOutput
@@ -37,7 +37,7 @@ def interval_clean_task(
     :raises FileNotFoundError: Raised when the number of expected image files does not match the amount found
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(ms), log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 
@@ -75,13 +75,13 @@ def clean_task(
     log_level: str = "INFO",
     overwrite: bool = False,
     **kwargs,
-) -> Path:
+) -> Path | None:
     """Perform a clean on a measurement set with an optional mask input. Return the fits image path.
     Expects only one image output.
 
     :raises RuntimeError: Raised if there is not exactly one image output"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(ms), log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = WSCleanContext(cfg=cfg, ms=ms, fits_mask=mask)
@@ -91,11 +91,32 @@ def clean_task(
 
         logger.info(f"Beginning clean task for {ms.name}")
         wsclean_output = submit_in_beam(client, run_clean, ctx).result()
+        if wsclean_output is None:
+            # This is okay, we now assume the deep clean is model-subtracted
+            logger.info("Found no pre-existing model-subtracted image.")
+            return None
         if not cfg.subtract_model and len(wsclean_output.image) != 1:
             raise RuntimeError(f"Unexpected number wsclean outputs: {wsclean_output}")
 
         logger.info(f"Completed clean task for {ms.name}")
     return wsclean_output.image[0]
+
+
+@task(cache_policy=NO_CACHE, task_run_name="choose_image_{deep.parent.stem}")
+def choose_image_task(
+    model_subtract: Path | None,
+    deep: Path,
+    log_level: str = "INFO",
+    **kwargs,
+) -> Path | None:
+    """Chooses which of the two images to use. Will prefer the model-subtracted image if it exists"""
+    with beam_logger(NeedleNames(path=deep).beam_dir, log_level) as logger:
+        if model_subtract:
+            logger.info(f"Model subtracted image exists, will use this: {model_subtract}")
+            return model_subtract
+        else:
+            logger.info(f"Model subtracted image does not exist, will fall back to deep image: {deep}")
+            return deep
 
 
 @task(cache_policy=NO_CACHE, task_run_name="predict_{ms.stem}")
@@ -114,7 +135,7 @@ def predict_task(
     Model column will not be overwritten if it exists and overwrite is false.
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(find_beam_dir(ms), log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
         _ = dependencies
 
