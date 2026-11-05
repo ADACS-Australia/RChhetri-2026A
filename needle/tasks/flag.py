@@ -4,7 +4,7 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 from distributed import Client
 
-from needle.config.beam import BeamPair
+from needle.config.beam import BeamInput, CalibratedBeam
 from needle.config.calibrate import CalibrationSolution
 from needle.config.flag import FlagConfig
 from needle.lib.names import NeedleNames
@@ -24,7 +24,7 @@ def flag_ms_task(
 ) -> Path:
     """Flags a measurement set. Returns the same measurement set."""
     fn_inputs = locals().items()
-    with beam_logger(NeedleNames(ms).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -41,22 +41,21 @@ def flag_ms_task(
 
 
 @task(cache_policy=NO_CACHE, task_run_name="flag_beam{beam.beam}")
-def flag_ms_pair_task(
-    client: Client, beam: BeamPair, cfg: FlagConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
-) -> BeamPair:
+def flag_ms_beam_task(
+    client: Client, beam: BeamInput, cfg: FlagConfig, log_level: str = "INFO", overwrite: bool = False, **kwargs
+) -> BeamInput:
     """Flags a pair of measurement sets. Returns the same measurement set pair."""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(beam.tgt).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=beam.path).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
+        if isinstance(beam, CalibratedBeam):
+            logger.info(f"Found existing calibrated image: {beam.path}\nWill not reprocess.")
+            return beam
 
         task_ctxs = []
         tgt_ctx = FlagContext(cfg=cfg, ms=beam.tgt)
         if tgt_ctx.output.exists() and overwrite is False:
             logger.info(f"Found existing flagversion for tgt: {tgt_ctx.output}\nWill not reflag.")
-        elif NeedleNames(tgt_ctx).calibrated_image_path.exists and overwrite is False:
-            logger.info(
-                f"Found existing calibrated image: {NeedleNames(tgt_ctx).calibrated_image_path}\nWill not reprocess."
-            )
         else:
             task_ctxs.append(tgt_ctx)
 
@@ -64,10 +63,6 @@ def flag_ms_pair_task(
             cal_ctx = FlagContext(cfg=cfg, ms=beam.cal)
             if cal_ctx.output.exists() and overwrite is False:
                 logger.info(f"Found existing flagversion for tgt: {tgt_ctx.output}\nWill not reflag.")
-            elif NeedleNames(cal_ctx).calibrated_image_path.exists and overwrite is False:
-                logger.info(
-                    f"Found existing calibrated image: {NeedleNames(cal_ctx).calibrated_image_path}\nWill not reprocess."
-                )
             else:
                 task_ctxs.append(cal_ctx)
 

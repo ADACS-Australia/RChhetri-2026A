@@ -259,10 +259,14 @@ def run_clean(ctx: WSCleanContext, overwrite_predictions: bool = False) -> WSCle
         with open_table(ctx.ms) as tb:
             subtracted = tb.getkeyword(MODEL_SUBTRACT_KEY) if MODEL_SUBTRACT_KEY in tb.getkeywords() else None
             if subtracted is not None:
+                subtracted = [s.strip() for s in subtracted]
                 logger.warning(
                     f"Model has already been subtracted. Will not re-subtract.\nCommand used in previous subtraction: '{subtracted}'"
                 )
-                return ctx.output
+                # Return the model-subtracted image if it exists.
+                # Otherwise, the deep clean is considered the model-subtracted image downstream
+                # This can happen if a pre-calibrated, pre-subtracted image is handed to the pipeline
+                return ctx.output if len(ctx.output.image) else None
 
     logger.info(f"Running WSClean on {ctx.ms}")
     ctx.log_cmd()

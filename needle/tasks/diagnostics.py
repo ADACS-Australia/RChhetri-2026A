@@ -6,7 +6,7 @@ from prefect import task
 from prefect.cache_policies import NO_CACHE
 
 
-from needle.config.beam import BeamPair
+from needle.config.beam import BeamInput, BeamPair, CalibratedBeam
 from needle.lib.names import NeedleNames
 from needle.lib.dask import submit_in_beam
 from needle.lib.exceptions import BeamUnusable
@@ -38,7 +38,7 @@ def _flagged_pct(client: Client, ms: Path, logger) -> float:
 @task(cache_policy=NO_CACHE, task_run_name="pre_cal_diagnostics_beam{beam.beam}")
 def pre_cal_diagnostics(
     client: Client,
-    beam: BeamPair,
+    beam: BeamInput,
     log_level: str = "INFO",
     flag_pct_thresh: float = FLAG_PCT_THRESH,
     **kwargs,
@@ -50,12 +50,10 @@ def pre_cal_diagnostics(
     :raises BeamUnusable: Raised if the fraction of flagged data is past the threshold for either of the cal or tgt observations
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(beam.tgt).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=beam.path).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
-
-        if NeedleNames(beam.tgt).calibrated_image_path.exists:
-            logger.info(f"""Found existing calibrated image: {NeedleNames(beam.tgt).calibrated_image_path}
-                Will not perform preliminary diagnostics.""")
+        if isinstance(beam, CalibratedBeam):
+            logger.info(f"Found existing calibrated image: {beam.path}\nWill not perform preliminary diagnostics.")
             return beam
         to_check = []
         if not isinstance(beam.cal, CalibrationSolution):  # nothing to check if it's a solution
@@ -72,13 +70,15 @@ def pre_cal_diagnostics(
     return beam
 
 
-@task(cache_policy=NO_CACHE, task_run_name="ms_diagnostics_{ms.stem}")
+@task(cache_policy=NO_CACHE, task_run_name="ms_diagnostics")
 def ms_diagnostics_task(
-    client: Client, ms: Path | CalibrationSolution, log_level: str = "INFO", overwrite: bool = False, **kwargs
-) -> MSDiagnosticsOutput:
+    client: Client, ms: Path | CalibrationSolution | None, log_level: str = "INFO", overwrite: bool = False, **kwargs
+) -> MSDiagnosticsOutput | None:
     """Runs diagnostics on a measurement set"""
+    if ms is None:
+        return None
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(ms).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=ms).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         if isinstance(ms, CalibrationSolution):  # No-op
@@ -94,13 +94,15 @@ def ms_diagnostics_task(
     return result
 
 
-@task(cache_policy=NO_CACHE, task_run_name="cal_diagnostics_{cal.stem}")
+@task(cache_policy=NO_CACHE, task_run_name="cal_diagnostics")
 def cal_diagnostics_task(
-    client: Client, cal: CalibrationSolution, log_level: str = "INFO", overwrite: bool = False, **kwargs
+    client: Client, cal: CalibrationSolution | None, log_level: str = "INFO", overwrite: bool = False, **kwargs
 ) -> CalDiagnosticsOutput:
     """Runs diagnostics on a calibration solution"""
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(cal).beam_dir, log_level) as logger:
+    if cal is None:
+        return None
+    with beam_logger(NeedleNames(path=cal).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = CalDiagnosticsContext(solution=cal, output_dir=cal.gcal.parent / DIAGNOSTICS_DIRNAME)

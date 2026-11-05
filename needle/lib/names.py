@@ -14,7 +14,7 @@ class NeedleNames(BaseModel):
     @property
     def beam_dir(self) -> Path:
         """Returns the directory of the beam."""
-        return self._find_beam_dir(self.path)
+        return self._find_beam_dir()
 
     @property
     def observation_dir(self) -> Path:
@@ -28,12 +28,13 @@ class NeedleNames(BaseModel):
         beam_name = self.beam_dir.name
         return self.beam_dir / f"{obs_name}_{beam_name}_calibrated.ms"
 
-    def _find_beam_dir(path: Path | CalInput | str) -> Path:
-        """Finds the beam directory, given a full path that includes it"""
-        if isinstance(path, str):
-            path = Path(path)
-        if isinstance(path, CalibrationSolution):
-            path = path.gcal
+    def _find_beam_dir(self) -> Path:
+        """Finds the beam directory, provided self.path includes it"""
+        path = self.path
+        if isinstance(self.path, str):
+            path = Path(self.path)
+        elif isinstance(self.path, CalibrationSolution):
+            path = self.path.gcal
         p = path.resolve()
         for parent in [p, *p.parents]:
             if re.fullmatch(r"beam\d{1,2}", parent.name):

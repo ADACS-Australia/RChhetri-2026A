@@ -26,7 +26,7 @@ def create_mask_task(
     :raises FileNotFoundError: Raised if the mask file is not found after running the mask module
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(fits_image).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=fits_image).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = CreateMaskContext(cfg=cfg, image=fits_image, sources=sources_json)

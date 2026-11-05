@@ -27,7 +27,7 @@ def create_image_stack_task(
     :return: The path to the HDF5 image stack
     """
     fn_inputs = {k: v for k, v in locals().items() if k != "client"}.items()
-    with beam_logger(NeedleNames(input_dir).beam_dir, log_level) as logger:
+    with beam_logger(NeedleNames(path=input_dir).beam_dir, log_level) as logger:
         logger.debug("Inputs:\n" + "\n\t".join([f"{name}: {value}" for name, value in fn_inputs]))
 
         ctx = ImageStackContext(cfg=cfg, obsid=obsid, input_dir=input_dir, overwrite=overwrite)

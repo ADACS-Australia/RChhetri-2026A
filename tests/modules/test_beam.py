@@ -1,10 +1,10 @@
 import pytest
 import re
 
-from needle.modules.beam import find_beam_pairs, BEAM_DIR_PATTERN, BPCAL_PATTERN, CAL_PATTERN, GCAL_PATTERN, TGT_PATTERN
+from needle.modules.beam import find_beams, BEAM_DIR_PATTERN, BPCAL_PATTERN, CAL_PATTERN, GCAL_PATTERN, TGT_PATTERN
 
 
-def test_find_beam_pairs(tmp_path):
+def test_find_beams(tmp_path):
     """Test discovery of beam pairs from directory patterns."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -15,7 +15,7 @@ def test_find_beam_pairs(tmp_path):
     (data_dir / "target_beam03.ms").mkdir()  # No cal
     (data_dir / "cal_beam04.ms").mkdir()  # No target
 
-    pairs = find_beam_pairs(data_dir)
+    pairs = find_beams(data_dir)
     assert len(pairs) == 2
     assert pairs[0].beam == "01"
     assert pairs[0].name == "target"
@@ -27,8 +27,8 @@ def test_find_beam_pairs(tmp_path):
     assert pairs[1].cal == data_dir / "cal_beam02.ms"
 
 
-def test_find_beam_pairs_custom_patterns(tmp_path):
-    """Test find_beam_pairs with custom regex patterns."""
+def test_find_beams_custom_patterns(tmp_path):
+    """Test find_beams with custom regex patterns."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "T01.ms").touch()
@@ -37,7 +37,7 @@ def test_find_beam_pairs_custom_patterns(tmp_path):
     tgt_pattern = r"(?P<name>T)(?P<beam>\d+)\.ms"
     cal_pattern = r"C(?P<beam>\d+)\.ms"
 
-    pairs = find_beam_pairs(data_dir, tgt_pattern=tgt_pattern, cal_pattern=cal_pattern)
+    pairs = find_beams(data_dir, tgt_pattern=tgt_pattern, cal_pattern=cal_pattern)
     assert len(pairs) == 1
     assert pairs[0].beam == "01"
     assert pairs[0].name == "T"
