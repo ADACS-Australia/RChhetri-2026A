@@ -1,0 +1,23 @@
+name: needle
+prefect-version: 3.0.0
+
+# How the worker gets the code (shared by every deployment below)
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: clone-step
+      repository: https://github.com/ADACS-Australia/RChhetri-2026A.git
+      branch: casda_pull
+  - prefect.deployments.steps.run_shell_script:
+      directory: "{{ clone-step.directory }}"
+      script: bash scripts/install_dependencies.sh
+      stream_output: true
+
+deployments:
+  - name: test-deployment
+    description: Hourly hello world
+    entrypoint: needle/flows/test_workflow.py:hello_world_flow
+    schedules:
+      - cron: "0 * * * *"
+        timezone: "Australia/Perth"
+    work_pool:
+      name: test-pool
