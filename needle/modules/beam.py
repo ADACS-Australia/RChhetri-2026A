@@ -18,12 +18,14 @@ from needle.config.calibrate import CalibrationSolution, CalInput
 
 logger = logging.getLogger(__name__)
 
-TGT_PATTERN = r"(?!cal_)(?P<name>.+)_beam(?P<beam>\d{2})\.(uvfits|mir|ms)$"
-CAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.(uvfits|mir|ms)$"
-BPCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.bpcal$"
-GCAL_PATTERN = r"cal_beam(?P<beam>\d{2})\.gcal$"
-CALIBRATED_PATTERN = r"(?P<name>.+)_beam(?P<beam>\d{2})_calibrated\.ms$"
+
+TGT_PATTERN = r"^(?!.*cal).*?(?P<name>SB\d+).*?beam(?P<beam>\d{2})(?!\d).*\.(uvfits|mir|ms)$"
+CAL_PATTERN = r"^(?=.*cal).*?beam(?P<beam>\d{2})(?!\d).*\.(uvfits|mir|ms)$"
+BPCAL_PATTERN = r"^(?=.*cal.*\.bpcal$).*?beam(?P<beam>\d{2})(?!\d).*\.bpcal$"
+GCAL_PATTERN = r"^(?=.*cal.*\.gcal$).*?beam(?P<beam>\d{2})(?!\d).*\.gcal$"
+CALIBRATED_PATTERN = r".*?(?P<name>SB\d+).*?beam(?P<beam>\d{2})(?!\d).*_calibrated\.(uvfits|mir|ms)$"
 BEAM_DIR_PATTERN = r"beam\d{2}$"
+FORMAT_PRIORITY = (".mir", ".uvfits", ".ms")
 
 # Priority of formats to use. Best last.
 FORMAT_PRIORITY = (".mir", ".uvfits", ".ms")
