@@ -1,10 +1,12 @@
 # flows/download.py
-import os
 from pathlib import Path
 
 import pyvo
 from astroquery.casda import Casda
 from prefect import flow, task, get_run_logger
+from prefect.blocks.system import Secret
+
+from needle.lib.casda import casda_login
 
 TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
 BATCH = 5
@@ -73,8 +75,7 @@ def download_products(products, outdir: str):
         return
     out.mkdir(parents=True, exist_ok=True)
 
-    casda = Casda()
-    casda.login(username=os.environ["CASDA_USERNAME"], password=os.environ["CASDA_PASSWORD"])
+    casda = casda_login(username=Secret.load("casda-username").get(), password=Secret.load("casda-password").get())
 
     for i in range(0, len(products), BATCH):
         urls = casda.stage_data(products[i : i + BATCH])
