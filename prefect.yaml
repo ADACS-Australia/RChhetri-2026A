@@ -13,11 +13,11 @@ pull:
       stream_output: true
 
 deployments:
-  - name: test-deployment
-    description: Hourly hello world
-    entrypoint: needle/flows/test_workflow.py:hello_world_flow
-    schedules:
-      - cron: "0 * * * *"
-        timezone: "Australia/Perth"
+  - name: download-observation-ozstar
+    description: Download CASDA visibilities for a target observation and its calibrator
+    entrypoint: needle/flows/download_observation.py:download_observation
+    tags:
+      - casda
+    # No schedule: this deployment is triggered by the casda-query flow via run_deployment().
     work_pool:
-      name: test-pool
+      name: "process-observation"

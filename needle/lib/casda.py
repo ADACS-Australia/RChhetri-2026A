@@ -4,6 +4,8 @@ from keyring.backend import KeyringBackend
 
 from astroquery.casda import Casda
 
+CASDA_TAP_URL = "https://casda.csiro.au/casda_vo_tools/tap"
+
 
 class _EnvKeyring(KeyringBackend):
     """Serves the CASDA password from the environment; stores nothing."""

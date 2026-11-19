@@ -2,7 +2,7 @@ from contextlib import contextmanager
 import functools
 import logging
 from pathlib import Path
-from typing import Generator, Optional, Tuple
+from typing import Generator, Optional, Tuple, Literal
 
 from dask_jobqueue.local import LocalCluster
 from distributed import Client
@@ -63,13 +63,21 @@ def _run_with_beam_logging(beam_dir: Path, level: str, fn, *args, **kwargs):
 
 @contextmanager
 def build_dask_client(
+    type: Literal["cluster", "data_mover"] = "cluster",
     cluster_cfg: Optional[ClusterConfig] = None,
 ) -> Generator[Tuple[Client, LocalCluster], None, None]:
     """Builds a Dask client using the cluster configuration."""
     logger = logging.getLogger("needle-cli")
 
     if not cluster_cfg:
-        cluster_cfg = ClusterConfig.get_config()
+        match type:
+            case "cluster":
+                cluster_cfg = ClusterConfig.get_cluster_config()
+            case "data_mover":
+                cluster_cfg = ClusterConfig.get_data_mover_config()
+            case _:
+                raise RuntimeError(f"Unknown type passed: '{type}'. Expected one of ['cluster', 'data_mover']")
+
     logger.info(f"Using {cluster_cfg.type} cluster")
     client = None
     cluster = None

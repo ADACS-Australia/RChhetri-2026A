@@ -111,8 +111,15 @@ class ClusterConfig(NeedleModel):
     "Local cluster configuration (used when type is 'local')"
 
     @classmethod
-    def get_config(cls) -> "ClusterConfig":
+    def get_cluster_config(cls) -> "ClusterConfig":
         cfg_path = Path(os.environ.get("NEEDLE_CLUSTER_CONFIG", Path.home() / Path(".needle_cluster.yaml")))
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
+        return cls.load(cfg_path)
+
+    @classmethod
+    def get_data_mover_config(cls) -> "ClusterConfig":
+        cfg_path = Path(os.environ.get("NEEDLE_DATA_MOVER_CONFIG", Path.home() / Path(".needle_data_mover.yaml")))
         if not cfg_path.exists():
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
