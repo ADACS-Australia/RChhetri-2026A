@@ -18,6 +18,7 @@ dependencies = [
     "prefect-docker>=0.7.1",
     "pydantic>=2.12.5",
     "pyvo>=1.10.0",
+    "requests>=2.19",
 ]
 
 [project.optional-dependencies]

@@ -18,7 +18,9 @@ from prefect.task_runners import ThreadPoolTaskRunner
 from needle.config.calibrate import CalInput, CalibrationSolution
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
+from needle.lib.dask import build_dask_client
 from needle.lib.logging import setup_logging
+from needle.lib.slurm import memory_string_to_int
 from needle.modules.clean import interval_output_dir
 from needle.modules.imstack import IMAGE_GLOB
 from needle.modules.inspect import MSInfo
@@ -46,122 +48,137 @@ OptionalFutureList = list[PrefectFuture | None]
     persist_result=True,
     flow_run_name=lambda: f"pipeline-{Path(flow_run.get_parameters()["work_dir"]).stem}",
 )
-def needle_pipeline(cfg: NeedleConfig, client_address: str, client_address_hm: str, work_dir: Path | str) -> Flow:
+def needle_pipeline(
+    cfg: NeedleConfig,
+    cluster_cfg: ClusterConfig,
+    work_dir: Path | str,
+) -> Flow:
     """The needle pipeline. Runs all operations end-to-end.
     Note - the client must be created in-flow as the Client object cannot be json-serialized.
 
     :param cfg: The needle config object. Contains all static configuration options for the run.
-    :param client_address: The addresss of the running Dask scheduler. Used to construct the Dask client.
-    :param client_address_hm: The addresss of the running Dask scheduler with additional memory. Used for memory intensive jobs
+    :param cluster_cfg: Cluster configuration used to create the Dask clients.
     :param work_dir: The directory containing all of the data to work with.
     """
-    logger = setup_logging(cfg.flow.log_level, log_file=Path(work_dir) / "needle.log")
-    logger.debug(f"Config: {cfg}")
-    client = Client(client_address)
-    client_hm = Client(client_address_hm)
 
     def _unmapped_defaults(cfg: NeedleConfig) -> dict:
         return {"log_level": unmapped(cfg.flow.log_level), "overwrite": unmapped(cfg.flow.overwrite)}
 
     defaults = _unmapped_defaults(cfg)
 
-    ##########################
-    ## Pre-processing tasks ##
-    ##########################
+    logger = setup_logging(cfg.flow.log_level, log_file=Path(work_dir) / "needle.log")
+    logger.debug(f"Config: {cfg}")
 
-    # Update the casa measures dataset before doing anything
-    update_casa_data(data_path=cfg.data.casa_dir / "casadata", runtime=ClusterConfig.get_config().container)
-    # Get the beams to work with
-    beams = find_beams_task(search_dir=Path(work_dir), **defaults)
-    f_beams = setup_beam_dir_task.map(beams, **defaults)
-    # Convert beams to measurement sets
-    f_beams = convert_beam_task.map(client=unmapped(client), beam=f_beams, **defaults)
-
-    #########################
-    ## Flag and  calibrate ##
-    #########################
-
-    f_beams = flag_ms_beam_task.map(client=unmapped(client), beam=f_beams, cfg=unmapped(cfg.flag), **defaults)
-    # Check that the beam is good enough to use
-    f_beams = pre_cal_diagnostics.map(client=unmapped(client_hm), beam=f_beams, **defaults)
-    # Solve and apply calibration
-    f_cal: CalInput | None = extract_cal_task.map(beam=f_beams)
-    f_tgt: Path = extract_tgt_task.map(beam=f_beams)
-    f_cal_soln: CalibrationSolution | None = solve_calibration_task.map(
-        client=unmapped(client), cal=f_cal, cfg=unmapped(cfg.calibrate_solve), **defaults
-    )
-    f_tgt = apply_calibration_task.map(
-        client=unmapped(client), cfg=unmapped(cfg.calibrate_apply), cal=f_cal_soln, tgt=f_tgt, **defaults
-    )
-
-    ##########################
-    ## Post Cal Diagnostics ##
-    ##########################
-
-    # Inspect result
-    f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
-    f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
-    # Perform diagnostics
-    f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_cal, **defaults)
-    f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_tgt, **defaults)
-    f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client_hm), f_cal_soln, **defaults)
-
-    ####################################
-    ## Clean, mask and model subtract ##
-    ####################################
-
-    if cfg.flow.skip_to_deep_clean:  # Auto-masking route
-        f_deep_image = clean_task.with_options(task_run_name="auto_mask_deep_clean_{ms.stem}").map(
-            unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), **defaults
+    # Make a "High memory" client by using the input client and 4xing the memory
+    cluster_cfg_hm = cluster_cfg.model_copy()
+    cluster_cfg_hm.to_cluster()
+    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
+        cluster_cfg_hm.slurm.memory = max(
+            4 * memory_string_to_int(cluster_cfg_hm.slurm.memory), memory_string_to_int("256GB")
         )
-        f_mask = [None] * len(f_tgt)
-    else:  # Source-finding route
-        f_shallow_image = clean_task.with_options(task_run_name="shallow_clean_{ms.stem}").map(
-            unmapped(client), f_tgt, cfg=unmapped(cfg.shallow_clean), **defaults
-        )
-        f_json_sources = source_find_task.map(  # Source finding
-            unmapped(client), f_shallow_image, cfg=unmapped(cfg.source_find), **defaults
-        )
-        f_mask = create_mask_task.map(  # Create masks over the sources in prep for deep cleaning
-            unmapped(client), f_json_sources, f_shallow_image, cfg=unmapped(cfg.create_mask), **defaults
-        )
-        f_deep_image = clean_task.with_options(task_run_name="deep_clean_{ms.stem}").map(
-            unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
-        )
-    # Model creation - generates the MODEL_DATA column
-    f_model_create = predict_task.with_options(task_run_name="predict_{ms.stem}").map(
-        unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults
-    )
-    # Model subtract - removes the MODEL_DATA from the DATA visibilities
-    f_model_subtract = clean_task.with_options(task_run_name="model_subtract_{ms.stem}").map(
-        unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
-    )
-    f_chosen_image = choose_image_task.map(
-        model_subtract=f_model_subtract, deep=f_deep_image, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
-    )
+    with build_dask_client(cluster_cfg) as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
 
-    ##########################################
-    ## Interval Cleaning and Image Stacking ##
-    ##########################################
-    f_interval_clean, intervals_by_beam = _submit_interval_cleans(
-        client, cfg, f_tgt, f_inspect_tgt, f_chosen_image, f_mask, logger
-    )
-    f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beams, logger)
+        ##########################
+        ## Pre-processing tasks ##
+        ##########################
 
-    ###################################
-    ## Finish and check for failures ##
-    ###################################
-    for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_inspect_cal):
-        f.wait()  # Don't use .result() as it causes crashing on failure
-    # Interval cleans depend on model subtraction. Wait for it explicitly so the flow does not cancel it if no interval
-    # cleans were planned.
-    for f in f_chosen_image:
-        f.wait()
-    for f in f_interval_clean:
-        f.wait()
-    for f in f_image_stack:
-        f.wait()
-    _report_failures(logger=logger)
+        # Update the casa measures dataset before doing anything
+        update_casa_data(data_path=cfg.data.casa_dir / "casadata", runtime=cluster_cfg.container)
+        # Get the beams to work with
+        beams = find_beams_task(search_dir=Path(work_dir), **defaults)
+        f_beams = setup_beam_dir_task.map(beams, **defaults)
+        # Convert beams to measurement sets
+        f_beams = convert_beam_task.map(client=unmapped(client), beam=f_beams, **defaults)
+
+        #########################
+        ## Flag and  calibrate ##
+        #########################
+
+        f_beams = flag_ms_beam_task.map(client=unmapped(client), beam=f_beams, cfg=unmapped(cfg.flag), **defaults)
+        # Check that the beam is good enough to use
+        f_beams = pre_cal_diagnostics.map(client=unmapped(client_hm), beam=f_beams, **defaults)
+        # Solve and apply calibration
+        f_cal: CalInput | None = extract_cal_task.map(beam=f_beams)
+        f_tgt: Path = extract_tgt_task.map(beam=f_beams)
+        f_cal_soln: CalibrationSolution | None = solve_calibration_task.map(
+            client=unmapped(client), cal=f_cal, cfg=unmapped(cfg.calibrate_solve), **defaults
+        )
+        f_tgt = apply_calibration_task.map(
+            client=unmapped(client), cfg=unmapped(cfg.calibrate_apply), cal=f_cal_soln, tgt=f_tgt, **defaults
+        )
+
+        ##########################
+        ## Post Cal Diagnostics ##
+        ##########################
+
+        # Inspect result
+        f_inspect_tgt = inspect_ms_task.map(unmapped(client), f_tgt, unmapped(cfg.flow.log_level))
+        f_inspect_cal = inspect_ms_task.map(unmapped(client), f_cal, unmapped(cfg.flow.log_level))
+        # Perform diagnostics
+        f_cal_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_cal, **defaults)
+        f_tgt_diagnostics = ms_diagnostics_task.map(unmapped(client_hm), f_tgt, **defaults)
+        f_cal_soln_diagnostics = cal_diagnostics_task.map(unmapped(client_hm), f_cal_soln, **defaults)
+
+        ####################################
+        ## Clean, mask and model subtract ##
+        ####################################
+
+        if cfg.flow.skip_to_deep_clean:  # Auto-masking route
+            f_deep_image = clean_task.with_options(task_run_name="auto_mask_deep_clean_{ms.stem}").map(
+                unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), **defaults
+            )
+            f_mask = [None] * len(f_tgt)
+        else:  # Source-finding route
+            f_shallow_image = clean_task.with_options(task_run_name="shallow_clean_{ms.stem}").map(
+                unmapped(client), f_tgt, cfg=unmapped(cfg.shallow_clean), **defaults
+            )
+            f_json_sources = source_find_task.map(  # Source finding
+                unmapped(client), f_shallow_image, cfg=unmapped(cfg.source_find), **defaults
+            )
+            f_mask = create_mask_task.map(  # Create masks over the sources in prep for deep cleaning
+                unmapped(client), f_json_sources, f_shallow_image, cfg=unmapped(cfg.create_mask), **defaults
+            )
+            f_deep_image = clean_task.with_options(task_run_name="deep_clean_{ms.stem}").map(
+                unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), mask=f_mask, **defaults
+            )
+        # Model creation - generates the MODEL_DATA column
+        f_model_create = predict_task.with_options(task_run_name="predict_{ms.stem}").map(
+            unmapped(client), f_tgt, cfg=unmapped(cfg.deep_clean), dependencies=f_deep_image, **defaults
+        )
+        # Model subtract - removes the MODEL_DATA from the DATA visibilities
+        f_model_subtract = clean_task.with_options(task_run_name="model_subtract_{ms.stem}").map(
+            unmapped(client), f_model_create, cfg=unmapped(cfg.model_subtract), mask=f_mask, **defaults
+        )
+        f_chosen_image = choose_image_task.map(
+            model_subtract=f_model_subtract,
+            deep=f_deep_image,
+            cfg=unmapped(cfg.model_subtract),
+            mask=f_mask,
+            **defaults,
+        )
+
+        ##########################################
+        ## Interval Cleaning and Image Stacking ##
+        ##########################################
+        f_interval_clean, intervals_by_beam = _submit_interval_cleans(
+            client, cfg, f_tgt, f_inspect_tgt, f_chosen_image, f_mask, logger
+        )
+        f_image_stack = _submit_image_stacks(client, cfg, intervals_by_beam, f_tgt, f_beams, logger)
+
+        ###################################
+        ## Finish and check for failures ##
+        ###################################
+        for f in (f_cal_diagnostics, f_tgt_diagnostics, f_cal_soln_diagnostics, f_inspect_cal):
+            f.wait()  # Don't use .result() as it causes crashing on failure
+        # Interval cleans depend on model subtraction. Wait for it explicitly so the flow does not cancel it if no interval
+        # cleans were planned.
+        for f in f_chosen_image:
+            f.wait()
+        for f in f_interval_clean:
+            f.wait()
+        for f in f_image_stack:
+            f.wait()
+        _report_failures(logger=logger)
 
 
 def _submit_interval_cleans(

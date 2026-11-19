@@ -13,11 +13,16 @@ pull:
       stream_output: true
 
 deployments:
+  # This deployment is triggered by the casda-query flow via run_deployment().
   - name: download-observation-ozstar
     description: Download CASDA visibilities for a target observation and its calibrator
     entrypoint: needle/flows/download_observation.py:download_observation
-    tags:
-      - casda
-    # No schedule: this deployment is triggered by the casda-query flow via run_deployment().
     work_pool:
-      name: "process-observation"
+      name: "download-observation-ozstar"
+
+  # This deployment is triggered by download-observation when a target is ready.
+  - name: needle-pipeline-ozstar
+    description: Run the needle pipeline for an available observation
+    entrypoint: needle/flows/pipeline.py:needle_pipeline
+    work_pool:
+      name: "process-observation-ozstar"

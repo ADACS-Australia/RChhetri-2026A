@@ -99,18 +99,11 @@ def run(work_dir):
     from needle.flows.pipeline import needle_pipeline
     from prefect.task_runners import ThreadPoolTaskRunner
 
-    cluster_cfg_hm = ClusterConfig.get_config()
-    cluster_cfg_hm.to_cluster()
-    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
-        cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
     cfg = NeedleConfig.get_config()
-    with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
-        needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
-            cfg=cfg,
-            work_dir=str(work_dir),
-            client_address=client.scheduler.address,
-            client_address_hm=client_hm.scheduler.address,
-        )
+    cluster_cfg = ClusterConfig.get_cluster_config()
+    needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
+        cfg=cfg, cluster_cfg=cluster_cfg, work_dir=str(work_dir)
+    )
 
 
 def _watch_and_restart(watcher_cfg, data_cfg):
