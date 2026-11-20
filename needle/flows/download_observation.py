@@ -9,11 +9,11 @@ the repository's `prefect.yaml`.
 Credentials come from two Prefect Secret blocks, `casda-username` and `casda-password`. They are copied into the
 environment of the run, which is where `needle.lib.casda_login` reads them from.
 
-Downloads are staged on the login node, then handed to the data-mover Dask cluster as one task per visibility. Target
-observations only have their `.uvfits.tar` products downloaded; calibrators use their `.ms.tar` products. Each
+Downloads are staged on the login node, then downloaded concurrently by local worker threads, one per visibility.
+Target observations only have their `.uvfits.tar` products downloaded; calibrators use their `.ms.tar` products. Each
 visibility is extracted in its own scratch directory and installed into ``cfg.data.work_dir/SB<target_sbid>`` as
 either ``SB<target_sbid>_beamXX.uvfits`` or ``cal_SB<calibrator_sbid>_beamXX.ms``. Once the downloads validate, the
-flow triggers the ``needle-pipeline/needle-pipeline-ozstar`` deployment on the ``observations-available-ozstar`` work
+flow triggers the ``needle-pipeline/needle-pipeline-ozstar`` deployment on the ``process-observation-ozstar`` work
 pool.
 """
 
@@ -23,6 +23,7 @@ import shutil
 import tarfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -40,15 +41,13 @@ from prefect.runtime import flow_run
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
 from needle.lib.casda import casda_login, CASDA_TAP_URL
-from needle.lib.dask import build_dask_client
 
 EXPECTED_VISIBILITIES = 36
-
+MAX_CONCURRENT_DOWNLOADS = 8  # Number of visibility downloads to run concurrently on the local node.
 PIPELINE_DEPLOYMENT = os.environ.get(
     "NEEDLE_PIPELINE_DEPLOYMENT",
     "needle-pipeline/needle-pipeline-ozstar",
 )
-
 TARGET_PRODUCT_SUFFIX = ".uvfits.tar"
 CALIBRATOR_PRODUCT_SUFFIX = ".ms.tar"
 
@@ -248,7 +247,7 @@ def download_and_install(
     beam: int,
     filename: str,
 ) -> str:
-    """Dask worker: download one visibility, extract it, and install it in the target directory."""
+    """Download one visibility, extract it, and install it in the target directory."""
     final = Path(final_path)
     log_path = final.parent / "download.log"
     label = f"{kind} SB{sbid} beam{beam:02d}"
@@ -302,7 +301,7 @@ def stage_downloads(
             obs_id = _obs_id(sbid)
             table = TapPlus(url=CASDA_TAP_URL).launch_job(_product_query(obs_id, kind)).get_results()
             _validate_products(table, kind)
-            logger.info("Found %d %s visibilities for %s; staging.", len(table), kind, obs_id)
+            logger.info(f"Found {len(table)} {kind} visibilities for {obs_id}; staging.")
             _append_log(log_path, f"staging {kind} SBID {sbid}: found {len(table)} visibilities")
 
             urls = _staged_urls(casda, table)
@@ -330,8 +329,8 @@ def stage_downloads(
         message = f"expected {expected} download items, built {len(items)}"
         _append_log(log_path, f"staging FAILED: {message}")
         raise ValueError(message)
-    logger.info("Staged %d files; submitting to data-mover workers.", len(items))
-    _append_log(log_path, f"staged {len(items)} files; submitting to data-mover workers")
+    logger.info(f"Staged {len(items)} files; starting local downloads.")
+    _append_log(log_path, f"staged {len(items)} files; starting local downloads")
     return items
 
 
@@ -364,7 +363,7 @@ def trigger_pipeline(
         _append_log(log_path, f"pipeline trigger FAILED: {type(exc).__name__}: {exc}")
         raise
 
-    logger.info("Triggered %s (flow run %s).", PIPELINE_DEPLOYMENT, flow_run.id)
+    logger.info(f"Triggered {PIPELINE_DEPLOYMENT} (flow run {flow_run.id}).")
     _append_log(log_path, f"triggered pipeline {PIPELINE_DEPLOYMENT} (flow run {flow_run.id})")
     return str(flow_run.id)
 
@@ -392,32 +391,25 @@ def download_observation(
     _append_log(log_path, f"flow started: target SBID {target_sbid}, calibrator SBID {calibrator_sbid}")
     _append_log(log_path, f"work directory: {target_dir}; scratch directory: {scratch_root}")
 
-    logger.info("Downloading target SBID %s with calibrator SBID %s.", target_sbid, calibrator_sbid)
+    logger.info(f"Downloading target SBID {target_sbid} with calibrator SBID {calibrator_sbid}.")
     try:
         items = stage_downloads(target_sbid, calibrator_sbid, target_dir, scratch_root)
     except Exception as exc:
         _append_log(log_path, f"staging FAILED: {type(exc).__name__}: {exc}")
         raise
 
+    max_workers = min(MAX_CONCURRENT_DOWNLOADS, len(items))
+    _append_log(log_path, f"downloading {len(items)} visibilities with up to {max_workers} local workers")
     try:
-        with build_dask_client(type="data_mover") as (client, _):
-            futures = client.map(
-                download_and_install,
-                [item["url"] for item in items],
-                [item["final_path"] for item in items],
-                [item["scratch_root"] for item in items],
-                [item["kind"] for item in items],
-                [item["sbid"] for item in items],
-                [item["beam"] for item in items],
-                [item["filename"] for item in items],
-                pure=False,
-            )
-            client.gather(futures)
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="download") as executor:
+            futures = [executor.submit(download_and_install, **item) for item in items]
+            for future in as_completed(futures):
+                future.result()
     except Exception as exc:
         _append_log(log_path, f"download FAILED: {type(exc).__name__}: {exc}")
         raise
 
-    _append_log(log_path, "all data-mover download jobs finished")
+    _append_log(log_path, "all download jobs finished")
 
     target_files = sorted(target_dir.glob(f"SB{target_sbid}_beam*.uvfits"))
     calibrator_dirs = sorted(path for path in target_dir.glob(f"cal_SB{calibrator_sbid}_beam*.ms") if path.is_dir())
@@ -450,7 +442,7 @@ def download_observation(
 
     _append_log(
         log_path,
-        f"validation OK: {len(target_files)} target visibilities, " f"{len(calibrator_dirs)} calibrator visibilities",
+        f"validation OK: {len(target_files)} target visibilities, {len(calibrator_dirs)} calibrator visibilities",
     )
     try:
         cluster_cfg = ClusterConfig.get_cluster_config()
@@ -461,10 +453,8 @@ def download_observation(
 
     _append_log(log_path, "flow completed successfully")
     logger.info(
-        "Installed %d target visibilities and %d calibrator visibilities in %s.",
-        len(target_files),
-        len(calibrator_dirs),
-        target_dir,
+        f"Installed {len(target_files)} target visibilities and {len(calibrator_dirs)} calibrator visibilities in "
+        f"{target_dir}."
     )
     return {
         "target_dir": str(target_dir),

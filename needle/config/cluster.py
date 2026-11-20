@@ -117,13 +117,6 @@ class ClusterConfig(NeedleModel):
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
         return cls.load(cfg_path)
 
-    @classmethod
-    def get_data_mover_config(cls) -> "ClusterConfig":
-        cfg_path = Path(os.environ.get("NEEDLE_DATA_MOVER_CONFIG", Path.home() / Path(".needle_data_mover.yaml")))
-        if not cfg_path.exists():
-            raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
-        return cls.load(cfg_path)
-
     def to_cluster(self, extra_binds: Optional[list[str]] = None) -> SifLocalCluster | SifSLURMCluster:
         """Creates the raw Dask cluster object (SifSLURMCluster or SifLocalCluster)
 

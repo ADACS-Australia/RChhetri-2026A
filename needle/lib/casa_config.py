@@ -26,7 +26,7 @@ try:
 
     ## CASA Configuration for Needle ##
     logs_dir = f"{staging_dir}/casalogs"
-    logfile = f"{logs_dir}/casalog-%s.log" % time.strftime("%Y%m%d-%H", time.localtime())
+    logfile = f"{logs_dir}/casalog-{time.strftime('%Y%m%d-%H', time.localtime())}.log"
     rundata = f"{data_dir}/.casa"
     measurespath = f"{data_dir}/casadata"
     nologfile = False

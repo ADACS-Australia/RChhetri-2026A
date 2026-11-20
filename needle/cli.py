@@ -26,7 +26,6 @@ WORKER_POOLS = {
 REQUIRED_ENV_VARS = (
     "NEEDLE_CONFIG",
     "NEEDLE_CLUSTER_CONFIG",
-    "NEEDLE_DATA_MOVER_CONFIG",
     "PREFECT_API_URL",
     "PREFECT_API_AUTH_STRING",
 )
@@ -127,8 +126,14 @@ def run(work_dir):
 
 @cli.command()
 @_log_level_options
-def start_workers(log_level):
-    """Start workers for the download and pipeline deployments."""
+@click.argument("roles", nargs=-1, required=True, type=click.Choice(sorted(WORKER_POOLS)))
+def start_workers(log_level, roles):
+    """Start workers for the given roles.
+
+    Roles map to work pools, so each can be run on a separate node:
+    `needle start-workers download` for download-observation-ozstar, and
+    `needle start-workers pipeline` for process-observation-ozstar.
+    """
     import asyncio
 
     from prefect.utilities.processutils import setup_signal_handlers_worker
@@ -140,9 +145,13 @@ def start_workers(log_level):
 
     setup_signal_handlers_worker(os.getpid(), "the process workers", logger.info)
 
+    # Deduplicate while preserving the order given on the command line.
+    selected = list(dict.fromkeys(roles))
+
     async def _run_workers() -> None:
         workers = []
-        for name, pool in WORKER_POOLS.items():
+        for name in selected:
+            pool = WORKER_POOLS[name]
             logger.info(f"Starting {name} worker on work pool '{pool}'")
             workers.append(ProcessWorker(name=f"needle-{name}", work_pool_name=pool, create_pool_if_not_found=True))
         await asyncio.gather(*(worker.start(printer=logger.info) for worker in workers))
