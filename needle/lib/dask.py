@@ -4,13 +4,15 @@ from contextlib import contextmanager
 import functools
 import logging
 from pathlib import Path
-from typing import Generator, Optional, Tuple
+from typing import TYPE_CHECKING, Generator, Optional, Tuple
 
-from dask_jobqueue.local import LocalCluster
 from distributed import Client
 
 from needle.config.cluster import ClusterConfig
 from needle.lib.logging import beam_logger, current_beam
+
+if TYPE_CHECKING:
+    from dask_jobqueue.local import LocalCluster
 
 
 def _close_stray_clients(client: Client):

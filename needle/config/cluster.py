@@ -4,7 +4,7 @@ import os
 import logging
 from pathlib import Path
 import re
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 import yaml
 
 from pydantic import ValidationError, field_validator
@@ -12,8 +12,10 @@ from pydantic import ValidationError, field_validator
 from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
 from needle.lib.casa import set_casa_config
-from needle.lib.cluster_slurm import SifSLURMCluster
-from needle.lib.cluster_local import SifLocalCluster
+
+if TYPE_CHECKING:
+    from needle.lib.cluster_slurm import SifSLURMCluster
+    from needle.lib.cluster_local import SifLocalCluster
 
 logger = logging.getLogger(__name__)
 
