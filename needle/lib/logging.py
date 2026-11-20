@@ -10,7 +10,6 @@ LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 NEEDLE_LOGGER = "needle"
 WATCHER_LOGGER = "needle.watcher"
-NEEDLE_BEAM_LOGGER_FMT = "needle.beam.{beam_dir}"
 PREFECT_RUN_LOGGERS = ("prefect.flow_runs", "prefect.task_runs")
 
 
@@ -124,7 +123,7 @@ def beam_logger(beam_dir: Path, level: str = "INFO"):
     beam_dir = Path(beam_dir)
     _ensure_beam_router(level)
 
-    logger = logging.getLogger(NEEDLE_BEAM_LOGGER_FMT.format(beam_dir=beam_dir.name.replace(".", "_")))
+    logger = logging.getLogger(f"needle.beam.{beam_dir.name.replace('.', '_')}")
     logger.setLevel(level)
     logger.propagate = False
 

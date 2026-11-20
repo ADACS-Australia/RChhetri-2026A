@@ -19,5 +19,4 @@ MODEL_SUBTRACT_KEY = "MODEL_SUBTRACTED"
 # Needle flow level logger name
 NEEDLE_LOGGER = "needle"
 NEEDLE_WATCHER_LOGGER = "needle.watcher"
-NEEDLE_BEAM_LOGGER_FMT = "needle.beam.{beam_dir}"
 PREFECT_RUN_LOGGERS = ("prefect.flow_runs", "prefect.task_runs")

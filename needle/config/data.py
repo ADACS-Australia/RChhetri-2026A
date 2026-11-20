@@ -11,8 +11,11 @@ class DataConfig(NeedleModel):
     source: str | Path = Path.home() / "observations"
     "Data source URI. Use 'local:///path/to/dir' or /path/to/dir for local or 's3://bucket/prefix/' for S3"
 
-    staging_dir: Path = Path.home() / "needle_data"
-    "Local directory where received entries are staged before processing"
+    work_dir: Path = Path.home() / "needle_data"
+    "Local directory where received entries are sent for processing"
+
+    download_dir: Path = Path.home() / "needle_data_download"
+    "Local where downloads are received before processing"
 
     casa_dir: Path = Path.home() / "casa"
     "The location to store CASA data, including measures data and logs"

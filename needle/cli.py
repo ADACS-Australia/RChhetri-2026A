@@ -7,8 +7,6 @@ import logging
 import importlib
 import os
 import sys
-import threading
-import time
 from pathlib import Path
 
 import click
@@ -18,9 +16,19 @@ from needle.config.pipeline import NeedleConfig
 from needle.lib.constants import WORKFLOW_UMASK
 from needle.lib.dask import build_dask_client
 from needle.lib.logging import setup_logging
-from needle.lib.slurm import memory_string_to_int
 
 logger = logging.getLogger("needle-cli")
+
+WORKER_POOLS = {
+    "download": "download-observation-ozstar",
+    "pipeline": "process-observation-ozstar",
+}
+REQUIRED_ENV_VARS = (
+    "NEEDLE_CONFIG",
+    "NEEDLE_CLUSTER_CONFIG",
+    "PREFECT_API_URL",
+    "PREFECT_API_AUTH_STRING",
+)
 
 
 class LazyGroup(click.Group):
@@ -86,6 +94,15 @@ def _log_level_options(f):
     return f
 
 
+def _assert_required_env():
+    all_available = True
+    for v in REQUIRED_ENV_VARS:
+        if not os.environ.get(v):
+            all_available = False
+            logger.error(f"Missing environment variable: '{v}'")
+    return all_available
+
+
 @click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
 def cli():
     # Set the umask here to allow group access to all files and folders written by the pipeline
@@ -99,103 +116,50 @@ def run(work_dir):
     from needle.flows.pipeline import needle_pipeline
     from prefect.task_runners import ThreadPoolTaskRunner
 
-    cluster_cfg_hm = ClusterConfig.get_config()
-    cluster_cfg_hm.to_cluster()
-    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
-        cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
+    _assert_required_env()
     cfg = NeedleConfig.get_config()
-    with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
-        needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
-            cfg=cfg,
-            work_dir=str(work_dir),
-            client_address=client.scheduler.address,
-            client_address_hm=client_hm.scheduler.address,
-        )
-
-
-def _watch_and_restart(watcher_cfg, data_cfg):
-    """Run watch(), restarting on failure after restart_delay seconds."""
-    from needle.modules.watcher import watch
-
-    while True:
-        try:
-            watch(watcher_cfg, data_cfg)
-        except Exception as e:
-            logger.error(f"Watcher crashed: {e} — restarting in 30s", exc_info=True)
-            time.sleep(30)
+    cluster_cfg = ClusterConfig.get_cluster_config()
+    needle_pipeline.with_options(task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads))(
+        cfg=cfg, cluster_cfg=cluster_cfg, work_dir=str(work_dir)
+    )
 
 
 @cli.command()
 @_log_level_options
-def serve(log_level):
-    """Starts the Watcher, Courier, and Needle Pipeline, served to the Prefect Server.
+@click.argument("roles", nargs=-1, required=True, type=click.Choice(sorted(WORKER_POOLS)))
+def start_workers(log_level, roles):
+    """Start workers for the given roles.
 
-    Expects a .needle.yaml to be in the user home. See setup_env.sh for setup help.
+    Roles map to work pools, so each can be run on a separate node:
+    `needle start-workers download` for download-observation-ozstar, and
+    `needle start-workers pipeline` for process-observation-ozstar.
     """
-    from prefect.events.schemas.deployment_triggers import DeploymentEventTrigger
-    from needle.flows.pipeline import needle_pipeline
-    from needle.flows.courier import courier_flow, COURIER_RESOURCE_ID
-    from needle.lib.events import OBSERVATION_READY_EVENT, OBSERVATION_STAGED_EVENT
-    from needle.modules.watcher import WATCHER_RESOURCE_ID
-    from prefect.task_runners import ThreadPoolTaskRunner
+    import asyncio
 
+    from prefect.utilities.processutils import setup_signal_handlers_worker
+    from prefect.workers.process import ProcessWorker
+
+    _assert_required_env()
     _setup_cli_logging(log_level)
     setup_logging(log_level)
-    cfg = NeedleConfig.get_config()
 
-    watcher_thread = threading.Thread(target=_watch_and_restart, args=(cfg.watcher, cfg.data), daemon=True)
-    watcher_thread.start()
-    logger.info(f"Watcher started — source: {cfg.data.source}, polling every {cfg.watcher.poll_interval}s")
+    setup_signal_handlers_worker(os.getpid(), "the process workers", logger.info)
 
-    cluster_cfg_hm = ClusterConfig.get_config()
-    cluster_cfg_hm.to_cluster()
-    if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
-        cluster_cfg_hm.slurm.memory = 4 * memory_string_to_int(cluster_cfg_hm.slurm.memory)
-    with build_dask_client() as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
+    # Deduplicate while preserving the order given on the command line.
+    selected = list(dict.fromkeys(roles))
 
-        # We cannot use prefect's serve() function to serve multiple flows as it ignores the configured taskrunner
-        courier_thread = threading.Thread(
-            target=courier_flow.serve,
-            kwargs={
-                "name": "needle-courier",
-                "parameters": {"data_cfg": cfg.data.to_kwargs()},
-                "triggers": [
-                    DeploymentEventTrigger(
-                        name="observation-ready-trigger",
-                        enabled=True,
-                        expect={OBSERVATION_READY_EVENT},
-                        match={"prefect.resource.id": WATCHER_RESOURCE_ID},
-                        parameters={"entry_name": "{{ event.payload.entry_name }}"},
-                        flow_run_name="courier-{{ event.payload.entry_name }}",
-                    )
-                ],
-            },
-            daemon=True,
-        )
-        courier_thread.start()
-        logger.info("Courier deployment started")
+    async def _run_workers() -> None:
+        workers = []
+        for name in selected:
+            pool = WORKER_POOLS[name]
+            logger.info(f"Starting {name} worker on work pool '{pool}'")
+            workers.append(ProcessWorker(name=f"needle-{name}", work_pool_name=pool, create_pool_if_not_found=True))
+        await asyncio.gather(*(worker.start(printer=logger.info) for worker in workers))
 
-        needle_pipeline.with_options(
-            task_runner=ThreadPoolTaskRunner(max_workers=cfg.flow.max_threads),
-            result_storage=cfg.data.staging_dir / Path("prefect_cache"),
-            persist_result=False,
-        ).serve(
-            name="needle-pipeline",
-            parameters={
-                "cfg": cfg.to_kwargs(),
-                "client_address": client.scheduler.address,
-                "client_address_hm": client_hm.scheduler.address,
-            },
-            triggers=[
-                DeploymentEventTrigger(
-                    name="observation-staged-trigger",
-                    enabled=True,
-                    expect={OBSERVATION_STAGED_EVENT},
-                    match={"prefect.resource.id": COURIER_RESOURCE_ID},
-                    parameters={"work_dir": "{{ event.payload.staged_dir }}"},
-                )
-            ],
-        )
+    try:
+        asyncio.run(_run_workers())
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Shutting down workers")
 
 
 @cli.command(name="check-cluster")

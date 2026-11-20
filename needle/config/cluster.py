@@ -1,17 +1,21 @@
+from __future__ import annotations
+
 import os
 import logging
 from pathlib import Path
 import re
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 import yaml
 
 from pydantic import ValidationError, field_validator
 
 from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
-from needle.lib.cluster_slurm import SifSLURMCluster
-from needle.lib.cluster_local import SifLocalCluster
 from needle.lib.casa import set_casa_config
+
+if TYPE_CHECKING:
+    from needle.lib.cluster_slurm import SifSLURMCluster
+    from needle.lib.cluster_local import SifLocalCluster
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +115,7 @@ class ClusterConfig(NeedleModel):
     "Local cluster configuration (used when type is 'local')"
 
     @classmethod
-    def get_config(cls) -> "ClusterConfig":
+    def get_cluster_config(cls) -> "ClusterConfig":
         cfg_path = Path(os.environ.get("NEEDLE_CLUSTER_CONFIG", Path.home() / Path(".needle_cluster.yaml")))
         if not cfg_path.exists():
             raise FileNotFoundError(f"Expected file {cfg_path} does not exist")
@@ -146,6 +150,11 @@ class ClusterConfig(NeedleModel):
             cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
         elif self.type == "local" and self.local:
             cluster_kwargs.update(self.local.model_dump(exclude_none=True))
+
+        # Import lazily: dask_jobqueue installs signal handlers at import time and
+        # cannot be imported from a non-main thread (e.g. while Prefect loads a flow).
+        from needle.lib.cluster_local import SifLocalCluster
+        from needle.lib.cluster_slurm import SifSLURMCluster
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         try:
