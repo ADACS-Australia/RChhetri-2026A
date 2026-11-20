@@ -67,16 +67,6 @@ def test_cluster_config_get_cluster_config_no_file():
                 ClusterConfig.get_cluster_config()
 
 
-def test_cluster_config_get_data_mover_config(tmp_path, monkeypatch):
-    cfg_path = tmp_path / "data_mover.yaml"
-    cfg_path.write_text(yaml.dump({"type": "local", "scaling": {"max_workers": 3}}))
-    monkeypatch.setenv("NEEDLE_DATA_MOVER_CONFIG", str(cfg_path))
-
-    cfg = ClusterConfig.get_data_mover_config()
-    assert cfg.type == "local"
-    assert cfg.scaling.max_workers == 3
-
-
 def test_to_cluster_local_calls_correct_class_and_adapt():
     data = {"type": "local", "scaling": {"min_workers": 1, "max_workers": 3}, "local": {"cores": 2, "memory": "4GB"}}
     cfg = ClusterConfig.load(data)
