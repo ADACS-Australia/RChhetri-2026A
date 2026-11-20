@@ -71,7 +71,7 @@ def test_to_cluster_local_calls_correct_class_and_adapt():
     data = {"type": "local", "scaling": {"min_workers": 1, "max_workers": 3}, "local": {"cores": 2, "memory": "4GB"}}
     cfg = ClusterConfig.load(data)
 
-    with patch("needle.config.cluster.SifLocalCluster") as mock_local_cls:
+    with patch("needle.lib.cluster_local.SifLocalCluster") as mock_local_cls:
         mock_instance = mock_local_cls.return_value
         cluster = cfg.to_cluster()
 
@@ -90,8 +90,8 @@ def test_to_cluster_slurm_calls_correct_class():
     cfg = ClusterConfig.load(data)
 
     with (
-        patch("needle.config.cluster.SifSLURMCluster") as mock_slurm_cls,
-        patch("needle.config.cluster.SifLocalCluster") as mock_local_cls,
+        patch("needle.lib.cluster_slurm.SifSLURMCluster") as mock_slurm_cls,
+        patch("needle.lib.cluster_local.SifLocalCluster") as mock_local_cls,
     ):
         cfg.to_cluster()
 
@@ -118,7 +118,7 @@ def test_to_cluster_with_container_sets_casa_and_needle_env(tmp_path, monkeypatc
 
     with (
         patch("needle.config.cluster.set_casa_config") as mock_set_casa,
-        patch("needle.config.cluster.SifLocalCluster") as mock_local_cls,
+        patch("needle.lib.cluster_local.SifLocalCluster") as mock_local_cls,
     ):
         cfg.to_cluster()
 
@@ -153,7 +153,7 @@ def test_to_cluster_with_container_appends_extra_binds(tmp_path, monkeypatch):
 
     with (
         patch("needle.config.cluster.set_casa_config"),
-        patch("needle.config.cluster.SifLocalCluster"),
+        patch("needle.lib.cluster_local.SifLocalCluster"),
     ):
         cfg.to_cluster(extra_binds=["/extra:/extra"])
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import logging
 from pathlib import Path
@@ -9,9 +11,9 @@ from pydantic import ValidationError, field_validator
 
 from needle.config.base import NeedleModel
 from needle.config.container import ContainerConfig
+from needle.lib.casa import set_casa_config
 from needle.lib.cluster_slurm import SifSLURMCluster
 from needle.lib.cluster_local import SifLocalCluster
-from needle.lib.casa import set_casa_config
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +148,11 @@ class ClusterConfig(NeedleModel):
             cluster_kwargs.update(self.slurm.model_dump(exclude_none=True))
         elif self.type == "local" and self.local:
             cluster_kwargs.update(self.local.model_dump(exclude_none=True))
+
+        # Import lazily: dask_jobqueue installs signal handlers at import time and
+        # cannot be imported from a non-main thread (e.g. while Prefect loads a flow).
+        from needle.lib.cluster_local import SifLocalCluster
+        from needle.lib.cluster_slurm import SifSLURMCluster
 
         cluster_class = SifLocalCluster if self.type == "local" else SifSLURMCluster
         try:
