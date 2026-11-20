@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -5,6 +8,18 @@ from distributed import Client, LocalCluster
 
 from needle.lib.dask import build_dask_client, _close_stray_clients
 from needle.config.cluster import ClusterConfig
+
+
+def test_flow_modules_import_without_dask_jobqueue():
+    """dask_jobqueue calls signal.signal() at import time, which fails when Prefect loads a flow in a
+    worker thread. The flow modules must therefore not import it at module scope."""
+    code = (
+        "import sys\n"
+        "import needle.flows.download_observation\n"
+        "import needle.flows.pipeline\n"
+        "assert 'dask_jobqueue' not in sys.modules, 'dask_jobqueue was imported at module scope'\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_close_stray_clients_only_closes_clients_on_same_scheduler():
