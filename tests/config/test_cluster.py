@@ -58,13 +58,23 @@ def test_cluster_config_load_missing_nested_field():
         ClusterConfig.load(data)
 
 
-def test_cluster_config_get_config_no_file():
+def test_cluster_config_get_cluster_config_no_file():
     with patch("pathlib.Path.home", return_value=Path("/tmp/fake_home")):
         with patch("pathlib.Path.exists", return_value=False):
             with pytest.raises(
                 FileNotFoundError, match="Expected file /tmp/fake_home/.needle_cluster.yaml does not exist"
             ):
-                ClusterConfig.get_config()
+                ClusterConfig.get_cluster_config()
+
+
+def test_cluster_config_get_data_mover_config(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "data_mover.yaml"
+    cfg_path.write_text(yaml.dump({"type": "local", "scaling": {"max_workers": 3}}))
+    monkeypatch.setenv("NEEDLE_DATA_MOVER_CONFIG", str(cfg_path))
+
+    cfg = ClusterConfig.get_data_mover_config()
+    assert cfg.type == "local"
+    assert cfg.scaling.max_workers == 3
 
 
 def test_to_cluster_local_calls_correct_class_and_adapt():
