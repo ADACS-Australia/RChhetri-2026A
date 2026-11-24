@@ -1,8 +1,8 @@
 include .env
 
-BASE_IMAGE_BARE = ksmith21/needle-base
-BASE_IMAGE = $(BASE_IMAGE_BARE):latest
-NEEDLE_IMAGE = ksmith21/needle:latest
+BASE_IMAGE_BARE ?= needle-base
+BASE_IMAGE ?= $(BASE_IMAGE_BARE):latest
+NEEDLE_IMAGE ?= needle:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
 APPTAINER_IMAGE = container/needle.sif
