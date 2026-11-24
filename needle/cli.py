@@ -13,16 +13,14 @@ import click
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
+from needle.deployment import deploy
 from needle.lib.constants import WORKFLOW_UMASK
 from needle.lib.dask import build_dask_client
 from needle.lib.logging import setup_logging
+from needle.lib.workers import WORKER_POOLS
 
 logger = logging.getLogger("needle-cli")
 
-WORKER_POOLS = {
-    "download": "download-observation-ozstar",
-    "pipeline": "process-observation-ozstar",
-}
 REQUIRED_ENV_VARS = (
     "NEEDLE_CONFIG",
     "NEEDLE_CLUSTER_CONFIG",
@@ -271,6 +269,7 @@ module = LazyGroup(
     },
 )
 cli.add_command(module)
+cli.add_command(deploy)
 
 
 if __name__ == "__main__":
