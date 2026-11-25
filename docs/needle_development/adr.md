@@ -24,7 +24,7 @@ Requires managing the cluster ourselves.
 Requires two _submissions_ in the code - one where the task is submitted from the flow and one to submit the function call to the Dask cluster.
 If a job fails on setup (ie. from an incorrect configuration) Dask won't know that it died. This causes the job to hang indefinitely.
 
-## Event Driven Triggering System
+## Event Driven Triggering System (defunct)
 
 **Context**
 We want to set up a triggering system that looks at a data source for new observations, moves it to the appropriate local directory, then processes it.
@@ -41,7 +41,7 @@ The event driven architecture makes this highly scalable and loosely coupled.
 Requires a separate running python process - which in turn requires a separate logging system.
 The event driven nature is harder to trace.
 
-## Needle Config Path is a predetermined location
+## Needle Config Path is a predetermined location (defunct)
 
 **Context**
 Upon importing CASA modules, CASA reads its own config at `"$HOME/.casa/config.py"`.
