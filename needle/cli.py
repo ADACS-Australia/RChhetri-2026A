@@ -222,7 +222,7 @@ def check_cluster(log_level, memory, cores, processes, walltime):
     _setup_cli_logging(log_level)
     setup_logging(log_level)
 
-    cluster_cfg = ClusterConfig.get_config()
+    cluster_cfg = ClusterConfig.get_cluster_config()
     if cluster_cfg.type != "slurm":
         logger.error(f"Cluster config must be of type 'slurm' to run test. Found type '{cluster_cfg.type}'")
         raise SystemExit(1)
