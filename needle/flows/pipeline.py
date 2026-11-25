@@ -73,8 +73,8 @@ def needle_pipeline(
     cluster_cfg_hm = cluster_cfg.model_copy()
     cluster_cfg_hm.to_cluster()
     if cluster_cfg_hm.type == "slurm" and cluster_cfg_hm.slurm.memory is not None:
-        cluster_cfg_hm.slurm.memory = max(
-            4 * memory_string_to_int(cluster_cfg_hm.slurm.memory), memory_string_to_int("256GB")
+        cluster_cfg_hm.slurm.memory = min(
+            4 * memory_string_to_int(cluster_cfg_hm.slurm.memory), memory_string_to_int("128GB")
         )
     with build_dask_client(cluster_cfg) as (client, _), build_dask_client(cluster_cfg_hm) as (client_hm, _):
 

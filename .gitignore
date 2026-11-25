@@ -15,3 +15,4 @@
 .env
 prefect.toml
 .needle*.yaml
+.needle*.env

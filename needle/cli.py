@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 
 from needle.config.cluster import ClusterConfig
 from needle.config.pipeline import NeedleConfig
@@ -107,10 +108,21 @@ def _assert_required_env():
 
 
 @click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
-def cli():
+@click.option(
+    "-e",
+    "--env-file",
+    default=None,
+    envvar="NEEDLE_ENV_FILE",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Optional local .env file to load before running a command.",
+)
+def cli(env_file: Path | None):
     """Top-level click group for the Needle pipeline and deployment commands."""
     # Set the umask here to allow group access to all files and folders written by the pipeline
     os.umask(WORKFLOW_UMASK)
+    if env_file is not None:
+        os.environ["NEEDLE_ENV_FILE"] = str(env_file)
+        load_dotenv(env_file)
 
 
 @cli.command()
@@ -228,13 +240,28 @@ def check_cluster(log_level, memory, cores, processes, walltime):
         raise SystemExit(0)
 
 
+def _resolve_needle_config(cfg_path: Path | None) -> Path:
+    """Resolve a needle config path from an argument, NEEDLE_CONFIG, or the legacy default."""
+    if cfg_path is not None:
+        path = cfg_path
+    elif os.environ.get("NEEDLE_CONFIG"):
+        path = Path(os.environ["NEEDLE_CONFIG"])
+    else:
+        path = Path.home() / ".needle.yaml"
+    if not path.is_file():
+        raise click.ClickException(
+            f"Needle config not found: {path}. Pass a path or set NEEDLE_CONFIG "
+            "(for example with `needle --env-file .needle.dev.env ...`)."
+        )
+    return path
+
+
 @cli.command()
-@click.argument(
-    "cfg_path", default=Path.home() / ".needle.yaml", required=False, type=click.Path(exists=True, path_type=Path)
-)
+@click.argument("cfg_path", default=None, required=False, type=click.Path(path_type=Path))
 @click.option("-p", "--pretty-print", "pretty_print", is_flag=True, help="Whether to pretty print the config")
 def validate(cfg_path, pretty_print):
     """Validates a needle pipeline YAML config file. Optionally pretty-prints to stdout."""
+    cfg_path = _resolve_needle_config(cfg_path)
     valid = NeedleConfig.validate(source=cfg_path)
     if not valid:
         return
@@ -247,15 +274,15 @@ def validate(cfg_path, pretty_print):
     "-c",
     "--cfg",
     "cfg_path",
-    default=Path.home() / ".needle.yaml",
-    type=click.Path(exists=True, path_type=Path),
-    help="Path to the config YAML file.",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to the config YAML file (default: NEEDLE_CONFIG or ~/.needle.yaml).",
 )
 @click.argument("section", default=None, required=False)
 def display(section, cfg_path):
     """Loads and renders either the entire config state, or one section (e.g. clean, flag) of it.
     Use dot annotation for sub-sub sections (e.g. flag.quack)."""
-    cfg = NeedleConfig.load(cfg_path)
+    cfg = NeedleConfig.load(_resolve_needle_config(cfg_path))
     cfg.show(section)
 
 

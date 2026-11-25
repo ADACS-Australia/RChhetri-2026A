@@ -1,6 +1,6 @@
 ROOT="@@ROOT@@"
 ENV_FILE="@@ENV_FILE@@"
-
+@@ENV_INSTALL@@
 mkdir -p "$(dirname "$ROOT")" || return 1
 if [ ! -f "$ENV_FILE" ]; then
   echo "@@NEEDLE@@ERROR:@@NODE@@:environment file not found: $ENV_FILE@@"

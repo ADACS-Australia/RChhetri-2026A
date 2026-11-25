@@ -5,7 +5,7 @@ BASE_IMAGE ?= $(BASE_IMAGE_BARE):latest
 NEEDLE_IMAGE ?= needle:latest
 BASE_DOCKERFILE = container/base.Dockerfile
 NEEDLE_DOCKERFILE = container/needle.Dockerfile
-APPTAINER_IMAGE = container/needle.sif
+APPTAINER_IMAGE = needle.sif
 
 # Sentinel files to track when each image was last built
 .base_built: $(BASE_DOCKERFILE)
@@ -23,7 +23,7 @@ $(APPTAINER_IMAGE): .needle_built
 base: .base_built
 needle: .needle_built
 apptainer: $(APPTAINER_IMAGE)
-all: .base_built .needle_built .$(APPTAINER_IMAGE)
+all: $(APPTAINER_IMAGE)
 
 clean:
 	rm -f .base_built .needle_built .$(APPTAINER_IMAGE)

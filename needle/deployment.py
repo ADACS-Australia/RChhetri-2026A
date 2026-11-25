@@ -30,7 +30,6 @@ import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import which
 from typing import Iterable, Mapping
 from urllib.parse import urlparse
 
@@ -62,7 +61,6 @@ from needle.lib.deployment import (
 )
 from needle.lib.workers import WORKER_ROLES, WorkerRole
 
-DEFAULT_DOCKER_IMAGE = os.environ.get("NEEDLE_IMAGE", "needle:latest")
 DEFAULT_SSH_TIMEOUT = 3600.0
 DEFAULT_WAIT = 60.0
 
@@ -165,7 +163,7 @@ def _python_exec(code: str) -> str:
     return f'import base64; exec(base64.b64decode("{encoded}"))'
 
 
-## Local git / image build helpers ##
+## Local git helpers ##
 
 
 def _git_output(source: Path, *args: str) -> str:
@@ -224,25 +222,20 @@ def _git_info(source: Path, repo: str | None, branch: str | None) -> tuple[str, 
     return resolved_repo, resolved_branch
 
 
-def _build_image(source: Path, docker_image: str, local_image: Path) -> None:
-    """Build the Docker image and convert it to a local Apptainer SIF."""
-    for executable in ("make", "apptainer"):
-        if which(executable) is None:
-            raise click.ClickException(f"'{executable}' is required to build the image but was not found.")
+def _local_env_file(env_name: str, source: Path) -> Path | None:
+    """Return the canonical local env file for an environment, if present."""
+    explicit = os.environ.get("NEEDLE_ENV_FILE")
+    if explicit:
+        path = Path(explicit)
+        return path if path.is_file() else None
+    candidate = source / f".needle.{env_name}.env"
+    return candidate if candidate.is_file() else None
 
-    local_image.parent.mkdir(parents=True, exist_ok=True)
 
-    click.echo(f"Building Docker image {docker_image}...")
-    env = os.environ.copy()
-    env["NEEDLE_IMAGE"] = docker_image
-    subprocess.run(["make", "needle"], cwd=source, check=True, env=env)
-
-    click.echo(f"Building Apptainer image {local_image}...")
-    subprocess.run(
-        ["apptainer", "build", "--force", str(local_image), f"docker-daemon://{docker_image}"],
-        cwd=source,
-        check=True,
-    )
+def _local_config_files(env_name: str, source: Path) -> dict[str, Path]:
+    """Return the environment-specific local YAML configs that exist."""
+    names = (f".needle.{env_name}.yaml", f".needle_cluster.{env_name}.yaml")
+    return {name: source / name for name in names if (source / name).is_file()}
 
 
 ## Remote shell script ##
@@ -307,7 +300,12 @@ def _screen_lines(node: str) -> list[str]:
     ]
 
 
-def _env_setup_lines(env: Environment, node: str, config_install: str = "") -> list[str]:
+def _env_setup_lines(
+    env: Environment,
+    node: str,
+    config_install: str = "",
+    env_install: str = "",
+) -> list[str]:
     """Return shell lines that load the env file and validate deployment paths.
 
     The env file is allowed to return a non-zero status (for example because a
@@ -320,6 +318,7 @@ def _env_setup_lines(env: Environment, node: str, config_install: str = "") -> l
         root=env.root,
         env_file=env.env_file,
         config_install=config_install,
+        env_install=env_install,
     ).splitlines()
 
 
@@ -386,6 +385,7 @@ def _node_body(
     worker_roles: Iterable[WorkerRole],
     restart_workers: bool = False,
     install_tool: bool = False,
+    upload_env: bool = False,
 ) -> str:
     """Generate the login-node shell body.
 
@@ -410,7 +410,8 @@ def _node_body(
         ]
     )
     config_install = render_template("config_install.sh", env_name=env.name, node=node)
-    lines.extend(_env_setup_lines(env, node, config_install))
+    env_install = render_template("env_install.sh", node=node) if upload_env else ""
+    lines.extend(_env_setup_lines(env, node, config_install, env_install))
     lines.extend(
         [
             'if [ -d "$ROOT/.git" ]; then',
@@ -552,6 +553,7 @@ def build_remote_script(
     image_file: str | None,
     restart_workers: bool = False,
     install_tool: bool = False,
+    upload_env: bool = False,
 ) -> str:
     """Build the remote shell script for a complete environment deployment.
 
@@ -570,6 +572,7 @@ def build_remote_script(
         worker_roles=login_roles,
         restart_workers=restart_workers,
         install_tool=install_tool,
+        upload_env=upload_env,
     )
     if not start_workers:
         return _wrap_login(login_body)
@@ -668,33 +671,10 @@ def _common_options(function):
         help="Data-mover host used by the download worker.",
     )(function)
     function = click.option(
-        "--build-image",
-        is_flag=True,
-        help="Build the Docker/SIF image locally and upload it to the configured image path.",
-    )(function)
-    function = click.option(
-        "--docker-image",
-        default=DEFAULT_DOCKER_IMAGE,
-        show_default=True,
-        help="Docker image tag to build.",
-    )(function)
-    function = click.option(
-        "--local-image",
-        type=click.Path(dir_okay=False, path_type=Path),
-        default=None,
-        help="Local SIF output path for --build-image (default: <source>/needle.sif).",
-    )(function)
-    function = click.option(
         "--upload-image",
         type=click.Path(exists=True, dir_okay=False, path_type=Path),
         default=None,
-        help="Upload an existing SIF without rebuilding it.",
-    )(function)
-    function = click.option(
-        "--env-file",
-        type=click.Path(exists=True, dir_okay=False, path_type=Path),
-        default=None,
-        help="Local .env with Prefect credentials, used when waiting for workers.",
+        help="Upload an existing SIF.",
     )(function)
     function = click.option(
         "--ssh-timeout",
@@ -717,46 +697,28 @@ def _common_options(function):
 def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False, **kwargs) -> None:
     """Run one environment deployment end to end.
 
-    This resolves local git information, optionally builds or reuses an image,
-    streams the remote script over SSH, and waits for production workers when
-    requested.
+    This resolves local git information, uploads an optional existing image and
+    local config files, streams the remote script over SSH, and waits for
+    production workers when requested.
     """
     env = ENVIRONMENTS[env_name]
     source: Path = kwargs["source"]
     repo, branch = _git_info(source, kwargs["repo"], kwargs["branch"])
-    build_image: bool = kwargs["build_image"]
     upload_image: Path | None = kwargs["upload_image"]
-    local_image: Path = kwargs["local_image"] or (source / "needle.sif")
+    image_to_upload = upload_image
+    image_mode = f"upload {upload_image}" if upload_image is not None else "unchanged"
 
-    if build_image and upload_image is not None:
-        raise click.ClickException("--build-image and --upload-image are mutually exclusive.")
-    if upload_image is not None and kwargs["local_image"] is not None:
-        raise click.ClickException("--upload-image cannot be combined with --local-image.")
-
-    image_to_upload: Path | None = upload_image
-    if build_image:
-        image_to_upload = local_image
-
-    if upload_image is not None:
-        image_mode = f"upload {upload_image}"
-    elif build_image:
-        image_mode = "build and upload"
-    else:
-        image_mode = "unchanged"
-
-    config_files = {
-        arcname: path
-        for arcname, path in {
-            f".needle.{env.name}.yaml": source / f".needle.{env.name}.yaml",
-            f".needle_cluster.{env.name}.yaml": source / f".needle_cluster.{env.name}.yaml",
-        }.items()
-        if path.is_file()
-    }
+    local_env = _local_env_file(env.name, source)
+    config_files = _local_config_files(env.name, source)
+    extra_files = dict(config_files)
+    if local_env is not None:
+        extra_files["deploy.env"] = local_env
 
     click.echo(f"Environment: {env.name}")
     click.echo(f"  remote root: {env.root}")
     click.echo(f"  env file:    {env.env_file}")
     click.echo("  configs:     $NEEDLE_CONFIG / $NEEDLE_CLUSTER_CONFIG from the env file")
+    click.echo(f"  upload env:  {local_env or 'none (using existing remote env)'}")
     click.echo(f"  upload files: {', '.join(config_files) if config_files else 'none'}")
     click.echo(f"  repository:  {repo}")
     click.echo(f"  branch:      {branch}")
@@ -764,17 +726,9 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
     click.echo(f"  image:       {image_mode}")
     click.echo()
 
-    if build_image:
-        try:
-            _build_image(source, kwargs["docker_image"], local_image)
-        except subprocess.CalledProcessError as exc:
-            raise click.ClickException(f"Image build failed with exit status {exc.returncode}.") from exc
-        if not local_image.is_file():
-            raise click.ClickException(f"Image build completed but {local_image} was not created.")
-
     if env.workers and start_workers:
         try:
-            ensure_prefect_env(kwargs["env_file"])
+            ensure_prefect_env(local_env)
             created_pools = ensure_work_pools()
         except Exception as exc:
             raise click.ClickException(f"Could not prepare Prefect work pools: {type(exc).__name__}: {exc}") from exc
@@ -792,9 +746,10 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
         image_file=remote_image_placeholder,
         restart_workers=restart_workers,
         install_tool=env.name == "dev",
+        upload_env=local_env is not None,
     )
 
-    tar_path = _make_tar(script, image_to_upload, extra_files=config_files)
+    tar_path = _make_tar(script, image_to_upload, extra_files=extra_files)
     try:
         click.echo(f"Opening one SSH connection to '{kwargs['ssh_host']}' (2FA may be requested once)...")
         result = _run_ssh_tar(kwargs["ssh_host"], tar_path, kwargs["ssh_timeout"])
@@ -823,7 +778,7 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
         raise click.ClickException("Remote deployment did not complete successfully.")
 
     if start_workers and kwargs["wait_seconds"] > 0:
-        ensure_prefect_env(kwargs["env_file"])
+        ensure_prefect_env(None)
         click.echo(f"Waiting up to {kwargs['wait_seconds']:g}s for workers to report ONLINE...")
         states = wait_for_online(timeout=kwargs["wait_seconds"], interval=2.0)
         click.echo()
@@ -844,7 +799,7 @@ def deploy():
 @click.option("--no-workers", is_flag=True, help="Install code/image only; do not start production workers.")
 @click.option("--restart-workers", is_flag=True, help="Stop and restart already-running production screens.")
 def prod(**kwargs):
-    """Deploy production: update code, optionally build image, and start workers."""
+    """Deploy production: update code, upload an optional image, and start workers."""
     _deploy(
         "prod",
         start_workers=not kwargs.pop("no_workers"),
@@ -944,15 +899,9 @@ def _print_resources(resources) -> None:
 @click.option(
     "--data-mover", default="data-mover01", show_default=True, help="Data-mover host for the download worker."
 )
-@click.option(
-    "--env-file",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-    help="Local .env with Prefect credentials.",
-)
 @click.option("--ssh-timeout", type=float, default=DEFAULT_SSH_TIMEOUT, show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
-def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
+def status(environment, ssh_host, data_mover, ssh_timeout, as_json):
     """Check whether an environment is ready to run."""
     env = ENVIRONMENTS[environment]
 
@@ -1008,8 +957,9 @@ def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
 
     resources = []
     resource_error = None
+    local_env = _local_env_file(env.name, Path.cwd())
     try:
-        ensure_prefect_env(env_file)
+        ensure_prefect_env(local_env)
         prefect_states = query_prefect()
         resources = query_prefect_resources()
     except Exception as exc:

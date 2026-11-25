@@ -110,6 +110,22 @@ def test_build_remote_script_prod_workers():
     assert "IMAGE_FILE" not in data_mover_script
 
 
+def test_build_remote_script_uploads_env():
+    script = build_remote_script(
+        ENVIRONMENTS["prod"],
+        repo="https://github.com/o/r.git",
+        branch="main",
+        data_mover="data-mover01",
+        start_workers=False,
+        image_file=None,
+        upload_env=True,
+    )
+
+    assert "deploy.env" in script
+    assert "install -m 0600" in script
+    assert script.index("deploy.env") < script.index('. "$ENV_FILE"')
+
+
 def test_build_remote_script_can_restart_workers():
     script = build_remote_script(
         ENVIRONMENTS["prod"],
@@ -176,10 +192,13 @@ def test_make_tar_contains_extra_config_files(tmp_path):
 
 
 def test_deploy_uploads_config_files(tmp_path, monkeypatch):
+    monkeypatch.delenv("NEEDLE_ENV_FILE", raising=False)
     config = tmp_path / ".needle.prod.yaml"
     cluster = tmp_path / ".needle_cluster.prod.yaml"
+    env = tmp_path / ".needle.prod.env"
     config.write_text("data: {}\n")
     cluster.write_text("type: local\n")
+    env.write_text("export PREFECT_API_URL=http://example/api\n")
     captured = {}
 
     monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
@@ -209,8 +228,12 @@ def test_deploy_uploads_config_files(tmp_path, monkeypatch):
     assert captured["extra_files"] == {
         ".needle.prod.yaml": config,
         ".needle_cluster.prod.yaml": cluster,
+        "deploy.env": env,
     }
+    assert ".needle.yaml" not in captured["extra_files"]
+    assert ".needle_cluster.yaml" not in captured["extra_files"]
     assert ".needle.prod.yaml" in result.output
+    assert str(env) in result.output
 
 
 def test_make_tar_contains_script_and_image(tmp_path):
@@ -251,20 +274,6 @@ def test_deploy_upload_existing_image(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "image:       upload" in result.output
     assert "login: image INSTALLED" in result.output
-
-
-def test_deploy_image_build_and_upload_are_exclusive(tmp_path, monkeypatch):
-    monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
-    image = tmp_path / "existing.sif"
-    image.write_bytes(b"fake-sif")
-
-    result = CliRunner().invoke(
-        deployment.deploy,
-        ["prod", "--no-workers", "--build-image", "--upload-image", str(image)],
-    )
-
-    assert result.exit_code != 0
-    assert "mutually exclusive" in result.output
 
 
 def test_deploy_dev(monkeypatch):
@@ -575,25 +584,3 @@ def test_deploy_teardown_prod(monkeypatch):
     assert result.exit_code == 0, result.output
     assert "pipeline: STOPPED" in result.output
     assert "download: STOPPED" in result.output
-
-
-def test_build_image_runs_make_and_apptainer(tmp_path, monkeypatch):
-    calls = []
-
-    run_kwargs = []
-
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        run_kwargs.append(kwargs)
-        return subprocess.CompletedProcess(args=command, returncode=0)
-
-    monkeypatch.setattr(deployment, "which", lambda command: f"/usr/bin/{command}")
-    monkeypatch.setattr(deployment.subprocess, "run", fake_run)
-    image = tmp_path / "needle.sif"
-
-    deployment._build_image(tmp_path, "example/needle:latest", image)
-
-    assert calls[0] == ["make", "needle"]
-    assert run_kwargs[0]["env"]["NEEDLE_IMAGE"] == "example/needle:latest"
-    assert calls[1][:4] == ["apptainer", "build", "--force", str(image)]
-    assert calls[1][4] == "docker-daemon://example/needle:latest"
