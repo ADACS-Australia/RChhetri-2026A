@@ -1,20 +1,21 @@
 """Generic environment deployment for needle.
 
-Two environments are supported:
+Two deployment environments are supported:
 
 ``prod``
-    Code at ``/fred/oz513/software/needle``, configs under
-    ``/fred/oz513/software/config``, workers in screen sessions.
+    Code at ``/fred/oz513/software/needle``, env file at ``$HOME/.needle.prod.env``, and production workers in
+    screen sessions on the login node and data mover.
 
 ``dev``
-    Code at ``$HOME/software/needle``, configs under
-    ``$HOME/software/config``, no workers.
+    Code at ``$HOME/software/needle``, env file at ``$HOME/.needle.dev.env``, and no workers.  A development
+    deployment also installs an editable ``needle`` command into ``~/.local/bin``.
 
-Both environments are driven by an environment file in ``$HOME``
-(``.needle.prod.env`` / ``.needle.dev.env``) which points at the corresponding
-config YAML files.  Deployments update a remote git checkout, install the
-project with ``uv``, create configured directories, and optionally upload a
-locally built SIF image.
+The env file is the source of truth for the config paths through ``NEEDLE_CONFIG`` and
+``NEEDLE_CLUSTER_CONFIG``.  Deployments update a remote git checkout, run ``uv sync``, create configured
+directories, optionally install a SIF image, and—for production—start or update worker screens.
+
+The data mover shares the login node's filesystem, so only the login node performs the git update, dependency
+sync, and image installation.  The data mover only starts its worker from the shared checkout.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
-from typing import Iterable
+from typing import Iterable, Mapping
 from urllib.parse import urlparse
 
 import click
@@ -40,22 +41,24 @@ from needle.lib.deployment import (
     NODE_LABELS,
     SCREEN_NODE_NAMES,
     RemoteOutput,
-    _build_bootstrap_parts,
-    _build_probe_script,
-    _build_teardown_parts,
-    _ensure_prefect_env,
-    _ensure_work_pools,
-    _format_prefect,
-    _healthy,
-    _parse_remote_output,
-    _print_status,
-    _query_prefect,
-    _run_ssh,
-    _screen_screens,
-    _states_with_error,
-    _status_payload,
-    _wait_for_online,
-    _wrap_nodes,
+    build_teardown_parts,
+    ensure_prefect_env,
+    ensure_work_pools,
+    format_prefect,
+    healthy,
+    parse_remote_output,
+    preflight_lines,
+    print_status,
+    probe_body,
+    query_prefect,
+    query_prefect_resources,
+    render_template,
+    run_ssh,
+    screen_screens,
+    states_with_error,
+    status_payload,
+    wait_for_online,
+    wrap_nodes,
 )
 from needle.lib.workers import WORKER_ROLES, WorkerRole
 
@@ -66,10 +69,22 @@ DEFAULT_WAIT = 60.0
 
 @dataclass(frozen=True)
 class Environment:
+    """Static deployment settings for one environment."""
+
     name: str
+    "Environment name used on the command line (``prod`` or ``dev``)."
+
     root: str
+    "Remote checkout path. May contain shell-expanded variables such as ``$HOME``."
+
     env_file: str
+    "Remote env file sourced by deployment and worker commands."
+
     workers: bool
+    "Whether this environment runs screen-managed Prefect workers."
+
+    image_fallback: str | None = None
+    "SIF destination used when the cluster config has no ``container.image``."
 
 
 ENVIRONMENTS: dict[str, Environment] = {
@@ -84,6 +99,7 @@ ENVIRONMENTS: dict[str, Environment] = {
         root="$HOME/software/needle",
         env_file="$HOME/.needle.dev.env",
         workers=False,
+        image_fallback="$HOME/software/images/needle.sif",
     ),
 }
 
@@ -153,6 +169,7 @@ def _python_exec(code: str) -> str:
 
 
 def _git_output(source: Path, *args: str) -> str:
+    """Run a git command in ``source`` and return its stripped stdout."""
     return subprocess.check_output(["git", "-C", str(source), *args], text=True).strip()
 
 
@@ -178,6 +195,11 @@ def _http_url(url: str) -> str:
 
 
 def _git_info(source: Path, repo: str | None, branch: str | None) -> tuple[str, str]:
+    """Resolve the remote URL and branch to deploy from a local git checkout.
+
+    When ``repo`` is omitted, the ``origin`` URL is converted to an HTTPS URL
+    where possible so remote nodes do not need SSH credentials for the repository.
+    """
     if not source.is_dir():
         raise click.ClickException(f"Local source directory does not exist: {source}")
     try:
@@ -203,6 +225,7 @@ def _git_info(source: Path, repo: str | None, branch: str | None) -> tuple[str, 
 
 
 def _build_image(source: Path, docker_image: str, local_image: Path) -> None:
+    """Build the Docker image and convert it to a local Apptainer SIF."""
     for executable in ("make", "apptainer"):
         if which(executable) is None:
             raise click.ClickException(f"'{executable}' is required to build the image but was not found.")
@@ -226,6 +249,7 @@ def _build_image(source: Path, docker_image: str, local_image: Path) -> None:
 
 
 def _uv_install_lines(node: str) -> list[str]:
+    """Return shell lines that ensure ``uv`` is available on a node."""
     return [
         'export PATH="$HOME/.local/bin:$PATH"',
         "if ! command -v uv >/dev/null 2>&1; then",
@@ -253,6 +277,7 @@ def _uv_install_lines(node: str) -> list[str]:
 
 
 def _git_check_lines(node: str) -> list[str]:
+    """Return shell lines that ensure ``git`` is available on a node."""
     return [
         "if ! command -v git >/dev/null 2>&1; then",
         "  if command -v module >/dev/null 2>&1; then",
@@ -267,6 +292,7 @@ def _git_check_lines(node: str) -> list[str]:
 
 
 def _screen_lines(node: str) -> list[str]:
+    """Return shell helpers for screen inspection, cleanup, and worker startup."""
     return [
         "if ! command -v screen >/dev/null 2>&1; then",
         "  if command -v module >/dev/null 2>&1; then",
@@ -277,54 +303,77 @@ def _screen_lines(node: str) -> list[str]:
         f'  echo "{MARKER}ERROR:{node}:screen is required to run workers but was not found@@"',
         "  return 1",
         "fi",
-        "screen_line() {",
-        '  screen -list 2>/dev/null | grep -F -- ".$1 " | head -n 1',
-        "}",
-        "screen_exists() {",
-        '  [ -n "$(screen_line "$1")" ]',
-        "}",
-        "screen_running() {",
-        '  line="$(screen_line "$1")"',
-        "  [ -n \"$line\" ] && printf '%s\\n' \"$line\" | grep -Eq '\\((Attached|Detached)\\)'",
-        "}",
-        "stop_screen() {",
-        '  name="$1"',
-        '  screen -S "$name" -X quit >/dev/null 2>&1 || true',
-        "  i=0",
-        '  while screen_exists "$name" && [ "$i" -lt 20 ]; do',
-        "    sleep 0.25",
-        "    i=$((i + 1))",
-        "  done",
-        '  if screen_exists "$name"; then',
-        "    screen -wipe >/dev/null 2>&1 || true",
-        "  fi",
-        "}",
-        "start_worker() {",
-        '  role="$1"',
-        '  name="$2"',
-        '  cmd="$3"',
-        '  if screen_running "$name"; then',
-        f'    echo "{MARKER}ACTION:{node}:${{role}}:EXISTS@@"',
-        "    return 0",
-        "  fi",
-        '  if screen_exists "$name"; then',
-        '    stop_screen "$name"',
-        "  fi",
-        '  screen -dmS "$name" bash -lc "$cmd"',
-        "  rc=$?",
-        '  if [ "$rc" -ne 0 ]; then',
-        f'    echo "{MARKER}ERROR:{node}:screen -dmS $name failed with status $rc@@"',
-        "    return 1",
-        "  fi",
-        "  sleep 1",
-        '  if screen_running "$name"; then',
-        f'    echo "{MARKER}ACTION:{node}:${{role}}:STARTED@@"',
-        "  else",
-        f'    echo "{MARKER}ERROR:{node}:screen $name exited immediately@@"',
-        "    return 1",
-        "  fi",
-        "}",
+        *render_template("screen.sh", node=node).splitlines(),
     ]
+
+
+def _env_setup_lines(env: Environment, node: str, config_install: str = "") -> list[str]:
+    """Return shell lines that load the env file and validate deployment paths.
+
+    The env file is allowed to return a non-zero status (for example because a
+    module load failed); deployment continues as long as the required variables
+    and config files are present.
+    """
+    return render_template(
+        "env_setup.sh",
+        node=node,
+        root=env.root,
+        env_file=env.env_file,
+        config_install=config_install,
+    ).splitlines()
+
+
+def _worker_command_line(spec: WorkerRole) -> str:
+    """Return the shell command run inside a worker's screen session."""
+    return (
+        f'cd "$ROOT" || exit 1; '
+        'export PATH="$HOME/.local/bin:$PATH"; '
+        'set -a; . "$ENV_FILE"; env_rc=$?; set +a; '
+        'if [ "$env_rc" -ne 0 ]; then echo "warning: $ENV_FILE returned $env_rc" >&2; fi; '
+        f"exec uv run needle start-workers {spec.name}"
+    )
+
+
+def _worker_start_lines(spec: WorkerRole, restart_workers: bool) -> list[str]:
+    """Return shell lines that optionally restart and then start a worker screen."""
+    restart = "1" if restart_workers else "0"
+    return [
+        f"# {spec.name}",
+        f'if [ "{restart}" -eq 1 ] && screen_exists {shlex.quote(spec.screen)}; then '
+        f"stop_screen {shlex.quote(spec.screen)}; fi",
+        f"start_worker {spec.name} {shlex.quote(spec.screen)} {shlex.quote(_worker_command_line(spec))} || true",
+        "",
+    ]
+
+
+def _worker_only_body(
+    env: Environment,
+    node: str,
+    *,
+    worker_roles: Iterable[WorkerRole],
+    restart_workers: bool = False,
+) -> str:
+    """Body for a node that shares the login node's checkout and environment."""
+    roles = list(worker_roles)
+    lines: list[str] = [
+        f'echo "{MARKER}HOST:{node}:$(hostname 2>/dev/null || uname -n)@@"',
+        *_uv_install_lines(node),
+    ]
+    if roles:
+        lines.extend(_screen_lines(node))
+    lines.extend(_env_setup_lines(env, node))
+    lines.extend(
+        [
+            'if [ ! -d "$ROOT" ]; then',
+            f'  echo "{MARKER}ERROR:{node}:work directory not found: $ROOT (expected shared with the login node)@@"',
+            "  return 1",
+            "fi",
+            "",
+        ]
+    )
+    for spec in roles:
+        lines.extend(_worker_start_lines(spec, restart_workers))
+    return "\n".join(lines)
 
 
 def _node_body(
@@ -338,6 +387,12 @@ def _node_body(
     restart_workers: bool = False,
     install_tool: bool = False,
 ) -> str:
+    """Generate the login-node shell body.
+
+    The login node owns the shared checkout: it updates git, runs ``uv sync``,
+    creates configured directories, optionally installs an image and dev CLI,
+    and starts any workers assigned to this node.
+    """
     q = shlex.quote
     roles = list(worker_roles)
     lines: list[str] = [
@@ -349,42 +404,15 @@ def _node_body(
         lines.extend(_screen_lines(node))
     lines.extend(
         [
-            f'ROOT="{env.root}"',
-            f'ENV_FILE="{env.env_file}"',
             f"REPO={q(repo)}",
             f"BRANCH={q(branch)}",
-            f"RESTART_WORKERS={'1' if restart_workers else '0'}",
             "",
-            'mkdir -p "$(dirname "$ROOT")" || return 1',
-            'if [ ! -f "$ENV_FILE" ]; then',
-            f'  echo "{MARKER}ERROR:{node}:environment file not found: $ENV_FILE@@"',
-            "  return 1",
-            "fi",
-            "set -a",
-            'if ! . "$ENV_FILE"; then',
-            "  set +a",
-            f'  echo "{MARKER}ERROR:{node}:could not load environment file: $ENV_FILE@@"',
-            "  return 1",
-            "fi",
-            "set +a",
-            'if [ -z "${NEEDLE_CONFIG:-}" ]; then',
-            f'  echo "{MARKER}ERROR:{node}:NEEDLE_CONFIG is not set in $ENV_FILE@@"',
-            "  return 1",
-            "fi",
-            'if [ -z "${NEEDLE_CLUSTER_CONFIG:-}" ]; then',
-            f'  echo "{MARKER}ERROR:{node}:NEEDLE_CLUSTER_CONFIG is not set in $ENV_FILE@@"',
-            "  return 1",
-            "fi",
-            'mkdir -p "$(dirname "$NEEDLE_CONFIG")" "$(dirname "$NEEDLE_CLUSTER_CONFIG")" || return 1',
-            'if [ ! -f "$NEEDLE_CONFIG" ]; then',
-            f'  echo "{MARKER}ERROR:{node}:needle config not found: $NEEDLE_CONFIG@@"',
-            "  return 1",
-            "fi",
-            'if [ ! -f "$NEEDLE_CLUSTER_CONFIG" ]; then',
-            f'  echo "{MARKER}ERROR:{node}:cluster config not found: $NEEDLE_CLUSTER_CONFIG@@"',
-            "  return 1",
-            "fi",
-            "",
+        ]
+    )
+    config_install = render_template("config_install.sh", env_name=env.name, node=node)
+    lines.extend(_env_setup_lines(env, node, config_install))
+    lines.extend(
+        [
             'if [ -d "$ROOT/.git" ]; then',
             '  if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then',
             '    git -C "$ROOT" remote set-url origin "$REPO" || return 1',
@@ -434,9 +462,6 @@ def _node_body(
                 "  return 1",
                 "fi",
                 f'echo "{MARKER}ACTION:{node}:cli:INSTALLED@@"',
-                'if ! bash -lc \'case ":$PATH:" in *":$HOME/.local/bin:"*) exit 0;; *) exit 1;; esac\' >/dev/null 2>&1; then',
-                f'  echo "{MARKER}NOTE:{node}:add $HOME/.local/bin to PATH to use the needle command from any directory@@"',
-                "fi",
                 "",
             ]
         )
@@ -464,12 +489,16 @@ def _node_body(
             [
                 f'IMAGE_FILE="{image_file}"',
                 'if [ -f "$IMAGE_FILE" ]; then',
-                f'  if ! IMAGE_DEST=$(uv run python -c {q(_python_exec(_IMAGE_CODE))} "$NEEDLE_CLUSTER_CONFIG"); then',
-                f'    echo "{MARKER}ERROR:{node}:could not read container.image from $NEEDLE_CLUSTER_CONFIG@@"',
-                "    return 1",
+                '  IMAGE_DEST=""',
+                f'  if ! IMAGE_DEST=$(uv run python -c {q(_python_exec(_IMAGE_CODE))} "$NEEDLE_CLUSTER_CONFIG" 2>/dev/null); then',
+                f'    echo "{MARKER}NOTE:{node}:could not read container.image from $NEEDLE_CLUSTER_CONFIG@@"',
+                '    IMAGE_DEST=""',
                 "  fi",
                 '  if [ -z "$IMAGE_DEST" ]; then',
-                f'    echo "{MARKER}ERROR:{node}:container.image is not set in $NEEDLE_CLUSTER_CONFIG@@"',
+                f'    IMAGE_DEST="{env.image_fallback or ""}"',
+                "  fi",
+                '  if [ -z "$IMAGE_DEST" ]; then',
+                f'    echo "{MARKER}ERROR:{node}:container.image is not set and no image fallback is configured@@"',
                 "    return 1",
                 "  fi",
                 '  mkdir -p "$(dirname "$IMAGE_DEST")" || return 1',
@@ -486,25 +515,13 @@ def _node_body(
         )
 
     for spec in roles:
-        command = (
-            f'cd "$ROOT" && export PATH="$HOME/.local/bin:$PATH" && '
-            f'set -a && . "$ENV_FILE" && set +a && '
-            f"exec uv run needle start-workers {spec.name}"
-        )
-        lines.extend(
-            [
-                f"# {spec.name}",
-                'if [ "$RESTART_WORKERS" -eq 1 ] && screen_exists '
-                f"{shlex.quote(spec.screen)}; then stop_screen {shlex.quote(spec.screen)}; fi",
-                f"start_worker {spec.name} {shlex.quote(spec.screen)} {shlex.quote(command)} || true",
-                "",
-            ]
-        )
+        lines.extend(_worker_start_lines(spec, restart_workers))
 
     return "\n".join(lines)
 
 
 def _wrap_login(login_body: str) -> str:
+    """Wrap a login-only shell body in the remote marker protocol."""
     return "\n".join(
         [
             'DEPLOY_DIR="$1"',
@@ -536,6 +553,12 @@ def build_remote_script(
     restart_workers: bool = False,
     install_tool: bool = False,
 ) -> str:
+    """Build the remote shell script for a complete environment deployment.
+
+    The login node performs code/image installation.  When workers are enabled,
+    a second body starts the download worker on the data mover using the shared
+    checkout rather than pulling or syncing separately.
+    """
     login_roles = [WORKER_ROLES["pipeline"]] if start_workers else []
     data_mover_roles = [WORKER_ROLES["download"]] if start_workers else []
     login_body = _node_body(
@@ -551,20 +574,22 @@ def build_remote_script(
     if not start_workers:
         return _wrap_login(login_body)
 
-    data_mover_body = _node_body(
+    data_mover_body = _worker_only_body(
         env,
         "data_mover",
-        repo=repo,
-        branch=branch,
-        image_file=None,
         worker_roles=data_mover_roles,
         restart_workers=restart_workers,
     )
 
-    return 'DEPLOY_DIR="$1"\n' + _wrap_nodes(login_body, data_mover_body, data_mover)
+    return 'DEPLOY_DIR="$1"\n' + wrap_nodes(login_body, data_mover_body, data_mover)
 
 
-def _make_tar(script: str, image: Path | None) -> Path:
+def _make_tar(
+    script: str,
+    image: Path | None,
+    extra_files: Mapping[str, Path] | None = None,
+) -> Path:
+    """Create a temporary tar containing ``deploy.sh``, optional files, and a SIF."""
     handle, name = tempfile.mkstemp(prefix="needle-deploy-", suffix=".tar")
     os.close(handle)
     path = Path(name)
@@ -575,6 +600,9 @@ def _make_tar(script: str, image: Path | None) -> Path:
             info.mode = 0o755
             info.size = len(payload)
             archive.addfile(info, io.BytesIO(payload))
+            for arcname, file_path in (extra_files or {}).items():
+                if file_path.is_file():
+                    archive.add(file_path, arcname=arcname)
             if image is not None and image.is_file():
                 archive.add(image, arcname="needle.sif")
     except Exception:
@@ -584,6 +612,7 @@ def _make_tar(script: str, image: Path | None) -> Path:
 
 
 def _run_ssh_tar(host: str, tar_path: Path, timeout: float) -> subprocess.CompletedProcess[bytes]:
+    """Stream a deployment tar to ``host`` and execute its embedded script."""
     remote_command = 'd=$(mktemp -d) && trap \'rm -rf "$d"\' EXIT && tar -xpf - -C "$d" && bash "$d/deploy.sh" "$d"'
     command = [
         "ssh",
@@ -610,6 +639,7 @@ def _run_ssh_tar(host: str, tar_path: Path, timeout: float) -> subprocess.Comple
 
 
 def _common_options(function):
+    """Attach options shared by the ``deploy prod`` and ``deploy dev`` commands."""
     function = click.option(
         "--source",
         type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -652,7 +682,13 @@ def _common_options(function):
         "--local-image",
         type=click.Path(dir_okay=False, path_type=Path),
         default=None,
-        help="Local SIF output path (default: <source>/needle.sif).",
+        help="Local SIF output path for --build-image (default: <source>/needle.sif).",
+    )(function)
+    function = click.option(
+        "--upload-image",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        default=None,
+        help="Upload an existing SIF without rebuilding it.",
     )(function)
     function = click.option(
         "--env-file",
@@ -675,44 +711,78 @@ def _common_options(function):
         show_default=True,
         help="Seconds to wait for production workers to report ONLINE (0 disables waiting).",
     )(function)
-    function = click.option("--dry-run", is_flag=True, help="Print local and remote commands without executing.")(
-        function
-    )
     return function
 
 
 def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False, **kwargs) -> None:
+    """Run one environment deployment end to end.
+
+    This resolves local git information, optionally builds or reuses an image,
+    streams the remote script over SSH, and waits for production workers when
+    requested.
+    """
     env = ENVIRONMENTS[env_name]
     source: Path = kwargs["source"]
     repo, branch = _git_info(source, kwargs["repo"], kwargs["branch"])
     build_image: bool = kwargs["build_image"]
+    upload_image: Path | None = kwargs["upload_image"]
     local_image: Path = kwargs["local_image"] or (source / "needle.sif")
-    dry_run: bool = kwargs["dry_run"]
+
+    if build_image and upload_image is not None:
+        raise click.ClickException("--build-image and --upload-image are mutually exclusive.")
+    if upload_image is not None and kwargs["local_image"] is not None:
+        raise click.ClickException("--upload-image cannot be combined with --local-image.")
+
+    image_to_upload: Path | None = upload_image
+    if build_image:
+        image_to_upload = local_image
+
+    if upload_image is not None:
+        image_mode = f"upload {upload_image}"
+    elif build_image:
+        image_mode = "build and upload"
+    else:
+        image_mode = "unchanged"
+
+    config_files = {
+        arcname: path
+        for arcname, path in {
+            f".needle.{env.name}.yaml": source / f".needle.{env.name}.yaml",
+            f".needle_cluster.{env.name}.yaml": source / f".needle_cluster.{env.name}.yaml",
+        }.items()
+        if path.is_file()
+    }
 
     click.echo(f"Environment: {env.name}")
     click.echo(f"  remote root: {env.root}")
     click.echo(f"  env file:    {env.env_file}")
     click.echo("  configs:     $NEEDLE_CONFIG / $NEEDLE_CLUSTER_CONFIG from the env file")
+    click.echo(f"  upload files: {', '.join(config_files) if config_files else 'none'}")
     click.echo(f"  repository:  {repo}")
     click.echo(f"  branch:      {branch}")
     click.echo(f"  workers:     {'yes' if start_workers else 'no'}")
-    click.echo(f"  image:       {'build and upload' if build_image else 'unchanged'}")
+    click.echo(f"  image:       {image_mode}")
     click.echo()
 
     if build_image:
-        if dry_run:
-            click.echo(f"Would run: make needle (in {source})")
-            click.echo(f"Would run: apptainer build --force {local_image} docker-daemon://{kwargs['docker_image']}")
-        else:
-            try:
-                _build_image(source, kwargs["docker_image"], local_image)
-            except subprocess.CalledProcessError as exc:
-                raise click.ClickException(f"Image build failed with exit status {exc.returncode}.") from exc
-            if not local_image.is_file():
-                raise click.ClickException(f"Image build completed but {local_image} was not created.")
+        try:
+            _build_image(source, kwargs["docker_image"], local_image)
+        except subprocess.CalledProcessError as exc:
+            raise click.ClickException(f"Image build failed with exit status {exc.returncode}.") from exc
+        if not local_image.is_file():
+            raise click.ClickException(f"Image build completed but {local_image} was not created.")
+
+    if env.workers and start_workers:
+        try:
+            ensure_prefect_env(kwargs["env_file"])
+            created_pools = ensure_work_pools()
+        except Exception as exc:
+            raise click.ClickException(f"Could not prepare Prefect work pools: {type(exc).__name__}: {exc}") from exc
+        for pool in created_pools:
+            click.echo(f"Created missing work pool: {pool}")
 
     # The uploaded image is visible at $DEPLOY_DIR/needle.sif inside the remote script.
-    remote_image_placeholder = "$DEPLOY_DIR/needle.sif" if build_image else None
+    remote_image_placeholder = "$DEPLOY_DIR/needle.sif" if image_to_upload is not None else None
     script = build_remote_script(
         env,
         repo=repo,
@@ -724,12 +794,7 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
         install_tool=env.name == "dev",
     )
 
-    if dry_run:
-        click.echo("Remote deployment script (not executed):")
-        click.echo(script)
-        return
-
-    tar_path = _make_tar(script, local_image if build_image else None)
+    tar_path = _make_tar(script, image_to_upload, extra_files=config_files)
     try:
         click.echo(f"Opening one SSH connection to '{kwargs['ssh_host']}' (2FA may be requested once)...")
         result = _run_ssh_tar(kwargs["ssh_host"], tar_path, kwargs["ssh_timeout"])
@@ -738,7 +803,7 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
 
     stdout = result.stdout.decode("utf-8", errors="replace")
     stderr = result.stderr.decode("utf-8", errors="replace")
-    remote = _parse_remote_output(stdout)
+    remote = parse_remote_output(stdout)
 
     if stderr.strip():
         click.echo(stderr.strip(), err=True)
@@ -758,13 +823,13 @@ def _deploy(env_name: str, *, start_workers: bool, restart_workers: bool = False
         raise click.ClickException("Remote deployment did not complete successfully.")
 
     if start_workers and kwargs["wait_seconds"] > 0:
-        _ensure_prefect_env(kwargs["env_file"])
+        ensure_prefect_env(kwargs["env_file"])
         click.echo(f"Waiting up to {kwargs['wait_seconds']:g}s for workers to report ONLINE...")
-        states = _wait_for_online(timeout=kwargs["wait_seconds"], interval=2.0)
+        states = wait_for_online(timeout=kwargs["wait_seconds"], interval=2.0)
         click.echo()
         click.echo("Prefect worker state:")
         for name in ("pipeline", "download"):
-            click.echo(f"  {name}: {_format_prefect(states[name])}")
+            click.echo(f"  {name}: {format_prefect(states[name])}")
         if not all(states[name].online for name in ("pipeline", "download")):
             raise SystemExit(1)
 
@@ -795,25 +860,12 @@ def dev(**kwargs):
     _deploy("dev", start_workers=False, **kwargs)
 
 
-BOOTSTRAP_REQUIRED_CHECKS = {
-    "screen",
-    "uv",
-    "workdir",
-    "pyproject",
-    "env-file",
-    "env-load",
-    "prefect-env",
-    "needle-config",
-    "cluster-config",
-    "git",
-}
-
-
 def _print_checks(remote) -> None:
+    """Print per-node prerequisite checks, notes, and remote errors."""
     for node_name in SCREEN_NODE_NAMES:
         node = remote.nodes.get(node_name)
         node_checks = [item for item in remote.checks if item.node == node_name]
-        if not node_checks and not (node is not None and (node.host or node.errors)):
+        if not node_checks and not (node is not None and node.errors):
             continue
         host = node.host if node is not None and node.host else "unknown host"
         click.echo(f"{NODE_LABELS.get(node_name, node_name)} ({host}):")
@@ -833,9 +885,57 @@ def _print_checks(remote) -> None:
 
 
 def _check_failures(remote, required: set[str]) -> bool:
+    """Return whether any required check is absent, failed, or sync failed."""
+    present = {item.name for item in remote.checks}
+    missing = required - present
     failed = [item for item in remote.checks if item.name in required and item.status in {"MISSING", "FAILED"}]
     project_sync_failed = any(item.name == "project-sync" and item.status == "FAILED" for item in remote.checks)
-    return bool(failed or project_sync_failed)
+    return bool(missing or failed or project_sync_failed)
+
+
+STATUS_REQUIRED_CHECKS = {
+    "screen",
+    "uv",
+    "git",
+    "workdir",
+    "pyproject",
+    "env-file",
+    "env-load",
+    "prefect-env",
+    "needle-config",
+    "cluster-config",
+    "image",
+}
+
+
+def _status_script(env: Environment, data_mover: str) -> str:
+    """Build the remote prerequisite/status script for an environment."""
+    login_checks = "\n".join(
+        preflight_lines(
+            "login",
+            install=False,
+            strict=False,
+            workdir=env.root,
+            env_file=env.env_file,
+            require_screen=env.workers,
+            require_cli=not env.workers,
+            fallback_image=env.image_fallback,
+        )
+    )
+    if not env.workers:
+        return _wrap_login(login_checks)
+    login_body = login_checks + "\n" + probe_body("login")
+    return wrap_nodes(login_body, probe_body("data_mover"), data_mover)
+
+
+def _print_resources(resources) -> None:
+    """Print Prefect work-pool/deployment existence checks."""
+    click.echo("Prefect resources:")
+    for resource in resources:
+        if resource.exists:
+            click.echo(f"  {resource.kind:<12} {resource.name}: OK")
+        else:
+            click.echo(f"  {resource.kind:<12} {resource.name}: MISSING ({resource.error})")
 
 
 @deploy.command()
@@ -851,40 +951,14 @@ def _check_failures(remote, required: set[str]) -> bool:
     help="Local .env with Prefect credentials.",
 )
 @click.option("--ssh-timeout", type=float, default=DEFAULT_SSH_TIMEOUT, show_default=True)
-@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON (production only).")
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
 def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
-    """Show deployment and worker status for prod or dev."""
+    """Check whether an environment is ready to run."""
     env = ENVIRONMENTS[environment]
 
-    if environment != "prod":
-        login_body = _build_bootstrap_parts(
-            data_mover,
-            install=False,
-            workdir=env.root,
-            env_file=env.env_file,
-            require_screen=False,
-        )[0]
-        result = _run_ssh(ssh_host, _wrap_login(login_body), ssh_timeout)
-        remote = _parse_remote_output(result.stdout)
-        _print_checks(remote)
-        required = BOOTSTRAP_REQUIRED_CHECKS - {"screen"}
-        if not remote.complete or _check_failures(remote, required):
-            raise SystemExit(1)
-        return
-
     try:
-        _ensure_prefect_env(env_file)
-    except click.ClickException as exc:
-        prefect_states = _states_with_error(str(exc))
-    else:
-        try:
-            prefect_states = _query_prefect()
-        except Exception as exc:
-            prefect_states = _states_with_error(f"{type(exc).__name__}: {exc}")
-
-    try:
-        result = _run_ssh(ssh_host, _build_probe_script(data_mover), ssh_timeout)
-        remote = _parse_remote_output(result.stdout)
+        result = run_ssh(ssh_host, _status_script(env, data_mover), ssh_timeout)
+        remote = parse_remote_output(result.stdout)
         if result.returncode != 0:
             reason = f"SSH command exited with status {result.returncode}"
             stderr = result.stderr.strip()
@@ -895,9 +969,9 @@ def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
                 if not node.errors:
                     node.errors.append(reason)
     except click.ClickException as exc:
-        error = str(exc)
         from needle.lib.deployment import RemoteNode
 
+        error = str(exc)
         remote = RemoteOutput(
             nodes={name: RemoteNode(name, errors=[error]) for name in SCREEN_NODE_NAMES},
             actions=[],
@@ -905,20 +979,71 @@ def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
             complete=False,
         )
 
-    screens = _screen_screens(remote)
+    _print_checks(remote)
+    required = set(STATUS_REQUIRED_CHECKS)
+    if not env.workers:
+        required.discard("screen")
+        required.add("dev-cli")
+    missing_checks = sorted(required - {item.name for item in remote.checks})
+    if missing_checks:
+        click.echo(f"  missing checks: {', '.join(missing_checks)}", err=True)
+    checks_failed = not remote.complete or _check_failures(remote, required)
+
+    if not env.workers:
+        if as_json:
+            click.echo(
+                json.dumps(
+                    {
+                        "environment": env.name,
+                        "checks": [{"node": c.node, "name": c.name, "status": c.status} for c in remote.checks],
+                        "complete": remote.complete,
+                        "ok": not checks_failed,
+                    },
+                    indent=2,
+                )
+            )
+        if checks_failed:
+            raise SystemExit(1)
+        return
+
+    resources = []
+    resource_error = None
+    try:
+        ensure_prefect_env(env_file)
+        prefect_states = query_prefect()
+        resources = query_prefect_resources()
+    except Exception as exc:
+        resource_error = f"{type(exc).__name__}: {exc}"
+        prefect_states = states_with_error(resource_error)
+
+    screens = screen_screens(remote)
     if as_json:
-        payload = _status_payload(prefect_states, screens)
+        payload = status_payload(prefect_states, screens)
+        payload["environment"] = env.name
+        payload["checks"] = [{"node": c.node, "name": c.name, "status": c.status} for c in remote.checks]
+        payload["resources"] = [
+            {"kind": r.kind, "name": r.name, "exists": r.exists, "error": r.error} for r in resources
+        ]
+        if resource_error:
+            payload["resource_error"] = resource_error
         if remote.errors:
             payload["remote_errors"] = remote.errors
         if not remote.complete:
             payload["remote_complete"] = False
         click.echo(json.dumps(payload, indent=2))
     else:
-        _print_status(prefect_states, screens)
+        if resource_error:
+            click.echo(f"Prefect resources: UNKNOWN ({resource_error})", err=True)
+        else:
+            _print_resources(resources)
+            click.echo()
+        print_status(prefect_states, screens)
         for error in remote.errors:
             click.echo(f"remote error: {error}", err=True)
 
-    if not all(_healthy(prefect_states[name], screens[name]) for name in ("pipeline", "download")):
+    resources_ok = bool(resources) and all(r.exists for r in resources)
+    workers_ok = all(healthy(prefect_states[name], screens[name]) for name in ("pipeline", "download"))
+    if checks_failed or not resources_ok or not workers_ok:
         raise SystemExit(1)
 
 
@@ -928,101 +1053,18 @@ def status(environment, ssh_host, data_mover, env_file, ssh_timeout, as_json):
 @click.option(
     "--data-mover", default="data-mover01", show_default=True, help="Data-mover host for the download worker."
 )
-@click.option(
-    "--env-file",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-    help="Local .env with Prefect credentials.",
-)
 @click.option("--ssh-timeout", type=float, default=DEFAULT_SSH_TIMEOUT, show_default=True)
-@click.option("--check", is_flag=True, help="Only check; do not install uv or create work pools.")
-@click.option("--dry-run", is_flag=True, help="Show the planned remote scripts without running them.")
-def bootstrap(environment, ssh_host, data_mover, env_file, ssh_timeout, check, dry_run):
-    """Check prerequisites and optionally install user-space dependencies."""
-    env = ENVIRONMENTS[environment]
-
-    if not check and not dry_run and env.workers:
-        try:
-            _ensure_prefect_env(env_file)
-        except click.ClickException as exc:
-            click.echo(f"Prefect bootstrap skipped: {exc}", err=True)
-        else:
-            try:
-                created_pools = _ensure_work_pools()
-            except Exception as exc:
-                click.echo(f"Prefect bootstrap failed: {type(exc).__name__}: {exc}", err=True)
-            else:
-                for pool in created_pools:
-                    click.echo(f"Created missing work pool: {pool}")
-                click.echo("Prefect work pools ready.")
-
-    install = not check
-    login_body, data_mover_body, script = _build_bootstrap_parts(
-        data_mover,
-        install=install,
-        workdir=env.root,
-        env_file=env.env_file,
-        require_screen=env.workers,
-    )
-    if not env.workers:
-        script = _wrap_login(login_body)
-
-    if dry_run:
-        click.echo("Planned bootstrap actions (not executed):")
-        click.echo(f"  1. ssh {ssh_host} bash -s")
-        if env.workers:
-            click.echo(f"  2. within that session: ssh {data_mover} bash -s")
-        click.echo()
-        click.echo(f"--- login node script ({ssh_host}) ---")
-        click.echo(login_body)
-        if env.workers:
-            click.echo()
-            click.echo(f"--- data-mover script ({data_mover}) ---")
-            click.echo(data_mover_body)
-        return
-
-    click.echo(f"Opening one SSH connection to '{ssh_host}' (2FA may be requested)...")
-    result = _run_ssh(ssh_host, script, ssh_timeout)
-    remote = _parse_remote_output(result.stdout)
-    _print_checks(remote)
-
-    required = BOOTSTRAP_REQUIRED_CHECKS if env.workers else BOOTSTRAP_REQUIRED_CHECKS - {"screen"}
-    if not remote.complete or _check_failures(remote, required):
-        raise SystemExit(1)
-    click.echo("Bootstrap checks passed.")
-
-
-@deploy.command()
-@click.argument("environment", type=click.Choice(sorted(ENVIRONMENTS)))
-@click.option("--ssh-host", default="ozstar", show_default=True, help="SSH host alias for the OzSTAR login node.")
-@click.option(
-    "--data-mover", default="data-mover01", show_default=True, help="Data-mover host for the download worker."
-)
-@click.option("--ssh-timeout", type=float, default=DEFAULT_SSH_TIMEOUT, show_default=True)
-@click.option("--dry-run", is_flag=True, help="Show the planned remote scripts without running them.")
-def teardown(environment, ssh_host, data_mover, ssh_timeout, dry_run):
+def teardown(environment, ssh_host, data_mover, ssh_timeout):
     """Stop production workers; development has no workers to stop."""
     if environment != "prod":
         click.echo("Development deployments do not have workers.")
         return
 
-    login_body, data_mover_body, script = _build_teardown_parts(data_mover)
-
-    if dry_run:
-        click.echo("Planned teardown actions (not executed):")
-        click.echo(f"  1. ssh {ssh_host} bash -s")
-        click.echo(f"  2. within that session: ssh {data_mover} bash -s")
-        click.echo()
-        click.echo(f"--- login node script ({ssh_host}) ---")
-        click.echo(login_body)
-        click.echo()
-        click.echo(f"--- data-mover script ({data_mover}) ---")
-        click.echo(data_mover_body)
-        return
+    _, _, script = build_teardown_parts(data_mover)
 
     click.echo(f"Opening one SSH connection to '{ssh_host}' (2FA may be requested once)...")
-    result = _run_ssh(ssh_host, script, ssh_timeout)
-    remote = _parse_remote_output(result.stdout)
+    result = run_ssh(ssh_host, script, ssh_timeout)
+    remote = parse_remote_output(result.stdout)
 
     if result.stderr.strip():
         click.echo(result.stderr.strip(), err=True)

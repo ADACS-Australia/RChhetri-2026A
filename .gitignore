@@ -8,10 +8,10 @@
 *.gcal/
 *.fcal/
 *.uvfits
-needle.yaml
 .*_built
 *__pycache__*
 .ruff_cache/
 *.sif
 .env
 prefect.toml
+.needle*.yaml

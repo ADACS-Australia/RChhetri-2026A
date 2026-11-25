@@ -35,14 +35,16 @@ class LazyGroup(click.Group):
     """
 
     def __init__(self, *args, lazy_subcommands: dict[str, tuple[str, str]] | None = None, **kwargs):
-        # lazy_subcommands: {name: (import_target "module.path:attr", short_help)}
+        """Configure lazy subcommands as ``{name: (import_target, short_help)}``."""
         super().__init__(*args, **kwargs)
         self.lazy_subcommands = lazy_subcommands or {}
 
     def list_commands(self, _):
+        """List eager and lazy command names without importing lazy modules."""
         return sorted(set(self.lazy_subcommands) | set(self.commands))
 
     def get_command(self, ctx, name):
+        """Resolve a command, importing its module only when requested."""
         if name in self.lazy_subcommands:
             target, _ = self.lazy_subcommands[name]
             module_path, attr = target.split(":")
@@ -54,8 +56,8 @@ class LazyGroup(click.Group):
         return super().get_command(ctx, name)
 
     def format_commands(self, ctx, formatter):
-        # Overridden because Click's default implementation calls get_command() on every listed name to read its help
-        # text — which would import every module
+        """Render ``--help`` without importing every lazy subcommand."""
+        # Click's default implementation calls get_command() for every name to read help text.
         rows = []
         for name in self.list_commands(ctx):
             if name in self.lazy_subcommands:
@@ -70,6 +72,7 @@ class LazyGroup(click.Group):
 
 
 def _setup_cli_logging(level: str = "INFO"):
+    """Configure the CLI logger once at the requested level."""
     logger.setLevel(level)
     logger.propagate = False
     if not logger.handlers:
@@ -81,6 +84,7 @@ def _setup_cli_logging(level: str = "INFO"):
 
 
 def _log_level_options(f):
+    """Attach the shared ``--log-level`` option to a command."""
     f = click.option(
         "--log-level",
         "--log_level",
@@ -93,6 +97,7 @@ def _log_level_options(f):
 
 
 def _assert_required_env():
+    """Log any missing required environment variables and return overall validity."""
     all_available = True
     for v in REQUIRED_ENV_VARS:
         if not os.environ.get(v):
@@ -103,6 +108,7 @@ def _assert_required_env():
 
 @click.group(help="Needle pipeline CLI.", context_settings={"max_content_width": 120})
 def cli():
+    """Top-level click group for the Needle pipeline and deployment commands."""
     # Set the umask here to allow group access to all files and folders written by the pipeline
     os.umask(WORKFLOW_UMASK)
 
@@ -147,6 +153,7 @@ def start_workers(log_level, roles):
     selected = list(dict.fromkeys(roles))
 
     async def _run_workers() -> None:
+        """Start and gather all selected Prefect process workers."""
         workers = []
         for name in selected:
             pool = WORKER_POOLS[name]

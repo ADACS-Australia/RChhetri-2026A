@@ -2,8 +2,8 @@
 
 This module contains the reusable pieces used by the ``needle deploy`` CLI:
 Prefect worker queries, single-connection SSH wrappers, remote marker parsing,
-probe/teardown/bootstrap scripts, and status rendering.  It does not define a
-CLI entrypoint itself.
+probe/teardown scripts, and status rendering.  It does not define a CLI
+entrypoint itself.
 """
 
 from __future__ import annotations
@@ -29,6 +29,60 @@ PREFECT_ENV_VARS = ("PREFECT_API_URL", "PREFECT_API_AUTH_STRING")
 
 NODE_LABELS = {"login": "login node", "data_mover": "data mover"}
 SCREEN_NODE_NAMES = ("login", "data_mover")
+PRODUCTION_DEPLOYMENTS = (
+    "download-observation/download-observation-ozstar",
+    "needle-pipeline/needle-pipeline-ozstar",
+)
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "deploy_templates"
+
+
+def render_template(name: str, **values: str) -> str:
+    """Render a shell template by replacing ``@@NAME@@`` placeholders."""
+    text = (TEMPLATE_DIR / name).read_text(encoding="utf-8")
+    values["marker"] = MARKER
+    for key, value in values.items():
+        text = text.replace(f"@@{key.upper()}@@", str(value))
+    return text
+
+
+__all__ = [
+    "MARKER",
+    "NODE_LABELS",
+    "PREFECT_ENV_VARS",
+    "PRODUCTION_DEPLOYMENTS",
+    "SCREEN_NODE_NAMES",
+    "CheckResult",
+    "DeployAction",
+    "PrefectResourceState",
+    "PrefectState",
+    "RemoteNode",
+    "RemoteOutput",
+    "ScreenSession",
+    "ScreenState",
+    "build_teardown_parts",
+    "ensure_prefect_env",
+    "ensure_work_pools",
+    "format_prefect",
+    "format_screen",
+    "healthy",
+    "load_env_file",
+    "parse_remote_output",
+    "parse_screen_listing",
+    "probe_body",
+    "preflight_lines",
+    "print_status",
+    "query_prefect",
+    "query_prefect_resources",
+    "render_template",
+    "run_ssh",
+    "screen_screens",
+    "screen_state_for_role",
+    "states_with_error",
+    "status_payload",
+    "verdict",
+    "wait_for_online",
+    "wrap_nodes",
+]
 
 
 @dataclass
@@ -46,7 +100,18 @@ class PrefectState:
 
     @property
     def online(self) -> bool:
+        """Whether Prefect currently reports this worker as online."""
         return self.status == "ONLINE" and self.error is None
+
+
+@dataclass
+class PrefectResourceState:
+    """Existence state of a Prefect work pool or deployment."""
+
+    kind: str
+    name: str
+    exists: bool = False
+    error: str | None = None
 
 
 @dataclass
@@ -59,6 +124,7 @@ class ScreenSession:
 
     @property
     def running(self) -> bool:
+        """Whether the session is attached or detached rather than dead."""
         return self.state.startswith(("Attached", "Detached"))
 
 
@@ -77,11 +143,14 @@ class ScreenState:
 
     @property
     def running(self) -> bool:
+        """Whether the expected screen session exists and is not dead."""
         return self.exists and self.state is not None and self.state.startswith(("Attached", "Detached"))
 
 
 @dataclass
 class RemoteNode:
+    """Result reported by one node of a remote script."""
+
     name: str
     host: str | None = None
     exit_code: int | None = None
@@ -91,6 +160,8 @@ class RemoteNode:
 
 @dataclass
 class DeployAction:
+    """A deployment action emitted by the remote script."""
+
     node: str
     role: str
     action: str
@@ -98,6 +169,8 @@ class DeployAction:
 
 @dataclass
 class CheckResult:
+    """One prerequisite check emitted by a status script."""
+
     node: str
     name: str
     status: str
@@ -105,6 +178,8 @@ class CheckResult:
 
 @dataclass
 class RemoteOutput:
+    """Parsed marker output from one or more remote deployment scripts."""
+
     nodes: dict[str, RemoteNode]
     actions: list[DeployAction]
     errors: list[str] = field(default_factory=list)
@@ -114,10 +189,12 @@ class RemoteOutput:
 
 
 def _iso(value: datetime | None) -> str | None:
+    """Return an ISO timestamp or ``None``."""
     return value.isoformat() if value is not None else None
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
+    """Normalise a datetime to timezone-aware UTC."""
     if value is None:
         return None
     if value.tzinfo is None:
@@ -126,6 +203,7 @@ def _as_utc(value: datetime | None) -> datetime | None:
 
 
 def _format_age(value: datetime | None) -> str:
+    """Format a heartbeat timestamp as a short relative age."""
     if value is None:
         return "never"
     value = _as_utc(value)
@@ -143,11 +221,13 @@ def _format_age(value: datetime | None) -> str:
 
 
 def _indent(text: str, spaces: int = 2) -> str:
+    """Indent every non-empty line of ``text``."""
     prefix = " " * spaces
     return "\n".join(prefix + line if line else line for line in text.splitlines())
 
 
 def _worker_sort_key(worker) -> tuple[int, float]:
+    """Sort worker records by online status, then most recent heartbeat."""
     heartbeat = getattr(worker, "last_heartbeat_time", None)
     timestamp = heartbeat.timestamp() if heartbeat is not None else 0.0
     online = getattr(getattr(worker, "status", None), "value", "") == "ONLINE"
@@ -157,7 +237,7 @@ def _worker_sort_key(worker) -> tuple[int, float]:
 ## Prefect API ##
 
 
-def _query_prefect() -> dict[str, PrefectState]:
+def query_prefect() -> dict[str, PrefectState]:
     """Read worker records for both production work pools.
 
     A missing work pool or a failed API request is recorded on that role rather than aborting the whole query, so
@@ -167,6 +247,7 @@ def _query_prefect() -> dict[str, PrefectState]:
     from prefect.exceptions import ObjectNotFound
 
     async def _read() -> dict[str, PrefectState]:
+        """Read worker records for every configured role."""
         states = {
             name: PrefectState(
                 role=name,
@@ -202,13 +283,50 @@ def _query_prefect() -> dict[str, PrefectState]:
     return asyncio.run(_read())
 
 
-def _ensure_work_pools() -> list[str]:
+def query_prefect_resources() -> list[PrefectResourceState]:
+    """Check that production work pools and deployments are registered."""
+    from prefect.client.orchestration import get_client
+    from prefect.exceptions import ObjectNotFound
+
+    async def _read() -> list[PrefectResourceState]:
+        resources: list[PrefectResourceState] = []
+        async with get_client() as client:
+            for pool in sorted({role.pool for role in WORKER_ROLES.values()}):
+                state = PrefectResourceState(kind="work pool", name=pool)
+                try:
+                    await client.read_work_pool(pool)
+                except ObjectNotFound:
+                    state.error = "not found"
+                except Exception as exc:
+                    state.error = f"{type(exc).__name__}: {exc}"
+                else:
+                    state.exists = True
+                resources.append(state)
+
+            for deployment in PRODUCTION_DEPLOYMENTS:
+                state = PrefectResourceState(kind="deployment", name=deployment)
+                try:
+                    await client.read_deployment_by_name(deployment)
+                except ObjectNotFound:
+                    state.error = "not found"
+                except Exception as exc:
+                    state.error = f"{type(exc).__name__}: {exc}"
+                else:
+                    state.exists = True
+                resources.append(state)
+        return resources
+
+    return asyncio.run(_read())
+
+
+def ensure_work_pools() -> list[str]:
     """Create any missing production work pools, returning the names created."""
     from prefect.client.orchestration import get_client
     from prefect.client.schemas.actions import WorkPoolCreate
     from prefect.exceptions import ObjectNotFound
 
     async def _run() -> list[str]:
+        """Create missing work pools and return their names."""
         created: list[str] = []
         async with get_client() as client:
             for name in ROLE_ORDER:
@@ -223,7 +341,8 @@ def _ensure_work_pools() -> list[str]:
     return asyncio.run(_run())
 
 
-def _states_with_error(message: str) -> dict[str, PrefectState]:
+def states_with_error(message: str) -> dict[str, PrefectState]:
+    """Build worker states carrying a shared Prefect-query error."""
     return {
         name: PrefectState(
             role=name,
@@ -236,6 +355,7 @@ def _states_with_error(message: str) -> dict[str, PrefectState]:
 
 
 def _ready(state: PrefectState, not_before: datetime | None) -> bool:
+    """Whether a worker is online and has heartbeated after ``not_before``."""
     if not state.online:
         return False
     if not_before is None:
@@ -244,7 +364,7 @@ def _ready(state: PrefectState, not_before: datetime | None) -> bool:
     return heartbeat is not None and heartbeat >= not_before
 
 
-def _wait_for_online(
+def wait_for_online(
     *,
     timeout: float,
     interval: float,
@@ -255,9 +375,9 @@ def _wait_for_online(
     not_before = not_before or {}
     while True:
         try:
-            states = _query_prefect()
+            states = query_prefect()
         except Exception as exc:
-            states = _states_with_error(f"{type(exc).__name__}: {exc}")
+            states = states_with_error(f"{type(exc).__name__}: {exc}")
 
         if all(_ready(states[name], not_before.get(name)) for name in ROLE_ORDER):
             return states
@@ -272,6 +392,7 @@ _ENV_LINE = re.compile(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?
 
 
 def _unquote_env_value(value: str) -> str:
+    """Remove simple shell quoting and inline comments from an env value."""
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
         quote = value[0]
@@ -283,7 +404,7 @@ def _unquote_env_value(value: str) -> str:
     return re.sub(r"\s+#.*$", "", value).rstrip()
 
 
-def _load_env_file(path: Path, environ: MutableMapping[str, str] | None = None) -> list[str]:
+def load_env_file(path: Path, environ: MutableMapping[str, str] | None = None) -> list[str]:
     """Load simple ``KEY=value``/``export KEY=value`` lines without overriding.
 
     Returns the names of variables that were actually set. This intentionally avoids a new dependency just to read the
@@ -306,7 +427,12 @@ def _load_env_file(path: Path, environ: MutableMapping[str, str] | None = None) 
     return loaded
 
 
-def _ensure_prefect_env(env_file: Path | None) -> None:
+def ensure_prefect_env(env_file: Path | None) -> None:
+    """Ensure local Prefect API credentials are available.
+
+    Existing environment variables take precedence.  If they are missing, a
+    local ``.env``/``--env-file`` is loaded without overriding them.
+    """
     if all(os.environ.get(name) for name in PREFECT_ENV_VARS):
         return
 
@@ -323,7 +449,7 @@ def _ensure_prefect_env(env_file: Path | None) -> None:
 
     for candidate in candidates:
         if candidate.is_file():
-            _load_env_file(candidate)
+            load_env_file(candidate)
             if all(os.environ.get(name) for name in PREFECT_ENV_VARS):
                 return
 
@@ -338,7 +464,8 @@ def _ensure_prefect_env(env_file: Path | None) -> None:
 ## SSH / remote scripts ##
 
 
-def _run_ssh(host: str, script: str, timeout: float) -> subprocess.CompletedProcess[str]:
+def run_ssh(host: str, script: str, timeout: float) -> subprocess.CompletedProcess[str]:
+    """Run a shell script over one SSH connection and capture its output."""
     command = [
         "ssh",
         "-o",
@@ -364,10 +491,11 @@ def _run_ssh(host: str, script: str, timeout: float) -> subprocess.CompletedProc
 
 
 def _as_function(name: str, body: str) -> str:
+    """Wrap a shell body in a function and call it immediately."""
     return f"{name}() {{\n{_indent(body)}\n}}\n{name}\n"
 
 
-def _wrap_nodes(login_body: str, data_mover_body: str, data_mover: str) -> str:
+def wrap_nodes(login_body: str, data_mover_body: str, data_mover: str) -> str:
     """Compose one remote script that visits both worker nodes.
 
     The data-mover script is base64 encoded so nesting it inside the login-node script does not require fragile
@@ -404,7 +532,8 @@ def _wrap_nodes(login_body: str, data_mover_body: str, data_mover: str) -> str:
     )
 
 
-def _probe_body(node: str) -> str:
+def probe_body(node: str) -> str:
+    """Return the shell body that reports a node's hostname and screen sessions."""
     return f"""\
 echo "{MARKER}HOST:{node}:$(hostname 2>/dev/null || uname -n)@@"
 if command -v screen >/dev/null 2>&1; then
@@ -417,11 +546,7 @@ fi
 """
 
 
-def _build_probe_script(data_mover: str) -> str:
-    return _wrap_nodes(_probe_body("login"), _probe_body("data_mover"), data_mover)
-
-
-def _preflight_lines(
+def preflight_lines(
     node: str,
     *,
     install: bool,
@@ -429,227 +554,29 @@ def _preflight_lines(
     workdir: str,
     env_file: str,
     require_screen: bool = True,
+    require_cli: bool = False,
+    fallback_image: str | None = None,
 ) -> list[str]:
-    """Check node prerequisites, optionally installing user-space dependencies.
+    """Return shell lines that check node prerequisites.
 
-    ``uv`` and the project dependencies are installable without root.  System
-    packages such as ``screen`` and ``git`` are checked and, where possible, a
-    module of the same name is loaded; they are never installed with sudo.
+    ``install`` allows user-space installation of ``uv`` and project
+    dependencies.  ``strict`` makes failed required checks return immediately.
     """
-    path = lambda value: f'"{value}"'  # noqa: E731 - allow remote $HOME/~ expansion
-    fail = ["  return 2"] if strict else []
-    lines: list[str] = [
-        f'echo "{MARKER}HOST:{node}:$(hostname 2>/dev/null || uname -n)@@"',
-        'export PATH="$HOME/.local/bin:$PATH"',
-        "",
-    ]
-    if require_screen:
-        lines.extend(
-            [
-                "# screen",
-                "if ! command -v screen >/dev/null 2>&1; then",
-                "  if command -v module >/dev/null 2>&1; then",
-                "    module load screen >/dev/null 2>&1 || true",
-                "  fi",
-                "fi",
-                "if command -v screen >/dev/null 2>&1; then",
-                f'  echo "{MARKER}CHECK:{node}:screen:OK@@"',
-                "else",
-                f'  echo "{MARKER}CHECK:{node}:screen:MISSING@@"',
-                f'  echo "{MARKER}ERROR:{node}:screen is required but was not found; load a module or ask system support@@"',
-                *fail,
-                "fi",
-                "",
-            ]
-        )
-    lines.extend(
-        [
-            "# git is needed by the Prefect deployment pull step, not by the worker itself",
-            "if ! command -v git >/dev/null 2>&1; then",
-            "  if command -v module >/dev/null 2>&1; then",
-            "    module load git >/dev/null 2>&1 || true",
-            "  fi",
-            "fi",
-            "if command -v git >/dev/null 2>&1; then",
-            f'  echo "{MARKER}CHECK:{node}:git:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:git:MISSING@@"',
-            f'  echo "{MARKER}NOTE:{node}:git not found; Prefect deployment pull steps may fail@@"',
-            "fi",
-            "",
-            "# uv",
-        ]
-    )
-    if install:
-        lines.extend(
-            [
-                "uv_state=OK",
-                "if ! command -v uv >/dev/null 2>&1; then",
-                "  if command -v curl >/dev/null 2>&1; then",
-                "    if ! (curl -LsSf https://astral.sh/uv/install.sh | sh) 1>&2; then",
-                f'      echo "{MARKER}ERROR:{node}:uv installation failed@@"',
-                *fail,
-                "    fi",
-                "  elif command -v wget >/dev/null 2>&1; then",
-                "    if ! (wget -qO- https://astral.sh/uv/install.sh | sh) 1>&2; then",
-                f'      echo "{MARKER}ERROR:{node}:uv installation failed@@"',
-                *fail,
-                "    fi",
-                "  else",
-                f'    echo "{MARKER}ERROR:{node}:neither curl nor wget is available to install uv@@"',
-                *fail,
-                "  fi",
-                '  export PATH="$HOME/.local/bin:$PATH"',
-                "  uv_state=INSTALLED",
-                "fi",
-                "if command -v uv >/dev/null 2>&1; then",
-                f'  echo "{MARKER}CHECK:{node}:uv:${{uv_state}}@@"',
-                "else",
-                f'  echo "{MARKER}CHECK:{node}:uv:MISSING@@"',
-                f'  echo "{MARKER}ERROR:{node}:uv is not installed@@"',
-                *fail,
-                "fi",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "if command -v uv >/dev/null 2>&1; then",
-                f'  echo "{MARKER}CHECK:{node}:uv:OK@@"',
-                "else",
-                f'  echo "{MARKER}CHECK:{node}:uv:MISSING@@"',
-                f'  echo "{MARKER}ERROR:{node}:uv is not installed@@"',
-                *fail,
-                "fi",
-            ]
-        )
-    lines.extend(
-        [
-            "",
-            "# work directory and Python project",
-            f"if [ -d {path(workdir)} ]; then",
-            f'  echo "{MARKER}CHECK:{node}:workdir:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:workdir:MISSING@@"',
-            f'  echo "{MARKER}ERROR:{node}:work directory not found: {workdir}@@"',
-            *fail,
-            "fi",
-            f"if [ -f {path(workdir + '/pyproject.toml')} ]; then",
-            f'  echo "{MARKER}CHECK:{node}:pyproject:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:pyproject:MISSING@@"',
-            f'  echo "{MARKER}ERROR:{node}:pyproject.toml not found under {workdir}@@"',
-            *fail,
-            "fi",
-        ]
-    )
-    if install:
-        lines.extend(
-            [
-                f"if [ -f {path(workdir + '/pyproject.toml')} ]; then",
-                '  sync_args=""',
-                f"  if [ -f {path(workdir + '/uv.lock')} ]; then sync_args=--frozen; fi",
-                f"  if (cd {path(workdir)} && uv sync $sync_args) 1>&2; then",
-                f'    echo "{MARKER}CHECK:{node}:project-sync:OK@@"',
-                "  else",
-                f'    echo "{MARKER}CHECK:{node}:project-sync:FAILED@@"',
-                f'    echo "{MARKER}ERROR:{node}:uv sync failed in {workdir}@@"',
-                *fail,
-                "  fi",
-                "fi",
-            ]
-        )
-    else:
-        lines.append(f'echo "{MARKER}CHECK:{node}:project-sync:SKIPPED@@"')
-    lines.extend(
-        [
-            "",
-            "# environment file and Prefect credentials",
-            f"if [ -f {path(env_file)} ]; then",
-            f'  echo "{MARKER}CHECK:{node}:env-file:OK@@"',
-            "  set -a",
-            f"  if . {path(env_file)}; then",
-            "    env_loaded=1",
-            "  else",
-            "    env_loaded=0",
-            "  fi",
-            "  set +a",
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:env-file:MISSING@@"',
-            f'  echo "{MARKER}ERROR:{node}:environment file not found: {env_file}@@"',
-            *fail,
-            "  env_loaded=0",
-            "fi",
-            'if [ "$env_loaded" -eq 1 ]; then',
-            f'  echo "{MARKER}CHECK:{node}:env-load:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:env-load:FAILED@@"',
-            f'  echo "{MARKER}ERROR:{node}:could not load {env_file}@@"',
-            *fail,
-            "fi",
-            'if [ "$env_loaded" -eq 1 ] && [ -n "${PREFECT_API_URL:-}" ] && [ -n "${PREFECT_API_AUTH_STRING:-}" ]; then',
-            f'  echo "{MARKER}CHECK:{node}:prefect-env:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:prefect-env:MISSING@@"',
-            f'  echo "{MARKER}ERROR:{node}:{env_file} does not export PREFECT_API_URL and PREFECT_API_AUTH_STRING@@"',
-            *fail,
-            "fi",
-            "",
-            "# config files are needed by flows, but not to start the worker",
-            'if [ -n "${NEEDLE_CONFIG:-}" ] && [ -f "$NEEDLE_CONFIG" ]; then',
-            f'  echo "{MARKER}CHECK:{node}:needle-config:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:needle-config:MISSING@@"',
-            f'  echo "{MARKER}NOTE:{node}:NEEDLE_CONFIG is unset or missing: ${{NEEDLE_CONFIG:-<unset>}}@@"',
-            "fi",
-            'if [ -n "${NEEDLE_CLUSTER_CONFIG:-}" ] && [ -f "$NEEDLE_CLUSTER_CONFIG" ]; then',
-            f'  echo "{MARKER}CHECK:{node}:cluster-config:OK@@"',
-            "else",
-            f'  echo "{MARKER}CHECK:{node}:cluster-config:MISSING@@"',
-            f'  echo "{MARKER}NOTE:{node}:NEEDLE_CLUSTER_CONFIG is unset or missing: ${{NEEDLE_CLUSTER_CONFIG:-<unset>}}@@"',
-            "fi",
-            "",
-        ]
-    )
-    return lines
-
-
-def _build_bootstrap_parts(
-    data_mover: str,
-    *,
-    install: bool,
-    workdir: str,
-    env_file: str,
-    require_screen: bool = True,
-) -> tuple[str, str, str]:
-    login_body = "\n".join(
-        _preflight_lines(
-            "login",
-            install=install,
-            strict=False,
-            workdir=workdir,
-            env_file=env_file,
-            require_screen=require_screen,
-        )
-    )
-    data_mover_body = "\n".join(
-        _preflight_lines(
-            "data_mover",
-            install=install,
-            strict=False,
-            workdir=workdir,
-            env_file=env_file,
-            require_screen=require_screen,
-        )
-    )
-    return (
-        login_body,
-        data_mover_body,
-        _wrap_nodes(login_body, data_mover_body, data_mover),
-    )
+    return render_template(
+        "preflight.sh",
+        node=node,
+        workdir=workdir,
+        env_file=env_file,
+        install="1" if install else "0",
+        strict="1" if strict else "0",
+        require_screen="1" if require_screen else "0",
+        require_cli="1" if require_cli else "0",
+        fallback_image=fallback_image or "",
+    ).splitlines()
 
 
 def _teardown_body(node: str, roles: Iterable[WorkerRole]) -> str:
+    """Return the shell body that stops the requested worker screens."""
     quote = shlex.quote
     lines: list[str] = [
         f'echo "{MARKER}HOST:{node}:$(hostname 2>/dev/null || uname -n)@@"',
@@ -659,27 +586,7 @@ def _teardown_body(node: str, roles: Iterable[WorkerRole]) -> str:
         "  return 2",
         "fi",
         "",
-        "screen_line() {",
-        '  screen -list 2>/dev/null | grep -F -- ".$1 " | head -n 1',
-        "}",
-        "",
-        "screen_exists() {",
-        '  [ -n "$(screen_line "$1")" ]',
-        "}",
-        "",
-        "stop_screen() {",
-        '  name="$1"',
-        '  screen -S "$name" -X quit >/dev/null 2>&1 || true',
-        "  i=0",
-        '  while screen_exists "$name" && [ "$i" -lt 20 ]; do',
-        "    sleep 0.25",
-        "    i=$((i + 1))",
-        "  done",
-        '  if screen_exists "$name"; then',
-        "    screen -wipe >/dev/null 2>&1 || true",
-        "  fi",
-        "}",
-        "",
+        *render_template("screen.sh", node=node).splitlines(),
     ]
 
     for spec in roles:
@@ -703,12 +610,13 @@ def _teardown_body(node: str, roles: Iterable[WorkerRole]) -> str:
     return "\n".join(lines)
 
 
-def _build_teardown_parts(data_mover: str) -> tuple[str, str, str]:
+def build_teardown_parts(data_mover: str) -> tuple[str, str, str]:
+    """Build one-SSH teardown scripts for both production worker nodes."""
     login_roles = [WORKER_ROLES[name] for name in ROLE_ORDER if WORKER_ROLES[name].node == "login"]
     data_mover_roles = [WORKER_ROLES[name] for name in ROLE_ORDER if WORKER_ROLES[name].node == "data_mover"]
     login_body = _teardown_body("login", login_roles)
     data_mover_body = _teardown_body("data_mover", data_mover_roles)
-    return login_body, data_mover_body, _wrap_nodes(login_body, data_mover_body, data_mover)
+    return login_body, data_mover_body, wrap_nodes(login_body, data_mover_body, data_mover)
 
 
 ## Remote output parsing ##
@@ -717,7 +625,8 @@ def _build_teardown_parts(data_mover: str) -> tuple[str, str, str]:
 _SCREEN_LINE = re.compile(r"^\s*(?P<pid>\d+)\.(?P<name>\S+)\s+\((?P<state>[^)]+)\)")
 
 
-def _parse_screen_listing(text: str) -> dict[str, ScreenSession]:
+def parse_screen_listing(text: str) -> dict[str, ScreenSession]:
+    """Parse ``screen -list`` output into a mapping of session name to state."""
     sessions: dict[str, ScreenSession] = {}
     for line in text.splitlines():
         match = _SCREEN_LINE.match(line)
@@ -731,7 +640,8 @@ def _parse_screen_listing(text: str) -> dict[str, ScreenSession]:
     return sessions
 
 
-def _parse_remote_output(stdout: str) -> RemoteOutput:
+def parse_remote_output(stdout: str) -> RemoteOutput:
+    """Parse marker-delimited output from a remote deployment script."""
     nodes = {name: RemoteNode(name) for name in SCREEN_NODE_NAMES}
     actions: list[DeployAction] = []
     errors: list[str] = []
@@ -770,7 +680,7 @@ def _parse_remote_output(stdout: str) -> RemoteOutput:
                 node = payload.split(":", 1)[1]
                 if screen_lines is not None:
                     nodes.setdefault(node, RemoteNode(node)).sessions.update(
-                        _parse_screen_listing("\n".join(screen_lines))
+                        parse_screen_listing("\n".join(screen_lines))
                     )
                 screen_lines = None
             elif payload.startswith("SCREEN_ERROR:"):
@@ -814,7 +724,8 @@ def _parse_remote_output(stdout: str) -> RemoteOutput:
     )
 
 
-def _screen_state_for_role(role: WorkerRole, remote: RemoteOutput) -> ScreenState:
+def screen_state_for_role(role: WorkerRole, remote: RemoteOutput) -> ScreenState:
+    """Project a role's expected screen session out of parsed remote output."""
     node_state = remote.nodes.get(role.node)
     if node_state is None:
         return ScreenState(
@@ -845,14 +756,16 @@ def _screen_state_for_role(role: WorkerRole, remote: RemoteOutput) -> ScreenStat
     )
 
 
-def _screen_screens(remote: RemoteOutput) -> dict[str, ScreenState]:
-    return {name: _screen_state_for_role(WORKER_ROLES[name], remote) for name in ROLE_ORDER}
+def screen_screens(remote: RemoteOutput) -> dict[str, ScreenState]:
+    """Return screen state for every configured production worker role."""
+    return {name: screen_state_for_role(WORKER_ROLES[name], remote) for name in ROLE_ORDER}
 
 
 ## Status rendering ##
 
 
-def _verdict(prefect: PrefectState, screen: ScreenState) -> str:
+def verdict(prefect: PrefectState, screen: ScreenState) -> str:
+    """Combine Prefect and screen state into a human-readable verdict."""
     if prefect.error or screen.error:
         return "UNKNOWN"
     if prefect.online and screen.running:
@@ -866,11 +779,13 @@ def _verdict(prefect: PrefectState, screen: ScreenState) -> str:
     return "STOPPED"
 
 
-def _healthy(prefect: PrefectState, screen: ScreenState) -> bool:
-    return _verdict(prefect, screen) == "HEALTHY"
+def healthy(prefect: PrefectState, screen: ScreenState) -> bool:
+    """Whether both Prefect and the expected screen report a healthy worker."""
+    return verdict(prefect, screen) == "HEALTHY"
 
 
-def _format_prefect(state: PrefectState) -> str:
+def format_prefect(state: PrefectState) -> str:
+    """Format a worker's Prefect state for CLI output."""
     if state.error:
         return f"UNKNOWN ({state.error})"
     if not state.exists:
@@ -879,7 +794,8 @@ def _format_prefect(state: PrefectState) -> str:
     return f"{state.status} (last heartbeat {heartbeat})"
 
 
-def _format_screen(state: ScreenState) -> str:
+def format_screen(state: ScreenState) -> str:
+    """Format a worker's screen state for CLI output."""
     if state.error:
         return f"UNKNOWN ({state.error})"
     if not state.exists:
@@ -889,10 +805,11 @@ def _format_screen(state: ScreenState) -> str:
     return f"STALE ({state.state})"
 
 
-def _status_payload(
+def status_payload(
     prefect_states: Mapping[str, PrefectState],
     screens: Mapping[str, ScreenState],
 ) -> dict:
+    """Build the JSON-serialisable status payload for production workers."""
     return {
         "api_url": os.environ.get("PREFECT_API_URL"),
         "workers": {
@@ -916,15 +833,16 @@ def _status_payload(
                     "host": screens[name].host,
                     "error": screens[name].error,
                 },
-                "verdict": _verdict(prefect_states[name], screens[name]),
-                "healthy": _healthy(prefect_states[name], screens[name]),
+                "verdict": verdict(prefect_states[name], screens[name]),
+                "healthy": healthy(prefect_states[name], screens[name]),
             }
             for name in ROLE_ORDER
         },
     }
 
 
-def _print_status(prefect_states: Mapping[str, PrefectState], screens: Mapping[str, ScreenState]) -> None:
+def print_status(prefect_states: Mapping[str, PrefectState], screens: Mapping[str, ScreenState]) -> None:
+    """Print a human-readable production worker status report."""
     click.echo("Production worker status")
     click.echo(f"Prefect API: {os.environ.get('PREFECT_API_URL', '<unset>')}")
     click.echo()
@@ -937,7 +855,7 @@ def _print_status(prefect_states: Mapping[str, PrefectState], screens: Mapping[s
         click.echo(f"{name}:")
         click.echo(f"  pool:    {spec.pool}")
         click.echo(f"  worker:  {spec.worker}")
-        click.echo(f"  prefect: {_format_prefect(prefect)}")
-        click.echo(f"  screen:  {spec.screen} on {node_label} ({host}) - {_format_screen(screen)}")
-        click.echo(f"  verdict: {_verdict(prefect, screen)}")
+        click.echo(f"  prefect: {format_prefect(prefect)}")
+        click.echo(f"  screen:  {spec.screen} on {node_label} ({host}) - {format_screen(screen)}")
+        click.echo(f"  verdict: {verdict(prefect, screen)}")
         click.echo()

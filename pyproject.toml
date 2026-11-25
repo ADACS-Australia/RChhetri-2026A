@@ -44,6 +44,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["needle"]
+artifacts = ["needle/deploy_templates/*.sh"]
 
 [tool.ruff]
 line-length = 120

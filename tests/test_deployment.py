@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 from needle import deployment
 from needle.deployment import ENVIRONMENTS, _http_url, _make_tar, build_remote_script
-from needle.lib.deployment import PrefectState
+from needle.lib.deployment import PrefectResourceState, PrefectState
 
 
 def _fake_git_info(source, repo, branch):
@@ -53,6 +53,7 @@ def test_environment_layouts():
 
     assert dev.root == "$HOME/software/needle"
     assert dev.env_file == "$HOME/.needle.dev.env"
+    assert dev.image_fallback == "$HOME/software/images/needle.sif"
     assert dev.workers is False
 
 
@@ -86,9 +87,14 @@ def test_build_remote_script_prod_workers():
     assert "git clone --branch" in script
     assert 'remote set-url origin "$REPO"' in script
     assert "pull --ff-only" in script
+    assert ".needle.prod.yaml" in script
+    assert ".needle_cluster.prod.yaml" in script
     assert "uv sync" in script
     assert 'IMAGE_FILE="$DEPLOY_DIR/needle.sif"' in script
     assert "start-workers pipeline" in script
+    assert "bash --noprofile --norc -c" in script
+    assert "tee -a" in script
+    assert "bash -lc" not in script
     assert "data-mover01" in script
     assert script.count("ssh -o BatchMode=yes") == 1
 
@@ -99,6 +105,9 @@ def test_build_remote_script_prod_workers():
     assert encoded is not None
     data_mover_script = base64.b64decode(encoded.group(1)).decode()
     assert "start-workers download" in data_mover_script
+    assert "git pull" not in data_mover_script
+    assert "uv sync" not in data_mover_script
+    assert "IMAGE_FILE" not in data_mover_script
 
 
 def test_build_remote_script_can_restart_workers():
@@ -112,8 +121,7 @@ def test_build_remote_script_can_restart_workers():
         restart_workers=True,
     )
 
-    assert "RESTART_WORKERS=1" in script
-    assert 'if [ "$RESTART_WORKERS" -eq 1 ] && screen_exists' in script
+    assert 'if [ "1" -eq 1 ] && screen_exists' in script
 
 
 def test_build_remote_script_dev_is_login_only():
@@ -134,6 +142,77 @@ def test_build_remote_script_dev_is_login_only():
     assert "NODE_BEGIN:login" in script
 
 
+def test_build_remote_script_dev_has_image_fallback():
+    script = build_remote_script(
+        ENVIRONMENTS["dev"],
+        repo="https://github.com/o/r.git",
+        branch="main",
+        data_mover="data-mover01",
+        start_workers=False,
+        image_file="$DEPLOY_DIR/needle.sif",
+    )
+
+    assert "container.image" in script
+    assert 'IMAGE_DEST="$HOME/software/images/needle.sif"' in script
+
+
+def test_make_tar_contains_extra_config_files(tmp_path):
+    config = tmp_path / ".needle.dev.yaml"
+    cluster = tmp_path / ".needle_cluster.dev.yaml"
+    config.write_text("data: {}\n")
+    cluster.write_text("type: local\n")
+
+    archive_path = _make_tar(
+        "#!/bin/bash\n",
+        None,
+        extra_files={config.name: config, cluster.name: cluster},
+    )
+    try:
+        with tarfile.open(archive_path) as archive:
+            assert set(archive.getnames()) == {"deploy.sh", config.name, cluster.name}
+            assert archive.extractfile(config.name).read() == config.read_bytes()
+    finally:
+        archive_path.unlink(missing_ok=True)
+
+
+def test_deploy_uploads_config_files(tmp_path, monkeypatch):
+    config = tmp_path / ".needle.prod.yaml"
+    cluster = tmp_path / ".needle_cluster.prod.yaml"
+    config.write_text("data: {}\n")
+    cluster.write_text("type: local\n")
+    captured = {}
+
+    monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
+    monkeypatch.setattr(
+        deployment,
+        "_make_tar",
+        lambda script, image, extra_files=None: (captured.update(extra_files=extra_files) or (tmp_path / "deploy.tar")),
+    )
+    (tmp_path / "deploy.tar").write_bytes(b"")
+    monkeypatch.setattr(
+        deployment,
+        "_run_ssh_tar",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=_remote_output(actions=[("code", "UPDATED"), ("sync", "OK")]).encode(),
+            stderr=b"",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        deployment.deploy,
+        ["prod", "--no-workers", "--wait", "0", "--source", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["extra_files"] == {
+        ".needle.prod.yaml": config,
+        ".needle_cluster.prod.yaml": cluster,
+    }
+    assert ".needle.prod.yaml" in result.output
+
+
 def test_make_tar_contains_script_and_image(tmp_path):
     image = tmp_path / "needle.sif"
     image.write_bytes(b"fake-sif")
@@ -149,52 +228,63 @@ def test_make_tar_contains_script_and_image(tmp_path):
         archive_path.unlink(missing_ok=True)
 
 
-def test_deploy_prod_dry_run(monkeypatch):
+def test_deploy_upload_existing_image(tmp_path, monkeypatch):
     monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
+    image = tmp_path / "existing.sif"
+    image.write_bytes(b"fake-sif")
     monkeypatch.setattr(
         deployment,
         "_run_ssh_tar",
-        lambda *args, **kwargs: pytest.fail("dry-run must not open SSH"),
-    )
-
-    result = CliRunner().invoke(deployment.deploy, ["prod", "--dry-run", "--no-workers"])
-
-    assert result.exit_code == 0, result.output
-    assert "remote root: /fred/oz513/software/needle" in result.output
-    assert "workers:     no" in result.output
-    assert "git clone --branch" in result.output
-    assert "uv tool install --editable" not in result.output
-
-
-def test_deploy_prod_build_image_dry_run(monkeypatch):
-    monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
-    monkeypatch.setattr(
-        deployment,
-        "_build_image",
-        lambda *args, **kwargs: pytest.fail("dry-run must not build"),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=_remote_output(actions=[("code", "UPDATED"), ("sync", "OK"), ("image", "INSTALLED")]).encode(),
+            stderr=b"",
+        ),
     )
 
     result = CliRunner().invoke(
         deployment.deploy,
-        ["prod", "--dry-run", "--no-workers", "--build-image"],
+        ["prod", "--no-workers", "--wait", "0", "--upload-image", str(image)],
     )
 
     assert result.exit_code == 0, result.output
-    assert "Would run: make needle" in result.output
-    assert "apptainer build --force" in result.output
-    assert 'IMAGE_FILE="$DEPLOY_DIR/needle.sif"' in result.output
+    assert "image:       upload" in result.output
+    assert "login: image INSTALLED" in result.output
 
 
-def test_deploy_dev_dry_run(monkeypatch):
+def test_deploy_image_build_and_upload_are_exclusive(tmp_path, monkeypatch):
     monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
+    image = tmp_path / "existing.sif"
+    image.write_bytes(b"fake-sif")
 
-    result = CliRunner().invoke(deployment.deploy, ["dev", "--dry-run"])
+    result = CliRunner().invoke(
+        deployment.deploy,
+        ["prod", "--no-workers", "--build-image", "--upload-image", str(image)],
+    )
+
+    assert result.exit_code != 0
+    assert "mutually exclusive" in result.output
+
+
+def test_deploy_dev(monkeypatch):
+    monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
+    monkeypatch.setattr(
+        deployment,
+        "_run_ssh_tar",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=_remote_output(actions=[("code", "UPDATED"), ("sync", "OK"), ("cli", "INSTALLED")]).encode(),
+            stderr=b"",
+        ),
+    )
+
+    result = CliRunner().invoke(deployment.deploy, ["dev"])
 
     assert result.exit_code == 0, result.output
     assert "remote root: $HOME/software/needle" in result.output
-    assert ".needle.dev.env" in result.output
-    assert "data-mover01" not in result.output
-    assert 'uv tool install --editable "$ROOT" --force' in result.output
+    assert "login: cli INSTALLED" in result.output
 
 
 def test_deploy_prod_no_workers(monkeypatch):
@@ -213,7 +303,7 @@ def test_deploy_prod_no_workers(monkeypatch):
     monkeypatch.setattr(deployment, "_run_ssh_tar", run_ssh)
     monkeypatch.setattr(
         deployment,
-        "_wait_for_online",
+        "wait_for_online",
         lambda **kwargs: pytest.fail("no workers means no Prefect wait"),
     )
 
@@ -227,7 +317,8 @@ def test_deploy_prod_no_workers(monkeypatch):
 
 def test_deploy_prod_workers_waits_for_prefect(monkeypatch):
     monkeypatch.setattr(deployment, "_git_info", _fake_git_info)
-    monkeypatch.setattr(deployment, "_ensure_prefect_env", lambda env_file: None)
+    monkeypatch.setattr(deployment, "ensure_prefect_env", lambda env_file: None)
+    monkeypatch.setattr(deployment, "ensure_work_pools", lambda: [])
     monkeypatch.setattr(
         deployment,
         "_run_ssh_tar",
@@ -247,7 +338,7 @@ def test_deploy_prod_workers_waits_for_prefect(monkeypatch):
     )
     monkeypatch.setattr(
         deployment,
-        "_wait_for_online",
+        "wait_for_online",
         lambda **kwargs: {"pipeline": _online("pipeline"), "download": _online("download")},
     )
 
@@ -313,6 +404,8 @@ def _check_output() -> str:
         "needle-config",
         "cluster-config",
         "git",
+        "image",
+        "dev-cli",
     ]
     lines = ["@@NEEDLE@@NODE_BEGIN:login@@", "@@NEEDLE@@HOST:login:farnarkle1@@"]
     lines.extend(f"@@NEEDLE@@CHECK:login:{name}:OK@@" for name in checks)
@@ -326,18 +419,63 @@ def _check_output() -> str:
     return "\n".join(lines)
 
 
+def _status_prod_output() -> str:
+    checks = "\n".join(
+        f"@@NEEDLE@@CHECK:login:{name}:OK@@"
+        for name in (
+            "screen",
+            "uv",
+            "git",
+            "workdir",
+            "pyproject",
+            "env-file",
+            "env-load",
+            "prefect-env",
+            "needle-config",
+            "cluster-config",
+            "image",
+        )
+    )
+    return "\n".join(
+        [
+            "@@NEEDLE@@NODE_BEGIN:login@@",
+            "@@NEEDLE@@HOST:login:farnarkle1@@",
+            checks,
+            "@@NEEDLE@@SCREEN_BEGIN:login@@",
+            "    12345.needle-prod-pipeline (Detached)",
+            "@@NEEDLE@@SCREEN_END:login@@",
+            "@@NEEDLE@@NODE_END:login:0@@",
+            "@@NEEDLE@@NODE_BEGIN:data_mover@@",
+            "@@NEEDLE@@HOST:data_mover:data-mover01@@",
+            "@@NEEDLE@@SCREEN_BEGIN:data_mover@@",
+            "    67890.needle-prod-download (Detached)",
+            "@@NEEDLE@@SCREEN_END:data_mover@@",
+            "@@NEEDLE@@NODE_END:data_mover:0@@",
+            "@@NEEDLE@@END@@",
+        ]
+    )
+
+
 def test_deploy_status_prod(monkeypatch):
-    monkeypatch.setattr(deployment, "_ensure_prefect_env", lambda env_file: None)
+    monkeypatch.setattr(deployment, "ensure_prefect_env", lambda env_file: None)
     monkeypatch.setattr(
         deployment,
-        "_query_prefect",
+        "query_prefect",
         lambda: {"pipeline": _online("pipeline"), "download": _online("download")},
     )
     monkeypatch.setattr(
         deployment,
-        "_run_ssh",
+        "query_prefect_resources",
+        lambda: [
+            PrefectResourceState(kind="work pool", name="download-observation-ozstar", exists=True),
+            PrefectResourceState(kind="deployment", name="needle-pipeline-ozstar", exists=True),
+        ],
+    )
+    monkeypatch.setattr(
+        deployment,
+        "run_ssh",
         lambda host, script, timeout: subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=_probe_output(), stderr=""
+            args=[], returncode=0, stdout=_status_prod_output(), stderr=""
         ),
     )
 
@@ -351,7 +489,7 @@ def test_deploy_status_prod(monkeypatch):
 def test_deploy_status_dev(monkeypatch):
     monkeypatch.setattr(
         deployment,
-        "_run_ssh",
+        "run_ssh",
         lambda host, script, timeout: subprocess.CompletedProcess(
             args=[], returncode=0, stdout=_check_output(), stderr=""
         ),
@@ -364,10 +502,53 @@ def test_deploy_status_dev(monkeypatch):
     assert "OK" in result.output
 
 
+def test_deploy_status_dev_fails_without_image(monkeypatch):
+    stdout = _check_output().replace("CHECK:login:image:OK", "CHECK:login:image:MISSING")
+    monkeypatch.setattr(
+        deployment,
+        "run_ssh",
+        lambda host, script, timeout: subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr=""),
+    )
+
+    result = CliRunner().invoke(deployment.deploy, ["status", "dev"])
+
+    assert result.exit_code == 1
+    assert "image" in result.output
+
+
+def test_deploy_status_prod_fails_without_deployment(monkeypatch):
+    monkeypatch.setattr(deployment, "ensure_prefect_env", lambda env_file: None)
+    monkeypatch.setattr(
+        deployment,
+        "query_prefect",
+        lambda: {"pipeline": _online("pipeline"), "download": _online("download")},
+    )
+    monkeypatch.setattr(
+        deployment,
+        "query_prefect_resources",
+        lambda: [
+            PrefectResourceState(kind="work pool", name="download-observation-ozstar", exists=True),
+            PrefectResourceState(kind="deployment", name="needle-pipeline-ozstar", exists=False, error="not found"),
+        ],
+    )
+    monkeypatch.setattr(
+        deployment,
+        "run_ssh",
+        lambda host, script, timeout: subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=_status_prod_output(), stderr=""
+        ),
+    )
+
+    result = CliRunner().invoke(deployment.deploy, ["status", "prod"])
+
+    assert result.exit_code == 1
+    assert "needle-pipeline-ozstar: MISSING" in result.output
+
+
 def test_deploy_teardown_dev_does_not_connect(monkeypatch):
     monkeypatch.setattr(
         deployment,
-        "_run_ssh",
+        "run_ssh",
         lambda *args, **kwargs: pytest.fail("dev teardown must not open SSH"),
     )
 
@@ -380,7 +561,7 @@ def test_deploy_teardown_dev_does_not_connect(monkeypatch):
 def test_deploy_teardown_prod(monkeypatch):
     monkeypatch.setattr(
         deployment,
-        "_run_ssh",
+        "run_ssh",
         lambda host, script, timeout: subprocess.CompletedProcess(
             args=[],
             returncode=0,
@@ -394,26 +575,6 @@ def test_deploy_teardown_prod(monkeypatch):
     assert result.exit_code == 0, result.output
     assert "pipeline: STOPPED" in result.output
     assert "download: STOPPED" in result.output
-
-
-def test_deploy_bootstrap_check_prod(monkeypatch):
-    monkeypatch.setattr(
-        deployment,
-        "_ensure_work_pools",
-        lambda: pytest.fail("--check must not create work pools"),
-    )
-    monkeypatch.setattr(
-        deployment,
-        "_run_ssh",
-        lambda host, script, timeout: subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=_check_output(), stderr=""
-        ),
-    )
-
-    result = CliRunner().invoke(deployment.deploy, ["bootstrap", "prod", "--check"])
-
-    assert result.exit_code == 0, result.output
-    assert "Bootstrap checks passed" in result.output
 
 
 def test_build_image_runs_make_and_apptainer(tmp_path, monkeypatch):

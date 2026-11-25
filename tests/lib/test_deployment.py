@@ -6,17 +6,15 @@ from needle.lib.deployment import (
     RemoteNode,
     RemoteOutput,
     ScreenState,
-    _build_bootstrap_parts,
-    _build_probe_script,
-    _build_teardown_parts,
-    _format_screen,
-    _load_env_file,
-    _parse_remote_output,
-    _parse_screen_listing,
-    _preflight_lines,
-    _screen_state_for_role,
-    _status_payload,
-    _verdict,
+    build_teardown_parts,
+    format_screen,
+    load_env_file,
+    parse_remote_output,
+    parse_screen_listing,
+    preflight_lines,
+    screen_state_for_role,
+    status_payload,
+    verdict,
 )
 from needle.lib.workers import WORKER_ROLES
 
@@ -34,7 +32,7 @@ def _prefect_state(role: str, *, online: bool, heartbeat: datetime | None = None
 
 
 def test_parse_screen_listing():
-    sessions = _parse_screen_listing(
+    sessions = parse_screen_listing(
         "\n".join(
             [
                 "There are screens on:",
@@ -69,7 +67,7 @@ def test_parse_remote_output_probe():
             "@@NEEDLE@@END@@",
         ]
     )
-    remote = _parse_remote_output(stdout)
+    remote = parse_remote_output(stdout)
 
     assert remote.complete
     assert remote.nodes["login"].host == "farnarkle1"
@@ -78,7 +76,7 @@ def test_parse_remote_output_probe():
 
 
 def test_parse_remote_output_incomplete_and_node_error():
-    remote = _parse_remote_output(
+    remote = parse_remote_output(
         "\n".join(
             [
                 "@@NEEDLE@@NODE_BEGIN:login@@",
@@ -100,7 +98,7 @@ def test_screen_state_for_role_reports_unknown_on_node_error():
         actions=[],
         complete=True,
     )
-    state = _screen_state_for_role(WORKER_ROLES["pipeline"], remote)
+    state = screen_state_for_role(WORKER_ROLES["pipeline"], remote)
 
     assert state.error == "ssh failed"
     assert not state.running
@@ -114,18 +112,18 @@ def test_verdict_states():
     dead = ScreenState(role="pipeline", name="needle-prod-pipeline", node="login", exists=True, state="Dead ???")
     unknown = ScreenState(role="pipeline", name="needle-prod-pipeline", node="login", error="boom")
 
-    assert _verdict(online, running) == "HEALTHY"
-    assert _verdict(online, missing).startswith("DEGRADED")
-    assert _verdict(offline, running).startswith("DEGRADED")
-    assert _verdict(offline, dead).startswith("STALE")
-    assert _verdict(offline, missing) == "STOPPED"
-    assert _verdict(online, unknown) == "UNKNOWN"
+    assert verdict(online, running) == "HEALTHY"
+    assert verdict(online, missing).startswith("DEGRADED")
+    assert verdict(offline, running).startswith("DEGRADED")
+    assert verdict(offline, dead).startswith("STALE")
+    assert verdict(offline, missing) == "STOPPED"
+    assert verdict(online, unknown) == "UNKNOWN"
 
 
 def test_format_screen():
-    assert _format_screen(ScreenState(role="pipeline", name="s", node="login")) == "MISSING"
+    assert format_screen(ScreenState(role="pipeline", name="s", node="login")) == "MISSING"
     assert (
-        _format_screen(ScreenState(role="pipeline", name="s", node="login", exists=True, state="Detached", pid=42))
+        format_screen(ScreenState(role="pipeline", name="s", node="login", exists=True, state="Detached", pid=42))
         == "RUNNING (pid 42, Detached)"
     )
 
@@ -153,7 +151,7 @@ def test_query_prefect_reads_worker_heartbeat(monkeypatch):
             return [FakeWorker()] if pool == WORKER_ROLES["pipeline"].pool else []
 
     monkeypatch.setattr("prefect.client.orchestration.get_client", lambda: FakeClient())
-    states = deployment._query_prefect()
+    states = deployment.query_prefect()
 
     assert states["pipeline"].status == "ONLINE"
     assert states["pipeline"].last_heartbeat == heartbeat
@@ -175,7 +173,7 @@ def test_load_env_file_does_not_override(tmp_path):
         )
     )
     environ = {"EXISTING": "from-process"}
-    loaded = _load_env_file(env_file, environ)
+    loaded = load_env_file(env_file, environ)
 
     assert environ["PREFECT_API_URL"] == "https://example.test/api"
     assert environ["PREFECT_API_AUTH_STRING"] == "user:pass"
@@ -187,7 +185,7 @@ def test_load_env_file_does_not_override(tmp_path):
 
 def test_preflight_requires_env_config_paths():
     lines = "\n".join(
-        _preflight_lines(
+        preflight_lines(
             "login",
             install=False,
             strict=True,
@@ -203,7 +201,7 @@ def test_preflight_requires_env_config_paths():
 
 def test_preflight_can_skip_screen_for_dev():
     lines = "\n".join(
-        _preflight_lines(
+        preflight_lines(
             "login",
             install=False,
             strict=True,
@@ -213,38 +211,17 @@ def test_preflight_can_skip_screen_for_dev():
         )
     )
 
-    assert "screen is required" not in lines
+    assert 'if [ "0" -eq 1 ]; then' in lines
     assert "git not found" in lines
     assert 'if [ -d "$HOME/software/needle" ]' in lines
     assert 'if [ -f "$HOME/.needle.dev.env" ]' in lines
 
 
-def test_build_probe_script_checks_both_nodes():
-    script = _build_probe_script("data-mover01")
-
-    assert "SCREEN_BEGIN:login" in script
-    assert "data-mover01" in script
-    assert script.count("ssh -o BatchMode=yes") == 1
-
-
 def test_build_teardown_script_targets_both_screens():
-    login_body, data_mover_body, script = _build_teardown_parts("data-mover01")
+    login_body, data_mover_body, script = build_teardown_parts("data-mover01")
 
     assert "stop_screen needle-prod-pipeline" in login_body
     assert "stop_screen needle-prod-download" in data_mover_body
-    assert script.count("ssh -o BatchMode=yes") == 1
-
-
-def test_build_bootstrap_script_installs_uv_and_syncs():
-    login_body, _, script = _build_bootstrap_parts(
-        "data-mover01",
-        install=True,
-        workdir="/fred/oz513/software/needle",
-        env_file="$HOME/.needle.prod.env",
-    )
-
-    assert "astral.sh/uv/install.sh" in login_body
-    assert "uv sync" in login_body
     assert script.count("ssh -o BatchMode=yes") == 1
 
 
@@ -269,7 +246,7 @@ def test_ensure_work_pools_creates_only_missing(monkeypatch):
             created.append(work_pool.name)
 
     monkeypatch.setattr("prefect.client.orchestration.get_client", lambda: FakeClient())
-    created_by_needle = deployment._ensure_work_pools()
+    created_by_needle = deployment.ensure_work_pools()
 
     assert created_by_needle == [WORKER_ROLES["download"].pool]
     assert created == [WORKER_ROLES["download"].pool]
@@ -288,7 +265,7 @@ def test_status_payload_contains_no_secrets(monkeypatch):
         ),
         "download": ScreenState(role="download", name="needle-prod-download", node="data_mover"),
     }
-    payload = _status_payload(states, screens)
+    payload = status_payload(states, screens)
 
     assert payload["api_url"] == "https://example.test/api"
     assert "secret" not in str(payload)
