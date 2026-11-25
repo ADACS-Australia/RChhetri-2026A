@@ -15,7 +15,6 @@ from needle.config.flag import FlagConfig
 from needle.config.imstack import ImageStackConfig
 from needle.config.mask import CreateMaskConfig
 from needle.config.source_find import SourceFindConfig
-from needle.config.watcher import WatcherConfig
 from needle.lib.constants import RED, GREEN, YELLOW, BOLD, FMT_RST
 
 logger = logging.getLogger(__name__)
@@ -55,9 +54,6 @@ class NeedleConfig(NeedleModel):
 
     data: DataConfig = DataConfig()
     "Config for the data specifics"
-
-    watcher: WatcherConfig = WatcherConfig()
-    "Config for the Watcher"
 
     flag: FlagConfig = FlagConfig()
     "Flagging config"

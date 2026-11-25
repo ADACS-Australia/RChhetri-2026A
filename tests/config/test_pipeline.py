@@ -48,8 +48,7 @@ def test_get_config_integration(tmp_path):
     # Create a minimal valid config
     config_data = {
         "flow": {"overwrite": False},
-        "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
-        "watcher": {},
+        "data": {},
         "flag": {},
         "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
         "calibrate_apply": {"applycal": {}, "split": {}},
@@ -72,7 +71,6 @@ def test_get_config_integration(tmp_path):
 
     assert isinstance(config, NeedleConfig)
     assert config.flow.overwrite is False
-    assert config.data.source == "local:///tmp/data"
     # Even though we provided {}, SetjyConfig should have its defaults
     assert config.calibrate_solve.setjy.standard == "Perley-Butler 2017"
 
@@ -81,8 +79,7 @@ def test_validate_valid_dict():
     """Test that validate returns True for a valid config dict."""
     config_data = {
         "flow": {"overwrite": False},
-        "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
-        "watcher": {},
+        "data": {},
         "flag": {},
         "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
         "calibrate_apply": {"applycal": {}, "split": {}},
@@ -108,8 +105,7 @@ def test_validate_valid_yaml(tmp_path):
     """Test that validate returns True for a valid config file."""
     config_data = {
         "flow": {"overwrite": False},
-        "data": {"source": "local:///tmp/data", "staging_dir": "/tmp/staged"},
-        "watcher": {},
+        "data": {},
         "flag": {},
         "calibrate_solve": {"setjy": {}, "bandpass": {}, "gaincal": {}},
         "calibrate_apply": {"applycal": {}, "split": {}},

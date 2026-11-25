@@ -52,11 +52,6 @@ The pipeline itself requires very minimal manually set options to function. Howe
 flow:
   log_level: DEBUG
 
-watcher:
-  log_level: INFO
-  # Optional but recommended watcher log file
-  log_file: /path/to/log/output/watcher.log
-
 data:
   # Local path or S3 bucket pointing to source data
   source: /path/to/data/source/directory
@@ -89,11 +84,6 @@ data:
   staging_dir: /local/scratch/needle_work
   casa_dir: /path/to/place/casa/data
   stability_check: 120
-
-watcher:
-  poll_interval: 60
-  log_level: DEBUG
-  log_file: /local/scratch/logs/watcher.log
 
 flag:
   # Multiple flagging steps can be configured
