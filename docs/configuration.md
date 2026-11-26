@@ -5,26 +5,35 @@
 Prefect requires a few things set in .env to work properly:
 
 ```bash
-# IMPORTANT - must be set to the relevant host api endpoint
-export PREFECT_API_URL="http://localhost:4200/api"
-# If the Prefect server has auth enabled, set the string
-export PREFECT_API_AUTH_STRING="admin:password"
 # Set needle as an extra logger so that needle logs appear in the prefect logger UI
 export PREFECT_LOGGING_EXTRA_LOGGERS="needle"
 # Set the needle log level for prefect
 export PREFECT_LOGGING_LOGGERS_NEEDLE_LEVEL="INFO"
 # Automatically saves task and flow results
 export PREFECT_RESULTS_PERSIST_BY_DEFAULT="true"
+# IMPORTANT - must be set to the relevant host api endpoint
+export PREFECT_API_URL=https://prefect.ips-askap.cloud.edu.au/api
+# If the Prefect server has auth enabled, set the string
+export PREFECT_API_AUTH_STRING="admin:password"
+# Path to the needle config file
+export NEEDLE_CONFIG=/home/ksmith/software/configs/needle.yaml
+# Path to the needle cluster config file
+export NEEDLE_CLUSTER_CONFIG=/home/ksmith/software/configs/needle_cluster.yaml
 ```
 
 It is good practice to `chmod 600` the .env file to prevent prying eyes.
-You could also source the `.env` in your `~/.bashrc`, which would enable you to run the workflow from anywhere.
+You could also source the `.env` in your `~/.bashrc`, which would enable you to seamlessly run various needle functions
+from anywhere.
 
 ## Needle Pipeline
 
-Needle revolves around its main pipeline. The order and structure of the pipeline's processing steps is largely fixed by design.
+Needle revolves around its main pipeline. The order and structure of the pipeline's processing steps is largely fixed
+by design.
 
-The user may know more about their dataset or working environment than the pipeline assumes. Therefore, every module in the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the characteristics of a given dataset.
+The user may know more about their dataset or working environment than the pipeline assumes. Therefore, every module in
+the pipeline exposes a configuration interface that allows the user to tune its behaviour without modifying the pipeline
+itself. Parameters such as thresholds, file paths, and processing options can all be adjusted per-module to suit the
+characteristics of a given dataset.
 
 To see which parameters are available for each module, see the module's appropriate config (example - [clean config][needle.config.clean.WSCleanConfig])
 
@@ -33,31 +42,35 @@ To see which parameters are available for each module, see the module's appropri
 Configuration validation can be done before attempting to run via the CLI entrypoint
 
 ```bash
-needle-validate -c /path/to/config.yaml
+needle validate -c /path/to/config.yaml
 ```
 
 Which will validate each subsection of the config.
 
-The config as seen by Needle can also be dumped. This can be useful as a quick and easy way to check what fields are defaulted to when not assigned:
+The config as seen by Needle can also be dumped. This can be useful as a quick and easy way to check what fields are
+defaulted to when not assigned:
 
 ```bash
-needle-validate -c /path/to/conifg.yaml -p
+needle validate -c /path/to/conifg.yaml -p
 ```
 
 ### Minimal Configuration
 
-The pipeline itself requires very minimal manually set options to function. However, this will not prevent most steps from running, they will simply run with the default settings. As such, it is a good idea to become familiar with the defaults in the [config api reference][needle.config.pipeline.NeedleConfig].
+The pipeline itself requires very minimal manually set options to function. However, this will not prevent most steps
+from running, they will simply run with the default settings. As such, it is a good idea to become familiar with the
+defaults in the [config api reference][needle.config.pipeline.NeedleConfig].
 
 ```yaml
 flow:
   log_level: DEBUG
 
 data:
-  # Local path or S3 bucket pointing to source data
-  source: /path/to/data/source/directory
-  # Local directory to work in
-  staging_dir: /path/to/place/working/files
-  casa_dir: /path/to/place/casa/data
+  # Location of the work directories. Relevant for production only
+  work_dir: /fred/oz513/NeedleData/Observations
+  # Location of the downloaded observations. Relevant for production only
+  download_dir: /fred/oz513/NeedleData/Downloads
+  # Location of the CASA measures and logfiles
+  casa_dir: /fred/oz513/CASA
 
 flag:
   # Flag options are DISABLED by default - absent flag steps are ignored
@@ -65,9 +78,19 @@ flag:
   tfcrop: {}
 ```
 
+You can also print out the entire rendered config with
+
+```bash
+needle display -c /path/to/config.yaml
+```
+
+This is a good way to explore the possible values for the config without having to scour the aforementioned api
+reference.
+
 ### Extensive Configuration
 
-For more complex pipelines, you can fine-tune almost every aspect of the processing. This example demonstrates a more involved configuration, including container runtime settings, multiple flagging steps, and specific cleaning parameters.
+For more complex pipelines, you can fine-tune almost every aspect of the processing. This example demonstrates a more
+involved configuration, including container runtime settings, multiple flagging steps, and specific cleaning parameters.
 
 ```yaml
 flow:
@@ -79,11 +102,9 @@ flow:
   skip_to_deep_clean: false
 
 data:
-  # Using S3 as a source
-  source: s3://my-observation-bucket/raw-data/
-  staging_dir: /local/scratch/needle_work
-  casa_dir: /path/to/place/casa/data
-  stability_check: 120
+  work_dir: /fred/oz513/NeedleData/Observations
+  download_dir: /fred/oz513/NeedleData/Downloads
+  casa_dir: /fred/oz513/CASA
 
 flag:
   # Multiple flagging steps can be configured
@@ -167,39 +188,16 @@ imstack:
   dtype: "float16"
 ```
 
-## Cluster
-
-If using a Dask cluster, either locally or via Slurm, an additional `.yaml` config file is required at `~/.needle_cluster.yaml`.
-
-For the full picture, please see the [config api reference][needle.config.cluster.ClusterConfig].
-
-### Local Cluster
-
-```yaml
-type: local # required - either 'slurm' or 'local'
-
-scaling:
-  min_workers: 1
-  max_workers: 2
-  dashboard_port: 8787 # optional, default 8787
-
-container:
-  image: /path/to/image/needle.sif
-  type: apptainer # either 'singularity' or 'apptainer'
-
-local:
-  cores: 1 # number of cores per worker
-  memory: "8GB" # memory per worker
-```
-
 ### SLURM Cluster
 
-For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few Dask-specific additions.
+For users familiar with SLURM, the configuration should be fairly intuitive. Note that there are a few Dask-specific
+additions.
 
-> The bind mount used as an example may be required depending on the setup. **The prefect server and the workers must have the same timezone.**
+> The bind mount used as an example may be required depending on the setup. **The prefect server and the workers must
+> have the same timezone.**
 
 ```yaml
-type: slurm # required - either 'slurm' or 'local'
+type: slurm # required
 
 scaling:
   min_workers: 1
@@ -213,6 +211,7 @@ container:
     # Make sure you bind mound all of the directories the compute nodes need to work in
     - /usr/share/zoneinfo/UTC:/etc/localtime # optional extra bind mounts - this one is highly recommended
     - /fred/oz513:/fred/oz513
+    - /home/ksmith/software:/home/ksmith/software
     - /aphid/scratch-3month/ksmith:/aphid/scratch-3month/ksmith
 
 slurm:
@@ -220,7 +219,7 @@ slurm:
   account: "oz513"
   cores: 1 # Some tools are not thread safe, so it's recommended to keep cores and processes = 1
   processes: 1
-  memory: "64GB"
+  memory: "16GB"
   walltime: "01:00:00"
 
   # A directory for Dask operational files
@@ -230,10 +229,8 @@ slurm:
 
   # Commands to execute per-job before running the task
   job_script_prologue:
+    - "source /home/ksmith/.needle.dev.env"
     - "module load apptainer"
-    # If running a local server, you need to port-forward to the host machine
-    # DO NOT DO THIS if you are not running a local server. It's a hacky workaround for development and testing.
-    - "ssh -f -N -i ~/.ssh/worker-login -o StrictHostKeyChecking=no -o ConnectTimeout=5 -L 4200:localhost:4200 setonix-04"
 
   job_extra_directives: []
 ```

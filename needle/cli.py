@@ -258,15 +258,12 @@ def _resolve_needle_config(cfg_path: Path | None) -> Path:
 
 @cli.command()
 @click.argument("cfg_path", default=None, required=False, type=click.Path(path_type=Path))
-@click.option("-p", "--pretty-print", "pretty_print", is_flag=True, help="Whether to pretty print the config")
-def validate(cfg_path, pretty_print):
+def validate(cfg_path):
     """Validates a needle pipeline YAML config file. Optionally pretty-prints to stdout."""
     cfg_path = _resolve_needle_config(cfg_path)
     valid = NeedleConfig.validate(source=cfg_path)
     if not valid:
         return
-    if pretty_print:
-        NeedleConfig.load(path=cfg_path).pretty_print().show()
 
 
 @cli.command()

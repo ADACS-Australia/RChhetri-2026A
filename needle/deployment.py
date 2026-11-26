@@ -130,7 +130,7 @@ needle = yaml.safe_load(open(sys.argv[1])) or {}
 cluster = yaml.safe_load(open(sys.argv[2])) or {}
 paths = set()
 data = needle.get("data") or {}
-for key in ("work_dir", "download_dir", "staging_dir", "casa_dir"):
+for key in ("work_dir", "download_dir", "casa_dir"):
     add_dir(paths, data.get(key))
 add_dir(paths, data.get("source"))
 add_parent(paths, (needle.get("watcher") or {}).get("log_file"))
